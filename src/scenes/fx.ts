@@ -96,3 +96,37 @@ export function drawReticle(
     g.fillRect(x, Math.min(y, y + dy * 4), 1, 5);
   }
 }
+
+const SHIELD = [
+  '1111111',
+  '1111111',
+  '1111111',
+  '1111111',
+  '0111110',
+  '0111110',
+  '0011100',
+  '0001000',
+];
+
+/** A 7 x 8 cover shield with its top-left at (x, y): solid for full cover, half filled for half. */
+export function drawShield(
+  g: Phaser.GameObjects.Graphics,
+  x: number,
+  y: number,
+  full: boolean,
+): void {
+  SHIELD.forEach((row, j) => {
+    [...row].forEach((c, i) => {
+      if (c !== '1') return;
+      const edge =
+        j === 0 ||
+        i === 0 ||
+        i === 6 ||
+        row[i - 1] === '0' ||
+        row[i + 1] === '0' ||
+        SHIELD[j + 1]?.[i] !== '1';
+      const color = edge ? 0x0b1220 : full || i < 4 ? 0x4aa8ff : 0x1b2331;
+      g.fillStyle(color, 1).fillRect(x + i, y + j, 1, 1);
+    });
+  });
+}

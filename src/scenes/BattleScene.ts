@@ -14,10 +14,12 @@ import {
   apply,
   canAct,
   createBattle,
+  coverAgainst,
   hitChance,
   livingUnits,
   moveRange,
   pathFor,
+  shotBlock,
   unitAt,
   unitById,
   type Action,
@@ -28,7 +30,7 @@ import {
   type UnitKind,
 } from '../logic/battle';
 import { planAlienAction } from '../logic/ai';
-import { generateForest, PROPS } from '../logic/map';
+import { generateForest, PROPS, tileAt } from '../logic/map';
 import { createRng, type Rng } from '../logic/rng';
 import {
   BULLET,
@@ -41,7 +43,7 @@ import {
   type AnimName,
   type CharacterSheet,
 } from './art';
-import { drawPips, drawReticle, flash, floatText, playOnce } from './fx';
+import { drawPips, drawReticle, drawShield, flash, floatText, playOnce } from './fx';
 import type { BattleResult } from './ResultScene';
 import { initialSeed } from './seed';
 
@@ -63,6 +65,8 @@ export interface GameSnapshot {
   selected: string | null;
   /** Tiles the selected unit can move to now. */
   reachable: Point[];
+  /** Aliens the selected marine could shoot now (in range and in sight). */
+  shootable: string[];
   /** True while an animation plays; clicks are ignored. */
   busy: boolean;
   /** The alien the selected marine is aiming at, waiting for the player to confirm. */
@@ -102,6 +106,8 @@ interface UnitView {
   hidden: boolean;
   /** Health as drawn: it catches up with the state when a shot lands, not when it's fired. */
   shownHp: number;
+  /** True while the unit runs along a path (its cover isn't settled yet). */
+  moving: boolean;
 }
 
 export class BattleScene extends Phaser.Scene {
@@ -115,6 +121,8 @@ export class BattleScene extends Phaser.Scene {
   private chevron!: Phaser.GameObjects.Graphics;
   private rangeLayer!: Phaser.GameObjects.Graphics;
   private pathLayer!: Phaser.GameObjects.Graphics;
+  /** Cover shields for the hovered tile, drawn above units and trees. */
+  private coverLayer!: Phaser.GameObjects.Graphics;
   private busy = false;
   private pips!: Phaser.GameObjects.Graphics;
   private aimLayer!: Phaser.GameObjects.Graphics;
@@ -138,6 +146,7 @@ export class BattleScene extends Phaser.Scene {
     this.marker = this.add.graphics().setDepth(DEPTH.marker);
     this.rangeLayer = this.add.graphics().setDepth(DEPTH.range);
     this.pathLayer = this.add.graphics().setDepth(DEPTH.path);
+    this.coverLayer = this.add.graphics().setDepth(DEPTH.overlay + 1);
     this.chevron = this.add.graphics().setDepth(DEPTH.overlay + 1);
     this.pips = this.add.graphics().setDepth(DEPTH.overlay);
     this.aimLayer = this.add.graphics().setDepth(DEPTH.overlay + 2);
@@ -188,6 +197,20 @@ export class BattleScene extends Phaser.Scene {
       const top = v.sprite.y - SHEETS[u.kind].height - 5;
       const color = u.side === 'marine' ? 0x8bf06a : 0xff6a5a;
       drawPips(this.pips, v.sprite.x, top, v.shownHp, u.maxHp, color);
+      if (u.side === 'marine' && !v.moving) {
+        // Cover against the nearest alien, shown next to the pips.
+        const enemy = livingUnits(this.state, 'alien').reduce<Unit | null>(
+          (best, a) =>
+            !best || Math.hypot(a.x - u.x, a.y - u.y) < Math.hypot(best.x - u.x, best.y - u.y)
+              ? a
+              : best,
+          null,
+        );
+        const cover = enemy ? coverAgainst(this.state.map, u, enemy) : null;
+        const width = u.maxHp * 4 - 1;
+        if (cover)
+          drawShield(this.pips, Math.round(v.sprite.x + width / 2) + 2, top - 3, cover === 'full');
+      }
     }
   }
 
@@ -208,6 +231,11 @@ export class BattleScene extends Phaser.Scene {
       })),
       selected,
       reachable: selected ? this.rangeTiles(selected) : [],
+      shootable: selected
+        ? livingUnits(this.state, 'alien')
+            .filter((a) => hitChance(this.state, selected, a.id) !== null)
+            .map((a) => a.id)
+        : [],
       busy: this.busy,
       aimTarget: this.aimTarget,
       lastShot: this.state.lastShot,
@@ -276,13 +304,14 @@ export class BattleScene extends Phaser.Scene {
   /** Previews the path to the tile under the pointer, or the shot at the alien under it. */
   private onHover(px: number, py: number): void {
     const g = this.pathLayer.clear();
+    this.coverLayer.clear();
     const id = this.state.selected;
     if (!id || this.busy) return;
     const x = Math.floor(px / TILE);
     const y = Math.floor(py / TILE);
     if (!this.aimTarget) {
       const alien = unitAt(this.state, x, y) ?? unitAt(this.state, x, y + 1);
-      this.drawAim(alien?.side === 'alien' && this.canShoot(alien.id) ? alien.id : null);
+      this.drawAim(alien?.side === 'alien' ? alien.id : null);
       if (alien?.side === 'alien') return;
     }
     const path = y < MAP_ROWS ? pathFor(this.state, id, { x, y }) : null;
@@ -290,6 +319,19 @@ export class BattleScene extends Phaser.Scene {
     g.fillStyle(0xdff1ff, 0.9);
     for (const p of path.slice(0, -1)) g.fillRect(p.x * TILE + 7, p.y * TILE + 7, 2, 2);
     g.lineStyle(1, 0xdff1ff, 1).strokeRect(x * TILE + 1.5, y * TILE + 1.5, TILE - 3, TILE - 3);
+    // Shields on each side of the tile that has cover.
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      const prop = tileAt(this.state.map, x + dx, y + dy)?.prop;
+      if (prop == null) continue;
+      const sx = x * TILE + 4 + dx * 9;
+      const sy = y * TILE + 4 + dy * 9;
+      drawShield(this.coverLayer, sx, sy, PROPS[prop].cover === 'full');
+    }
   }
 
   /** Player move: apply it, then run the sprite along the path. */
@@ -318,6 +360,7 @@ export class BattleScene extends Phaser.Scene {
   private async run(animation: () => Promise<void>): Promise<void> {
     this.busy = true;
     this.pathLayer.clear();
+    this.coverLayer.clear();
     this.drawSelection();
     await animation();
     this.busy = false;
@@ -336,6 +379,7 @@ export class BattleScene extends Phaser.Scene {
     this.state = apply(this.state, { type: 'endTurn' });
     this.busy = true;
     this.pathLayer.clear();
+    this.coverLayer.clear();
     this.drawSelection();
     await this.banner('ALIEN ACTIVITY', '#ff6a5a');
 
@@ -443,12 +487,14 @@ export class BattleScene extends Phaser.Scene {
     const view = this.views.get(unitId);
     if (!unit || !view) return Promise.resolve();
     view.ghost.setVisible(false);
+    view.moving = true;
     this.playAnim(view, unit.kind, 'run', view.sprite.flipX ? -1 : 1);
     const stepMs = 1000 / ANIMATION.runSpeed;
     return new Promise((resolve) => {
       const step = (i: number, from: Point): void => {
         const p = path[i];
         if (!p) {
+          view.moving = false;
           this.playAnim(view, unit.kind, 'idle', unit.facing);
           view.ghost.setPosition(view.sprite.x, view.sprite.y);
           resolve();
@@ -560,14 +606,20 @@ export class BattleScene extends Phaser.Scene {
     const shooter = this.state.selected;
     const target = targetId ? unitById(this.state, targetId) : undefined;
     const view = targetId ? this.views.get(targetId) : undefined;
-    const chance = shooter && targetId ? hitChance(this.state, shooter, targetId) : null;
-    if (!target || !view || chance === null) return;
+    if (!shooter || !target || !view) return;
     const height = SHEETS[target.kind].height;
-    drawReticle(this.aimLayer, view.sprite.x, view.sprite.y, height);
+    const chance = hitChance(this.state, shooter, target.id);
+    const block = shotBlock(this.state, shooter, target.id);
+    const why = block === 'sight' ? 'NO LINE OF SIGHT' : block === 'range' ? 'OUT OF RANGE' : null;
+    if (chance === null && why === null) return;
+    if (chance !== null) drawReticle(this.aimLayer, view.sprite.x, view.sprite.y, height);
     this.aimText
-      .setText(`${chance}%`)
-      .setPosition(view.sprite.x, view.sprite.y - height - 8)
-      .setVisible(true);
+      .setText(chance !== null ? `${chance}%` : (why as string))
+      .setColor(chance !== null ? '#f2a33a' : '#8d97a8');
+    // Keep the label on screen for units near the edges.
+    const half = this.aimText.width / 2;
+    const x = Math.min(Math.max(view.sprite.x, half + 2), GAME_WIDTH - half - 2);
+    this.aimText.setPosition(x, view.sprite.y - height - 8).setVisible(true);
   }
 
   private startBattle(seed: number): void {
@@ -633,7 +685,7 @@ export class BattleScene extends Phaser.Scene {
       .setTint(GHOST_COLOR[u.side])
       .setTintMode(Phaser.TintModes.FILL)
       .setAlpha(0.45);
-    return { sprite, ghost, sheet, hidden: false, shownHp: u.hp };
+    return { sprite, ghost, sheet, hidden: false, shownHp: u.hp, moving: false };
   }
 
   /** Shows a ghost for every unit that a standing object in front of it mostly covers. */

@@ -84,3 +84,36 @@ export function findPath(
   }
   return path.reverse();
 }
+
+/**
+ * The tiles a straight line from the centre of `a` to the centre of `b` passes
+ * over, not counting `a` and `b`. The line is sampled with whole-number maths,
+ * so the tiles from a to b are the same as from b to a (sight is symmetric).
+ */
+export function tilesBetween(a: Point, b: Point): Point[] {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const n = Math.max(Math.abs(dx), Math.abs(dy)) * 4;
+  const seen = new Set<string>();
+  const out: Point[] = [];
+  // Rounds num / n to the nearest whole number, halves rounding up, for any sign.
+  const div = (num: number): number => Math.floor((2 * num + n) / (2 * n));
+  for (let k = 1; k < n; k++) {
+    const x = div(a.x * (n - k) + b.x * k);
+    const y = div(a.y * (n - k) + b.y * k);
+    const key = `${x},${y}`;
+    if ((x === a.x && y === a.y) || (x === b.x && y === b.y) || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ x, y });
+  }
+  return out;
+}
+
+/** True if nothing that blocks sight stands between `a` and `b`. */
+export function hasLineOfSight(
+  a: Point,
+  b: Point,
+  blocksSight: (x: number, y: number) => boolean,
+): boolean {
+  return tilesBetween(a, b).every((p) => !blocksSight(p.x, p.y));
+}

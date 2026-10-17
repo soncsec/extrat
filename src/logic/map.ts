@@ -71,6 +71,12 @@ export function tileAt(map: BattleMap, x: number, y: number): Tile | undefined {
   return map.tiles[y * map.cols + x];
 }
 
+/** Full cover (trees, boulders) blocks sight; half cover (rocks, bushes) doesn't. */
+export function blocksSight(map: BattleMap, x: number, y: number): boolean {
+  const prop = tileAt(map, x, y)?.prop;
+  return prop != null && PROPS[prop].cover === 'full';
+}
+
 export function isWalkable(map: BattleMap, x: number, y: number): boolean {
   const t = tileAt(map, x, y);
   return t !== undefined && t.prop === null;

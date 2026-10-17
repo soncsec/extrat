@@ -60,6 +60,8 @@ export const SHOOTING = {
   penaltyPerTile: 3,
   minChance: 10,
   maxChance: 95,
+  /** Percent taken off the hit chance when the target has cover facing the shooter. */
+  cover: { half: 20, full: 40 },
 } as const;
 
 /** Action points each unit gets at the start of its side's turn. A move costs 1. */

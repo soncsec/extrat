@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findPath, reachable } from '../../src/logic/grid';
+import { findPath, hasLineOfSight, reachable, tilesBetween } from '../../src/logic/grid';
 
 /** Builds a passable() check from a picture: '#' blocks, anything else is open. */
 function board(rows: string[]): {
@@ -75,5 +75,42 @@ describe('findPath', () => {
     const b = board(['....', '....', '....']);
     const a = findPath(b.cols, b.rows, b.open, { x: 0, y: 0 }, { x: 3, y: 2 });
     expect(findPath(b.cols, b.rows, b.open, { x: 0, y: 0 }, { x: 3, y: 2 })).toEqual(a);
+  });
+});
+
+describe('tilesBetween and hasLineOfSight', () => {
+  it('lists the tiles on a straight line, not the ends', () => {
+    expect(tilesBetween({ x: 0, y: 0 }, { x: 3, y: 0 })).toEqual([
+      { x: 1, y: 0 },
+      { x: 2, y: 0 },
+    ]);
+    expect(tilesBetween({ x: 0, y: 0 }, { x: 1, y: 0 })).toEqual([]);
+    expect(tilesBetween({ x: 2, y: 2 }, { x: 4, y: 4 })).toContainEqual({ x: 3, y: 3 });
+  });
+
+  it('is the same both ways for any two tiles', () => {
+    const key = (ps: { x: number; y: number }[]): string[] => ps.map((p) => `${p.x},${p.y}`).sort();
+    for (let ax = 0; ax < 8; ax++) {
+      for (let ay = 0; ay < 6; ay++) {
+        for (const [bx, by] of [
+          [7, 5],
+          [0, 5],
+          [3, 0],
+          [6, 2],
+        ]) {
+          const a = { x: ax, y: ay };
+          const b = { x: bx as number, y: by as number };
+          expect(key(tilesBetween(a, b))).toEqual(key(tilesBetween(b, a)));
+        }
+      }
+    }
+  });
+
+  it('is blocked by anything on the line, and not by things beside it', () => {
+    const wall = (x: number, y: number): boolean => x === 3 && y === 2;
+    expect(hasLineOfSight({ x: 0, y: 2 }, { x: 6, y: 2 }, wall)).toBe(false);
+    expect(hasLineOfSight({ x: 0, y: 0 }, { x: 6, y: 0 }, wall)).toBe(true);
+    // The ends themselves never block: units stand next to and on cover tiles.
+    expect(hasLineOfSight({ x: 3, y: 2 }, { x: 6, y: 2 }, wall)).toBe(true);
   });
 });

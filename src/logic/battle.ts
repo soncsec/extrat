@@ -1,6 +1,14 @@
 import { ACTION_POINTS, SHOOTING, SKIRMISH, UNITS } from '../config/tuning';
-import { findPath, reachable, type Point } from './grid';
-import { isWalkable, spawnZone, tileAt, type BattleMap } from './map';
+import { findPath, hasLineOfSight, reachable, type Point } from './grid';
+import {
+  blocksSight,
+  isWalkable,
+  PROPS,
+  spawnZone,
+  tileAt,
+  type BattleMap,
+  type Cover,
+} from './map';
 import { createRng, rngStep, type Rng } from './rng';
 
 /**
@@ -140,19 +148,66 @@ export function apply(state: BattleState, action: Action): BattleState {
 }
 
 /**
- * Chance in percent that `shooterId` hits `targetId` with a shot now, or null if
- * the shot isn't allowed (no action points, out of range, same side, dead...).
+ * The best cover `defender` has against a shot from `from`. A prop on a side of
+ * the defender's tile counts when the shooter is on that side of it: a rock to
+ * the east protects against shots from anywhere east, not from the west.
  */
-export function hitChance(state: BattleState, shooterId: string, targetId: string): number | null {
+export function coverAgainst(map: BattleMap, defender: Point, from: Point): Cover | null {
+  let best: Cover | null = null;
+  for (const [dx, dy] of [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ] as const) {
+    const facing = (from.x - defender.x) * dx + (from.y - defender.y) * dy > 0;
+    const prop = tileAt(map, defender.x + dx, defender.y + dy)?.prop;
+    if (!facing || prop == null) continue;
+    const cover = PROPS[prop].cover;
+    if (cover === 'full') return 'full';
+    best = cover;
+  }
+  return best;
+}
+
+/** True if a unit at `a` can see `b`: no tree or boulder in the way. */
+export function canSee(map: BattleMap, a: Point, b: Point): boolean {
+  return hasLineOfSight(a, b, (x, y) => blocksSight(map, x, y));
+}
+
+/** Why a shot isn't possible right now, or null if it is. */
+export type ShotBlock = 'range' | 'sight' | 'other';
+
+export function shotBlock(
+  state: BattleState,
+  shooterId: string,
+  targetId: string,
+): ShotBlock | null {
   const shooter = unitById(state, shooterId);
   const target = unitById(state, targetId);
-  if (!shooter || !target || shooter.hp <= 0 || target.hp <= 0) return null;
-  if (shooter.side === target.side || shooter.ap <= 0) return null;
-  const stats = UNITS[shooter.kind];
+  if (!shooter || !target || shooter.hp <= 0 || target.hp <= 0) return 'other';
+  if (shooter.side === target.side || shooter.ap <= 0) return 'other';
   const dist = Math.hypot(target.x - shooter.x, target.y - shooter.y);
-  if (dist > stats.range) return null;
-  const penalty = Math.max(0, Math.floor(dist) - SHOOTING.closeRange) * SHOOTING.penaltyPerTile;
-  return Math.min(SHOOTING.maxChance, Math.max(SHOOTING.minChance, stats.aim - penalty));
+  if (dist > UNITS[shooter.kind].range) return 'range';
+  if (!canSee(state.map, shooter, target)) return 'sight';
+  return null;
+}
+
+/**
+ * Chance in percent that `shooterId` hits `targetId` with a shot now, or null if
+ * the shot isn't allowed (see shotBlock). Aim, minus distance beyond close range,
+ * minus the target's cover facing the shooter.
+ */
+export function hitChance(state: BattleState, shooterId: string, targetId: string): number | null {
+  if (shotBlock(state, shooterId, targetId) !== null) return null;
+  const shooter = unitById(state, shooterId) as Unit;
+  const target = unitById(state, targetId) as Unit;
+  const dist = Math.hypot(target.x - shooter.x, target.y - shooter.y);
+  const range = Math.max(0, Math.floor(dist) - SHOOTING.closeRange) * SHOOTING.penaltyPerTile;
+  const cover = coverAgainst(state.map, target, shooter);
+  const coverPenalty = cover ? SHOOTING.cover[cover] : 0;
+  const chance = UNITS[shooter.kind].aim - range - coverPenalty;
+  return Math.min(SHOOTING.maxChance, Math.max(SHOOTING.minChance, chance));
 }
 
 function shoot(state: BattleState, shooterId: string, targetId: string): BattleState {
