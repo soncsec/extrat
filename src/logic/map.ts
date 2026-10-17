@@ -54,6 +54,18 @@ export interface ForestOptions {
   maxAttempts: number;
 }
 
+/**
+ * The columns (inclusive) where one side deploys. The outermost column is left
+ * out so character sprites aren't cut off by the screen edge.
+ */
+export function spawnZone(
+  cols: number,
+  side: 'west' | 'east',
+  opts: ForestOptions = FOREST,
+): [number, number] {
+  return side === 'west' ? [1, opts.spawnCols] : [cols - 1 - opts.spawnCols, cols - 2];
+}
+
 export function tileAt(map: BattleMap, x: number, y: number): Tile | undefined {
   if (x < 0 || y < 0 || x >= map.cols || y >= map.rows) return undefined;
   return map.tiles[y * map.cols + x];
@@ -95,8 +107,9 @@ export function validateMap(map: BattleMap, opts: ForestOptions = FOREST): strin
   if (reached.size !== free.length) {
     problems.push(`${free.length - reached.size} walkable tiles are cut off`);
   }
-  const west = free.filter((p) => p.x < opts.spawnCols).length;
-  const east = free.filter((p) => p.x >= map.cols - opts.spawnCols).length;
+  const inZone = (p: Point, [min, max]: [number, number]): boolean => p.x >= min && p.x <= max;
+  const west = free.filter((p) => inZone(p, spawnZone(map.cols, 'west', opts))).length;
+  const east = free.filter((p) => inZone(p, spawnZone(map.cols, 'east', opts))).length;
   if (west < opts.minSpawnTiles) problems.push(`west spawn zone has only ${west} free tiles`);
   if (east < opts.minSpawnTiles) problems.push(`east spawn zone has only ${east} free tiles`);
   return problems;
@@ -132,12 +145,14 @@ function buildForest(seed: number, cols: number, rows: number, opts: ForestOptio
   // Clumps of trees in the middle, away from the spawn zones.
   const clusters = rng.int(opts.clusters.min, opts.clusters.max);
   for (let c = 0; c < clusters; c++) {
-    let x = rng.int(opts.spawnCols + 1, cols - opts.spawnCols - 2);
+    const [, westEdge] = spawnZone(cols, 'west', opts);
+    const [eastEdge] = spawnZone(cols, 'east', opts);
+    let x = rng.int(westEdge + 2, eastEdge - 2);
     let y = rng.int(top + 1, rows - 2);
     const size = rng.int(opts.clusterSize.min, opts.clusterSize.max);
     for (let i = 0; i < size; i++) {
       place(x, y, rng.pick(['pine', 'oak'] as const));
-      x = clamp(x + rng.int(-1, 1), opts.spawnCols, cols - opts.spawnCols - 1);
+      x = clamp(x + rng.int(-1, 1), westEdge + 1, eastEdge - 1);
       y = clamp(y + rng.int(-1, 1), top, rows - 1);
     }
   }

@@ -33,3 +33,17 @@ export const FOREST = {
   /** Seeds tried before giving up on a valid map. */
   maxAttempts: 50,
 } as const;
+
+/** Squad and enemy sizes for the M1 skirmish. */
+export const SKIRMISH = {
+  marines: 4,
+  aliens: 2,
+  /** Units on the same side start at least this many steps apart. */
+  minSpacing: 3,
+} as const;
+
+/** Unit stats. */
+export const UNITS = {
+  marine: { hp: 4 },
+  walker: { hp: 3 },
+} as const;
