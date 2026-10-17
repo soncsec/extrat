@@ -7,8 +7,8 @@ The order follows the risks: first prove the core fight is fun and readable with
 | Milestone | Status |
 |---|---|
 | M0 Setup | Done |
-| M1 Walking skeleton | Built; waiting for the owner's play-test on staging |
-| M2 Tactical core | Not started |
+| M1 Walking skeleton | Built; owner: "looks great so far" (2026-10-17), full play-test notes pending |
+| M2 Tactical core | In progress |
 | M3 Aliens and ambush | Not started |
 | M4 Maps and landscapes | Not started |
 | M5 Campaign | Not started |
@@ -50,8 +50,10 @@ A small skirmish on a generated forest map: 4 marines against 2 aliens, from the
 
 ## M2 — Tactical core
 
+Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M2.7 (line of sight first, since shots passed through trees).
+
 - [ ] M2.1 Two actions per turn (move, move again or act); moving far ends the turn ("dash")
-- [ ] M2.2 Line of sight; half and full cover by direction, with shield icons on hover
+- [x] M2.2 Line of sight; half and full cover by direction, with shield icons on hover
 - [ ] M2.3 Hit chance from aim, cover, distance and flanking, with a breakdown panel
 - [ ] M2.4 Ammo and reload
 - [ ] M2.5 Overwatch: shoot the first enemy that moves in sight

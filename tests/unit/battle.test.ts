@@ -10,15 +10,20 @@ import {
 import {
   apply,
   canAct,
+  canSee,
+  coverAgainst,
   createBattle,
   hitChance,
   livingUnits,
   moveRange,
   pathFor,
+  shotBlock,
   unitAt,
   unitById,
   type BattleState,
+  type Unit,
 } from '../../src/logic/battle';
+import type { Point } from '../../src/logic/grid';
 import { generateForest, isWalkable, spawnZone, type BattleMap } from '../../src/logic/map';
 
 function must<T>(value: T | undefined): T {
@@ -413,5 +418,74 @@ describe('ending the turn', () => {
     const spent = { ...s, units: s.units.map((u) => (u.side === 'marine' ? { ...u, ap: 0 } : u)) };
     expect(canAct(spent, 'marine')).toBe(false);
     expect(livingUnits(spent, 'marine')).toHaveLength(SKIRMISH.marines);
+  });
+});
+
+describe('cover and line of sight', () => {
+  /** Marine 'm' and alien 'a' on a map drawn as a picture ('#' pine, 'b' bush). */
+  function field(rows: string[], m: Point, a: Point): BattleState {
+    const s = createBattle(openMap(Array(rows.length).fill('.'.repeat(rows[0]?.length ?? 0))), 1);
+    const marine = must(s.units.find((u) => u.side === 'marine'));
+    const alien = must(s.units.find((u) => u.side === 'alien'));
+    return {
+      ...s,
+      map: openMap(rows),
+      units: [
+        { ...marine, id: 'm', ...m },
+        { ...alien, id: 'a', ...a },
+      ],
+    };
+  }
+
+  it('gives cover only against shots from the side the prop is on', () => {
+    const map = openMap(['.....', '..#b.', '.....']);
+    // The unit at (1,1) has a pine to its east.
+    expect(coverAgainst(map, { x: 1, y: 1 }, { x: 4, y: 0 })).toBe('full');
+    expect(coverAgainst(map, { x: 1, y: 1 }, { x: 0, y: 2 })).toBeNull();
+    expect(coverAgainst(map, { x: 1, y: 1 }, { x: 1, y: 2 })).toBeNull(); // straight below
+    // The unit at (4,1) has a bush to its west.
+    expect(coverAgainst(map, { x: 4, y: 1 }, { x: 0, y: 1 })).toBe('half');
+  });
+
+  it('takes the best cover when there is more than one', () => {
+    const map = openMap(['..b..', '.#.b.', '.....']);
+    // (2,1): pine to the west, bush to the east, bush to the north.
+    expect(coverAgainst(map, { x: 2, y: 1 }, { x: 0, y: 0 })).toBe('full');
+    expect(coverAgainst(map, { x: 2, y: 1 }, { x: 4, y: 0 })).toBe('half');
+  });
+
+  it('lets bushes and rocks be shot over, but not trees', () => {
+    const s = field(['.........', '....b....', '.........'], { x: 1, y: 1 }, { x: 7, y: 1 });
+    expect(canSee(s.map, s.units[0] as Unit, s.units[1] as Unit)).toBe(true);
+    const t = field(['.........', '....#....', '.........'], { x: 1, y: 1 }, { x: 7, y: 1 });
+    expect(canSee(t.map, t.units[0] as Unit, t.units[1] as Unit)).toBe(false);
+    expect(shotBlock(t, 'm', 'a')).toBe('sight');
+    expect(hitChance(t, 'm', 'a')).toBeNull();
+  });
+
+  it('says why a shot is not possible', () => {
+    const far = field(['.'.repeat(24)], { x: 0, y: 0 }, { x: 23, y: 0 });
+    expect(shotBlock(far, 'm', 'a')).toBe('range');
+    const ok = field(['.'.repeat(24)], { x: 0, y: 0 }, { x: 5, y: 0 });
+    expect(shotBlock(ok, 'm', 'a')).toBeNull();
+    expect(shotBlock(ok, 'm', 'nobody')).toBe('other');
+  });
+
+  it('lowers the hit chance by the cover the target has toward the shooter', () => {
+    const open = field(['..........'], { x: 1, y: 0 }, { x: 6, y: 0 });
+    const half = field(['.....b....'], { x: 1, y: 0 }, { x: 6, y: 0 });
+    const flanked = field(['.......b..'], { x: 1, y: 0 }, { x: 6, y: 0 }); // bush behind the alien
+    const base = must(hitChance(open, 'm', 'a') ?? undefined);
+    expect(hitChance(half, 'm', 'a')).toBe(base - SHOOTING.cover.half);
+    expect(hitChance(flanked, 'm', 'a')).toBe(base);
+  });
+
+  it('gives full cover against shots from an angle that miss the tree itself', () => {
+    // Pine at (5,2) west of the alien at (6,2); the marine at (3,6) shoots from the
+    // south-west, 5 tiles away, so the line passes beside the pine.
+    const rows = ['.......', '.......', '.....#.', '.......', '.......', '.......', '.......'];
+    const s = field(rows, { x: 3, y: 6 }, { x: 6, y: 2 });
+    expect(shotBlock(s, 'm', 'a')).toBeNull();
+    expect(hitChance(s, 'm', 'a')).toBe(UNITS.marine.aim - SHOOTING.cover.full);
   });
 });

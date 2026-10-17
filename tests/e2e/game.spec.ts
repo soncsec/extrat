@@ -139,23 +139,31 @@ test('clicking a tile out of range does not move the marine', async ({ page }) =
   expect(after).toMatchObject({ x: marine.x, y: marine.y, ap: marine.ap });
 });
 
-test('a marine aims at an alien, fires, and the shot is resolved', async ({ page }) => {
-  await openGame(page, '?seed=42');
+/**
+ * Map 1: once the first marine moves as far east as it can, an alien is in range
+ * and in sight. Selects that marine, moves it, and returns it with a target it can shoot.
+ */
+const SHOT_SEED = '?seed=1';
+
+async function moveEastForAShot(
+  page: Page,
+): Promise<{ marineId: string; alien: GameSnapshot['units'][number] }> {
   const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
   if (!marine) throw new Error('no marine');
-  // Move east first so an alien is in range.
   await clickTile(page, marine.x, marine.y);
-  const target = (await snapshot(page)).reachable.reduce((a, b) => (b.x > a.x ? b : a));
-  await clickTile(page, target.x, target.y);
-  await expect.poll(async () => (await snapshot(page)).busy).toBe(false);
+  const dest = (await snapshot(page)).reachable.reduce((a, b) => (b.x > a.x ? b : a));
+  await clickTile(page, dest.x, dest.y);
+  await expect.poll(async () => (await snapshot(page)).busy, { timeout: 20_000 }).toBe(false);
   const s = await snapshot(page);
-  const me = s.units.find((u) => u.id === marine.id);
-  if (!me) throw new Error('marine vanished');
-  const alien = s.units
-    .filter((u) => u.side === 'alien')
-    .sort((a, b) => Math.hypot(a.x - me.x, a.y - me.y) - Math.hypot(b.x - me.x, b.y - me.y))[0];
-  if (!alien) throw new Error('no alien');
+  const alien = s.units.find((u) => u.id === s.shootable[0]);
+  if (!alien)
+    throw new Error(`no shootable alien on ${SHOT_SEED} (the map generator may have changed)`);
+  return { marineId: marine.id, alien };
+}
 
+test('a marine aims at an alien, fires, and the shot is resolved', async ({ page }) => {
+  await openGame(page, SHOT_SEED);
+  const { marineId, alien } = await moveEastForAShot(page);
   await clickTile(page, alien.x, alien.y);
   await expect.poll(async () => (await snapshot(page)).aimTarget).toBe(alien.id);
   expect((await snapshot(page)).lastShot).toBeNull();
@@ -166,36 +174,37 @@ test('a marine aims at an alien, fires, and the shot is resolved', async ({ page
   const after = await snapshot(page);
   const shot = after.lastShot;
   if (!shot) throw new Error('no shot');
-  expect(after.units.find((u) => u.id === marine.id)?.ap).toBe(0);
+  expect(after.units.find((u) => u.id === marineId)?.ap).toBe(0);
   expect(after.units.find((u) => u.id === alien.id)?.hp).toBe(Math.max(0, alien.hp - shot.damage));
   expect(after.aimTarget).toBeNull();
 });
 
 test('Esc cancels aiming before the shot', async ({ page }) => {
-  await openGame(page, '?seed=42');
-  const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
-  if (!marine) throw new Error('no marine');
-  await clickTile(page, marine.x, marine.y);
-  const target = (await snapshot(page)).reachable.reduce((a, b) => (b.x > a.x ? b : a));
-  await clickTile(page, target.x, target.y);
-  await expect.poll(async () => (await snapshot(page)).busy).toBe(false);
-  const s = await snapshot(page);
-  const me = s.units.find((u) => u.id === marine.id);
-  const alien = s.units
-    .filter((u) => u.side === 'alien')
-    .sort(
-      (a, b) =>
-        Math.hypot(a.x - (me?.x ?? 0), a.y - (me?.y ?? 0)) -
-        Math.hypot(b.x - (me?.x ?? 0), b.y - (me?.y ?? 0)),
-    )[0];
-  if (!alien) throw new Error('no alien');
+  await openGame(page, SHOT_SEED);
+  const { marineId, alien } = await moveEastForAShot(page);
   await clickTile(page, alien.x, alien.y);
   await expect.poll(async () => (await snapshot(page)).aimTarget).toBe(alien.id);
   await page.keyboard.press('Escape');
   await expect.poll(async () => (await snapshot(page)).aimTarget).toBeNull();
   const after = await snapshot(page);
-  expect(after.selected).toBe(marine.id);
+  expect(after.selected).toBe(marineId);
   expect(after.lastShot).toBeNull();
+});
+
+test('an alien behind a tree or out of range cannot be aimed at', async ({ page }) => {
+  await openGame(page, SHOT_SEED);
+  const { alien } = await moveEastForAShot(page);
+  const s = await snapshot(page);
+  const blocked = s.units.find(
+    (u) => u.side === 'alien' && u.hp > 0 && !s.shootable.includes(u.id),
+  );
+  if (!blocked) throw new Error(`expected an alien that can't be shot on ${SHOT_SEED}`);
+  await clickTile(page, blocked.x, blocked.y);
+  await page.waitForTimeout(300);
+  expect((await snapshot(page)).aimTarget).toBeNull();
+  // The shootable one still can be.
+  await clickTile(page, alien.x, alien.y);
+  await expect.poll(async () => (await snapshot(page)).aimTarget).toBe(alien.id);
 });
 
 test('E ends the turn; the aliens advance, then round 2 begins', async ({ page }) => {
@@ -279,32 +288,14 @@ test('losing the squad shows the loss screen; Esc goes to the title', async ({ p
   expect(await activeScenes(page)).toEqual(['Title']);
 });
 
-/** Plays one scripted turn: move the first marine east, shoot the nearest alien, end the turn. */
+/** Plays one scripted turn on SHOT_SEED: move east, shoot, end the turn, let the aliens act. */
 async function scriptedTurn(page: Page): Promise<GameSnapshot> {
-  const idle = async (): Promise<void> => {
-    await expect.poll(async () => (await snapshot(page)).busy, { timeout: 20_000 }).toBe(false);
-  };
-  const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
-  if (!marine) throw new Error('no marine');
-  await clickTile(page, marine.x, marine.y);
-  const dest = (await snapshot(page)).reachable.reduce((a, b) => (b.x > a.x ? b : a));
-  await clickTile(page, dest.x, dest.y);
-  await idle();
-  const s = await snapshot(page);
-  const me = s.units.find((u) => u.id === marine.id);
-  const alien = s.units
-    .filter((u) => u.side === 'alien')
-    .sort(
-      (a, b) =>
-        Math.hypot(a.x - (me?.x ?? 0), a.y - (me?.y ?? 0)) -
-        Math.hypot(b.x - (me?.x ?? 0), b.y - (me?.y ?? 0)),
-    )[0];
-  if (!alien) throw new Error('no alien');
+  const { alien } = await moveEastForAShot(page);
   await clickTile(page, alien.x, alien.y);
   await page.keyboard.press('Enter');
   await expect.poll(async () => (await snapshot(page)).lastShot).not.toBeNull();
   // The other marines still have action points, so the turn goes on until E is pressed.
-  await idle();
+  await expect.poll(async () => (await snapshot(page)).busy, { timeout: 20_000 }).toBe(false);
   await page.keyboard.press('e');
   await expect
     .poll(
@@ -319,7 +310,8 @@ async function scriptedTurn(page: Page): Promise<GameSnapshot> {
 }
 
 test('a fixed-seed turn plays out exactly the same every time', async ({ page }) => {
-  await openGame(page, '?seed=42');
+  await openGame(page, SHOT_SEED);
+  const start = await snapshot(page);
   const first = await scriptedTurn(page);
   await page.reload();
   await waitForScene(page, 'Title');
@@ -328,7 +320,14 @@ test('a fixed-seed turn plays out exactly the same every time', async ({ page })
   const second = await scriptedTurn(page);
   expect(second.units).toEqual(first.units);
   expect(second.lastShot).toEqual(first.lastShot);
-  expect(first.units.some((u) => u.side === 'alien' && u.x < 19)).toBe(true); // the aliens moved
+  // The aliens acted on their turn: one of them moved, or a marine was hurt.
+  const was = (id: string): GameSnapshot['units'][number] | undefined =>
+    start.units.find((u) => u.id === id);
+  const alienMoved = first.units.some(
+    (u) => u.side === 'alien' && (u.x !== was(u.id)?.x || u.y !== was(u.id)?.y),
+  );
+  const marineHurt = first.units.some((u) => u.side === 'marine' && u.hp < (was(u.id)?.hp ?? 0));
+  expect(alienMoved || marineHurt).toBe(true);
 });
 
 test('?seed= in the URL sets the random seed', async ({ page }) => {

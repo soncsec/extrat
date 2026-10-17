@@ -1,4 +1,6 @@
 import {
+  canSee,
+  coverAgainst,
   hitChance,
   livingUnits,
   moveRange,
@@ -7,12 +9,11 @@ import {
   type BattleState,
 } from './battle';
 import type { Point } from './grid';
-import { tileAt } from './map';
 import { UNITS } from '../config/tuning';
 
 /**
- * The aliens' choices for the M1 skirmish: shoot if possible, otherwise move
- * toward the squad, preferring a tile in range with cover next to it.
+ * The aliens' choices for the skirmish: shoot if possible, otherwise move toward
+ * the squad, preferring a tile with a clear shot and cover facing the squad.
  * The utility-scoring AI of ADR-E4 replaces this in M3.
  */
 
@@ -33,14 +34,16 @@ export function planAlienAction(state: BattleState, alienId: string): Action | n
   if (best) return { type: 'shoot', unitId: alien.id, targetId: best.m.id };
 
   const range = UNITS[alien.kind].range;
-  const nearest = (p: Point): number =>
-    Math.min(...marines.map((m) => Math.hypot(m.x - p.x, m.y - p.y)));
-  const hasCover = (p: Point): boolean =>
-    [-1, 1].some((dx) => tileAt(state.map, p.x + dx, p.y)?.prop != null);
-  // In range beats out of range; then cover; then fewer steps. Out of range: closer is better.
+  const dist = (p: Point, q: Point): number => Math.hypot(q.x - p.x, q.y - p.y);
+  const COVER_SCORE = { full: 20, half: 10 } as const;
+  // A tile with a clear shot beats one without; then cover facing the nearest marine;
+  // then fewer steps. Without a shot, closer is better.
   const score = (p: Point, steps: number): number => {
-    const d = nearest(p);
-    return d <= range ? 100 + (hasCover(p) ? 10 : 0) - steps * 0.1 : -d;
+    const nearest = marines.reduce((a, b) => (dist(p, b) < dist(p, a) ? b : a));
+    const shot = marines.some((m) => dist(p, m) <= range && canSee(state.map, p, m));
+    if (!shot) return -dist(p, nearest);
+    const cover = coverAgainst(state.map, p, nearest);
+    return 100 + (cover ? COVER_SCORE[cover] : 0) - steps * 0.1;
   };
 
   const cols = state.map.cols;

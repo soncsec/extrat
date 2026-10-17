@@ -3,6 +3,7 @@ import { UNITS } from '../../src/config/tuning';
 import { planAlienAction } from '../../src/logic/ai';
 import {
   apply,
+  canSee,
   createBattle,
   hitChance,
   type BattleState,
@@ -102,5 +103,20 @@ describe('planAlienAction', () => {
       y: 1,
     });
     expect(planAlienAction(boxed, 'a')).toBeNull();
+  });
+});
+
+describe('planAlienAction with sight and cover', () => {
+  it('moves to a tile with a clear shot rather than one behind a tree', () => {
+    // A pine wall at x = 8 except a gap on row 0; the marine is at (3,2).
+    // From the far side only tiles by the gap can see the marine.
+    const rows = ['........#...........', '........#...........', '........#...........'];
+    rows[0] = '....................';
+    // From (11,1) the alien can reach (8,0) by the gap (4 steps) or hide at (9,2) (3 steps).
+    const s = scene(rows, [{ x: 3, y: 2 }], { x: 11, y: 1 });
+    const plan = planAlienAction(s, 'a');
+    if (plan?.type !== 'move') throw new Error(`expected a move, got ${JSON.stringify(plan)}`);
+    const after = apply(s, plan);
+    expect(canSee(after.map, plan.to, { x: 3, y: 2 })).toBe(true);
   });
 });
