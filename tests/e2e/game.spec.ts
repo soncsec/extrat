@@ -25,12 +25,22 @@ async function snapshot(page: Page): Promise<GameSnapshot> {
   return snap;
 }
 
-async function openGame(page: Page, query = ''): Promise<void> {
-  await page.goto(`./${query}`);
+async function waitForScene(page: Page, key: string): Promise<void> {
   await expect
     .poll(() => page.evaluate(() => window.__game?.scene() ?? null), { timeout: 15_000 })
-    .toBe('Battle');
+    .toBe(key);
 }
+
+/** Opens the game and starts a battle from the title screen. */
+async function openGame(page: Page, query = ''): Promise<void> {
+  await page.goto(`./${query}`);
+  await waitForScene(page, 'Title');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Battle');
+}
+
+const activeScenes = (page: Page): Promise<string[]> =>
+  page.evaluate(() => window.__game?.scenes() ?? []);
 
 test('boots with no console errors and no third-party requests', async ({ page }) => {
   const watched = watchPage(page);
@@ -45,7 +55,9 @@ test('the same seed always draws the same map', async ({ page }) => {
   await openGame(page, '?seed=777');
   const first = await snapshot(page);
   await page.reload();
-  await expect.poll(() => page.evaluate(() => window.__game?.scene() ?? null)).toBe('Battle');
+  await waitForScene(page, 'Title');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Battle');
   expect((await snapshot(page)).layout).toBe(first.layout);
 });
 
@@ -217,6 +229,106 @@ test('the End Turn button ends the turn', async ({ page }) => {
   // The button sits at the right end of the info bar's first line.
   await page.mouse.click(box.x + (GAME_WIDTH - 25) * zoom, box.y + (MAP_ROWS * TILE + 9) * zoom);
   await expect.poll(async () => (await snapshot(page)).turn).toBe('alien');
+});
+
+test('the title screen starts a mission with its button', async ({ page }) => {
+  await page.goto('./');
+  await waitForScene(page, 'Title');
+  const box = await page.locator('#game canvas').boundingBox();
+  if (!box) throw new Error('no canvas');
+  const zoom = box.width / GAME_WIDTH;
+  // START MISSION is centred at y = 172.
+  await page.mouse.click(box.x + (GAME_WIDTH / 2) * zoom, box.y + 172 * zoom);
+  await waitForScene(page, 'Battle');
+});
+
+test('without ?seed= each new game gets a different map', async ({ page }) => {
+  await openGame(page);
+  const first = (await snapshot(page)).mapSeed;
+  await page.reload();
+  await waitForScene(page, 'Title');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Battle');
+  expect((await snapshot(page)).mapSeed).not.toBe(first);
+});
+
+test('wiping out the aliens shows the win screen; Enter plays again', async ({ page }) => {
+  await openGame(page, '?seed=42');
+  const before = await snapshot(page);
+  for (const a of before.units.filter((u) => u.side === 'alien')) {
+    await page.evaluate((id) => window.__game?.setHp(id, 0), a.id);
+  }
+  await expect.poll(() => activeScenes(page)).toContain('Result');
+  expect((await snapshot(page)).over).toBe(true);
+  await page.keyboard.press('Enter');
+  await expect.poll(() => activeScenes(page)).not.toContain('Result');
+  const after = await snapshot(page);
+  expect(after.over).toBe(false);
+  expect(after.mapSeed).not.toBe(before.mapSeed);
+  expect(after.units.every((u) => u.hp > 0)).toBe(true);
+});
+
+test('losing the squad shows the loss screen; Esc goes to the title', async ({ page }) => {
+  await openGame(page, '?seed=42');
+  for (const m of (await snapshot(page)).units.filter((u) => u.side === 'marine')) {
+    await page.evaluate((id) => window.__game?.setHp(id, 0), m.id);
+  }
+  await expect.poll(() => activeScenes(page)).toContain('Result');
+  await page.keyboard.press('Escape');
+  await waitForScene(page, 'Title');
+  expect(await activeScenes(page)).toEqual(['Title']);
+});
+
+/** Plays one scripted turn: move the first marine east, shoot the nearest alien, end the turn. */
+async function scriptedTurn(page: Page): Promise<GameSnapshot> {
+  const idle = async (): Promise<void> => {
+    await expect.poll(async () => (await snapshot(page)).busy, { timeout: 20_000 }).toBe(false);
+  };
+  const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
+  if (!marine) throw new Error('no marine');
+  await clickTile(page, marine.x, marine.y);
+  const dest = (await snapshot(page)).reachable.reduce((a, b) => (b.x > a.x ? b : a));
+  await clickTile(page, dest.x, dest.y);
+  await idle();
+  const s = await snapshot(page);
+  const me = s.units.find((u) => u.id === marine.id);
+  const alien = s.units
+    .filter((u) => u.side === 'alien')
+    .sort(
+      (a, b) =>
+        Math.hypot(a.x - (me?.x ?? 0), a.y - (me?.y ?? 0)) -
+        Math.hypot(b.x - (me?.x ?? 0), b.y - (me?.y ?? 0)),
+    )[0];
+  if (!alien) throw new Error('no alien');
+  await clickTile(page, alien.x, alien.y);
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await snapshot(page)).lastShot).not.toBeNull();
+  // The other marines still have action points, so the turn goes on until E is pressed.
+  await idle();
+  await page.keyboard.press('e');
+  await expect
+    .poll(
+      async () => {
+        const t = await snapshot(page);
+        return t.turn === 'marine' && !t.busy ? t.round : 0;
+      },
+      { timeout: 20_000 },
+    )
+    .toBe(2);
+  return snapshot(page);
+}
+
+test('a fixed-seed turn plays out exactly the same every time', async ({ page }) => {
+  await openGame(page, '?seed=42');
+  const first = await scriptedTurn(page);
+  await page.reload();
+  await waitForScene(page, 'Title');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Battle');
+  const second = await scriptedTurn(page);
+  expect(second.units).toEqual(first.units);
+  expect(second.lastShot).toEqual(first.lastShot);
+  expect(first.units.some((u) => u.side === 'alien' && u.x < 19)).toBe(true); // the aliens moved
 });
 
 test('?seed= in the URL sets the random seed', async ({ page }) => {

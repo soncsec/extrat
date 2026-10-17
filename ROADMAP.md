@@ -7,7 +7,7 @@ The order follows the risks: first prove the core fight is fun and readable with
 | Milestone | Status |
 |---|---|
 | M0 Setup | Done |
-| M1 Walking skeleton | In progress |
+| M1 Walking skeleton | Built; waiting for the owner's play-test on staging |
 | M2 Tactical core | Not started |
 | M3 Aliens and ambush | Not started |
 | M4 Maps and landscapes | Not started |
@@ -44,7 +44,7 @@ A small skirmish on a generated forest map: 4 marines against 2 aliens, from the
 - [x] M1.3 Movement: reachable tiles shown (BFS, ADR-E5); click a tile to move along the path with the run animation
 - [x] M1.4 Shooting: click an alien to see the hit chance, confirm to fire; seeded hit roll, damage, health bars, death animation
 - [x] M1.5 Alien turn: each alien moves toward the nearest marine and shoots when in range; End Turn button and key
-- [ ] M1.6 Title, win and loss screens; Playwright plays a fixed-seed turn through the test hook
+- [x] M1.6 Title, win and loss screens; Playwright plays a fixed-seed turn through the test hook
 
 **Acceptance criteria:** the owner plays a full skirmish on staging and can both win and lose; rules have unit tests (80% floor); e2e passes in Chromium and Firefox; CI green. The owner judges whether the side-view sprites read well on the grid (risk 2).
 

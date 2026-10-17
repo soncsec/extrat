@@ -31,8 +31,6 @@ import { planAlienAction } from '../logic/ai';
 import { generateForest, PROPS } from '../logic/map';
 import { createRng, type Rng } from '../logic/rng';
 import {
-  addAnims,
-  addFrames,
   BULLET,
   EFFECTS,
   FOREST_SHEET,
@@ -40,11 +38,12 @@ import {
   propFrame,
   UNIT_ANIMS,
   WALKER_SHEET,
-  WALKER_WALK_SHEET,
   type AnimName,
   type CharacterSheet,
 } from './art';
 import { drawPips, drawReticle, flash, floatText, playOnce } from './fx';
+import type { BattleResult } from './ResultScene';
+import { initialSeed } from './seed';
 
 /** Read-only view of the game state, used by the e2e test hook. */
 export interface GameSnapshot {
@@ -91,7 +90,6 @@ const DEPTH = {
 
 /** Each kind's main sheet: its idle pose, height and muzzle. */
 const SHEETS: Record<UnitKind, CharacterSheet> = { marine: MARINE_SHEET, walker: WALKER_SHEET };
-const ALL_SHEETS = [MARINE_SHEET, WALKER_SHEET, WALKER_WALK_SHEET];
 const GHOST_COLOR = { marine: 0x7fd4ff, alien: 0xff6a5a } as const;
 /** A unit counts as hidden when a standing object in front covers this much of its body. */
 const HIDDEN_OVERLAP = 0.3;
@@ -125,7 +123,6 @@ export class BattleScene extends Phaser.Scene {
   private aimTarget: string | null = null;
   private mapText!: Phaser.GameObjects.Text;
   private unitText!: Phaser.GameObjects.Text;
-  private bannerText: Phaser.GameObjects.Text | null = null;
   private endTurnButton!: Phaser.GameObjects.Text;
   /** Set when one side has been wiped out; only a new map can follow. */
   private over = false;
@@ -134,26 +131,8 @@ export class BattleScene extends Phaser.Scene {
     super('Battle');
   }
 
-  preload(): void {
-    this.load.image(FOREST_SHEET.key, FOREST_SHEET.url);
-    for (const s of ALL_SHEETS) {
-      this.load.spritesheet(s.key, s.url, { frameWidth: s.frameWidth, frameHeight: s.frameHeight });
-    }
-    for (const e of Object.values(EFFECTS)) {
-      this.load.spritesheet(e.key, e.url, { frameWidth: e.frameWidth, frameHeight: e.frameHeight });
-    }
-    this.load.image(BULLET.key, BULLET.url);
-  }
-
-  create(): void {
-    addFrames(this.textures, FOREST_SHEET.key, FOREST_SHEET.frames);
-    for (const s of ALL_SHEETS) addAnims(this.anims, s);
-    for (const e of Object.values(EFFECTS)) {
-      if (this.anims.exists(e.key)) continue;
-      const frames = this.anims.generateFrameNumbers(e.key, { start: 0, end: e.count - 1 });
-      this.anims.create({ key: e.key, frames, frameRate: e.fps, repeat: 0 });
-    }
-    this.seed = seedFromUrl();
+  create(data: { seed?: number }): void {
+    this.seed = data.seed ?? initialSeed();
     this.seeds = createRng(this.seed);
     this.createHud();
     this.marker = this.add.graphics().setDepth(DEPTH.marker);
@@ -186,9 +165,12 @@ export class BattleScene extends Phaser.Scene {
     });
     this.input.keyboard?.on('keydown-E', () => void this.endTurn());
     this.input.keyboard?.on('keydown-N', () => {
-      // Not in the middle of an animation or the alien turn.
-      if (!this.busy || this.over) this.startBattle(this.seeds.int(1, 999_999));
+      // Not in the middle of an animation, the alien turn, or the result screen.
+      if (!this.busy) this.startBattle(this.seeds.int(1, 999_999));
     });
+    this.events.on('play-again', () => this.startBattle(this.seeds.int(1, 999_999)));
+    // The scene object is reused when the player comes back from the title.
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.events.off('play-again'));
 
     this.startBattle(this.seed);
   }
@@ -341,14 +323,7 @@ export class BattleScene extends Phaser.Scene {
     this.busy = false;
     this.updateHidden();
     this.drawSelection();
-    if (livingUnits(this.state, 'alien').length === 0) {
-      // Win and loss screens come in M1.6; until then the battle just stops here.
-      this.over = true;
-      this.busy = true;
-      this.drawSelection();
-      await this.banner('ALIENS ELIMINATED', '#8bf06a', true);
-      return;
-    }
+    if (this.checkEnd()) return;
     // Like XCOM, the turn ends by itself once no marine can do anything.
     if (this.state.turn === 'marine' && !canAct(this.state, 'marine')) void this.endTurn();
   }
@@ -383,13 +358,7 @@ export class BattleScene extends Phaser.Scene {
       }
     }
 
-    if (livingUnits(this.state, 'marine').length === 0) {
-      // Win and loss screens come in M1.6; until then the battle just stops here.
-      this.over = true;
-      this.drawSelection();
-      await this.banner('SQUAD LOST', '#ff6a5a', true);
-      return;
-    }
+    if (this.checkEnd()) return;
     this.state = apply(this.state, { type: 'endTurn' });
     await this.banner(`TURN ${this.state.round}`, '#f2a33a');
     this.busy = false;
@@ -397,8 +366,49 @@ export class BattleScene extends Phaser.Scene {
     this.drawSelection();
   }
 
+  /** If one side is wiped out, locks the battle and opens the result screen. */
+  private checkEnd(): boolean {
+    const won = livingUnits(this.state, 'alien').length === 0;
+    const lost = livingUnits(this.state, 'marine').length === 0;
+    if (!won && !lost) return false;
+    this.over = true;
+    this.busy = true;
+    this.aimTarget = null;
+    this.drawAim(null);
+    this.drawSelection();
+    const dead = (side: Side): number =>
+      this.state.units.filter((u) => u.side === side && u.hp <= 0).length;
+    const result: BattleResult = {
+      won,
+      rounds: this.state.round,
+      aliensKilled: dead('alien'),
+      marinesLost: dead('marine'),
+      mapSeed: this.state.map.seed,
+    };
+    // Let the last death animation play first.
+    this.time.delayedCall(700, () => this.scene.launch('Result', result));
+    return true;
+  }
+
+  /**
+   * Test hook only (ADR-006): sets a unit's health, then checks for the end of
+   * the battle, so e2e tests can reach the win and loss screens quickly.
+   */
+  debugSetHp(unitId: string, hp: number): void {
+    this.state = {
+      ...this.state,
+      units: this.state.units.map((u) => (u.id === unitId ? { ...u, hp } : u)),
+    };
+    const v = this.views.get(unitId);
+    if (v) {
+      v.shownHp = hp;
+      if (hp <= 0) v.sprite.setAlpha(0);
+    }
+    if (!this.busy) this.checkEnd();
+  }
+
   /** A large message across the middle of the map. */
-  private banner(text: string, color: string, stay = false): Promise<void> {
+  private banner(text: string, color: string): Promise<void> {
     const t = this.add
       .text(GAME_WIDTH / 2, (MAP_ROWS * TILE) / 2, text, {
         fontFamily: 'monospace',
@@ -412,16 +422,15 @@ export class BattleScene extends Phaser.Scene {
       .setDepth(DEPTH.hud)
       .setResolution(4)
       .setAlpha(0);
-    this.bannerText = t;
     return new Promise((resolve) => {
       this.tweens.add({
         targets: t,
         alpha: 1,
         duration: 200,
-        hold: stay ? 0 : 700,
-        yoyo: !stay,
+        hold: 700,
+        yoyo: true,
         onComplete: () => {
-          if (!stay) t.destroy();
+          t.destroy();
           resolve();
         },
       });
@@ -571,8 +580,6 @@ export class BattleScene extends Phaser.Scene {
     this.props = [];
     this.views.clear();
     this.aimTarget = null;
-    this.bannerText?.destroy();
-    this.bannerText = null;
     this.busy = false;
     this.over = false;
 
@@ -740,11 +747,4 @@ export class BattleScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true })
       .on('pointerdown', () => void this.endTurn());
   }
-}
-
-/** Seed from the URL (?seed=123) for repeatable runs, otherwise the default. */
-function seedFromUrl(): number {
-  const raw = new URLSearchParams(window.location.search).get('seed');
-  const n = raw === null ? Number.NaN : Number.parseInt(raw, 10);
-  return Number.isFinite(n) ? n : DEFAULT_SEED;
 }

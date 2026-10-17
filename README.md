@@ -15,6 +15,12 @@ A Soncrant Arcade game: Phaser 4, TypeScript and Vite, with the CC0 Ansimuz art 
 
 Follow `NEW-GAME.md` in [soncsec/games-portal](https://github.com/soncsec/games-portal/blob/main/NEW-GAME.md). In short: create the repo from soncsec/game-template, then run `scripts/init-game.sh <slug> "<Title>" <dev-port>`.
 
+## How to play
+
+Lead four marines against the aliens. Click a marine to select it, then a blue tile to move (each marine has 2 action points; a move costs 1). Click an alien to aim and see the hit chance, then click again or press Enter to fire (a shot uses the rest of the marine's points). Press **E** or click **END TURN** when you're done; the aliens move and shoot back. Esc cancels, N starts a new map.
+
+Add `?seed=123` to the URL to replay the same battle.
+
 ## Development
 
 ```sh
