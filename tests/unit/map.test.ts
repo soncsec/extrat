@@ -4,6 +4,7 @@ import {
   generateForest,
   isWalkable,
   PROPS,
+  spawnZone,
   tileAt,
   validateMap,
   type BattleMap,
@@ -38,7 +39,10 @@ describe('generateForest', () => {
     for (let seed = 1; seed <= 200; seed++) {
       const map = gen(seed);
       for (let y = FOREST.treeLineRows; y < MAP_ROWS; y++) {
-        for (const x of [0, 1, 2, 3, MAP_COLS - 4, MAP_COLS - 3, MAP_COLS - 2, MAP_COLS - 1]) {
+        const [, westEdge] = spawnZone(MAP_COLS, 'west');
+        const [eastEdge] = spawnZone(MAP_COLS, 'east');
+        const zones = [...Array(MAP_COLS).keys()].filter((x) => x <= westEdge || x >= eastEdge);
+        for (const x of zones) {
           const prop = tileAt(map, x, y)?.prop;
           expect(prop === 'pine' || prop === 'oak', `seed ${seed} at ${x},${y}`).toBe(false);
         }
@@ -94,11 +98,27 @@ describe('validateMap', () => {
   });
 
   it('reports a crowded spawn zone', () => {
+    // 8 x 4 map with spawnCols 2: the west zone is columns 1-2, the east zone 5-6.
     const map = empty(8, 4);
-    for (let y = 0; y < 4; y++) map.tiles[y * 8] = { prop: 'bush', anchor: true };
+    const block = (x: number, y: number): void => {
+      map.tiles[y * 8 + x] = { prop: 'bush', anchor: true };
+    };
+    for (const [x, y] of [
+      [1, 0],
+      [2, 0],
+      [1, 1],
+      [2, 1],
+    ] as const)
+      block(x, y);
     expect(validateMap(map, opts)).toEqual(['west spawn zone has only 4 free tiles']);
-    for (let y = 0; y < 4; y++) map.tiles[y * 8 + 7] = { prop: 'bush', anchor: true };
-    map.tiles[1] = { prop: 'rocks', anchor: true };
+    for (const [x, y] of [
+      [5, 0],
+      [6, 0],
+      [5, 1],
+      [6, 1],
+      [1, 2],
+    ] as const)
+      block(x, y);
     expect(validateMap(map, opts)).toEqual([
       'west spawn zone has only 3 free tiles',
       'east spawn zone has only 4 free tiles',

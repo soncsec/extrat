@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { GAME_WIDTH, TILE } from '../../src/config/tuning';
 import type { GameSnapshot } from '../../src/scenes/BattleScene';
 
 /** Records console errors, uncaught exceptions and requests to other hosts. */
@@ -55,6 +56,46 @@ test('N generates a different map', async ({ page }) => {
   await page.keyboard.press('n');
   await expect.poll(async () => (await snapshot(page)).mapSeed).not.toBe(before.mapSeed);
   expect((await snapshot(page)).layout).not.toBe(before.layout);
+});
+
+/** Clicks the middle of map tile (x, y). */
+async function clickTile(page: Page, x: number, y: number): Promise<void> {
+  const box = await page.locator('#game canvas').boundingBox();
+  if (!box) throw new Error('no canvas');
+  const zoom = box.width / GAME_WIDTH;
+  await page.mouse.click(
+    box.x + (x * TILE + TILE / 2) * zoom,
+    box.y + (y * TILE + TILE / 2) * zoom,
+  );
+}
+
+test('clicking a marine selects it and Esc deselects', async ({ page }) => {
+  await openGame(page, '?seed=42');
+  const { units } = await snapshot(page);
+  const marine = units.find((u) => u.side === 'marine');
+  if (!marine) throw new Error('no marine');
+  expect((await snapshot(page)).selected).toBeNull();
+  await clickTile(page, marine.x, marine.y);
+  await expect.poll(async () => (await snapshot(page)).selected).toBe(marine.id);
+  await page.keyboard.press('Escape');
+  await expect.poll(async () => (await snapshot(page)).selected).toBeNull();
+});
+
+test("clicking a marine's head also selects it", async ({ page }) => {
+  await openGame(page, '?seed=42');
+  const marine = (await snapshot(page)).units.find((u) => u.side === 'marine' && u.y > 2);
+  if (!marine) throw new Error('no marine');
+  await clickTile(page, marine.x, marine.y - 1);
+  await expect.poll(async () => (await snapshot(page)).selected).toBe(marine.id);
+});
+
+test('clicking an alien does not select it', async ({ page }) => {
+  await openGame(page, '?seed=42');
+  const alien = (await snapshot(page)).units.find((u) => u.side === 'alien');
+  if (!alien) throw new Error('no alien');
+  await clickTile(page, alien.x, alien.y);
+  await page.waitForTimeout(300);
+  expect((await snapshot(page)).selected).toBeNull();
 });
 
 test('?seed= in the URL sets the random seed', async ({ page }) => {
