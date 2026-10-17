@@ -16,7 +16,7 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "scripts"))
 import smoke_test  # noqa: E402
 
-PAGE = """<!doctype html><html><head><title>Game Template</title>
+PAGE = """<!doctype html><html><head><title>Extrat</title>
 <script type="module" crossorigin src="./assets/index-AbC123xY.js"></script>
 <link rel="stylesheet" crossorigin href="./assets/index-ZzZz9999.css">
 </head><body><div id="game"></div></body></html>"""
@@ -36,7 +36,7 @@ class Site:
     def __init__(self, page=PAGE, release_id="20261017T120000Z-0123abcd", headers=True,
                  files=("assets/index-AbC123xY.js", "assets/index-ZzZz9999.css")):
         self.dir = tempfile.TemporaryDirectory()
-        root = pathlib.Path(self.dir.name) / "game-template"
+        root = pathlib.Path(self.dir.name) / "extrat"
         (root / "assets").mkdir(parents=True)
         (root / "index.html").write_text(page)
         (root / "release.json").write_text(json.dumps({"id": release_id}))
@@ -56,7 +56,7 @@ class Site:
         self.server = http.server.ThreadingHTTPServer(
             ("127.0.0.1", 0), functools.partial(Handler, directory=self.dir.name))
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
-        self.base = f"http://127.0.0.1:{self.server.server_port}/game-template/"
+        self.base = f"http://127.0.0.1:{self.server.server_port}/extrat/"
 
     def close(self):
         self.server.shutdown()
@@ -78,7 +78,7 @@ class SmokeTest(unittest.TestCase):
 
     def test_passes_on_a_good_release(self):
         code, out = self.check(Site(), "--release-id", "20261017T120000Z-0123abcd",
-                               "--title", "Game Template", "--require-headers")
+                               "--title", "Extrat", "--require-headers")
         self.assertEqual(code, 0, out)
         self.assertIn("ok   ./assets/index-AbC123xY.js", out)
 
@@ -105,7 +105,7 @@ class SmokeTest(unittest.TestCase):
         self.assertIn("third-party reference", out)
 
     def test_fails_when_the_page_loads_nothing(self):
-        code, out = self.check(Site(page="<title>Game Template</title>It works!"))
+        code, out = self.check(Site(page="<title>Extrat</title>It works!"))
         self.assertEqual(code, 1)
         self.assertIn("references no scripts", out)
 

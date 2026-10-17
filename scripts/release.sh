@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Release Game Template to production (ADR-009). Run by the owner, or by
+# Release Extrat to production (ADR-009). Run by the owner, or by
 # Claude only with the owner's approval for that release.
 #
 #   scripts/release.sh deploy [--dry-run]   check, build, upload, switch, smoke test
@@ -10,9 +10,9 @@
 # Settings come from deploy/server.env (git-ignored; see deploy/server.env.example).
 set -euo pipefail
 
-SLUG=game-template
+SLUG=extrat
 SITE_HOST=games.soncrant.com
-TITLE="Game Template"
+TITLE="Extrat"
 KEEP=5
 REQUIRED_CHECKS=("Repo checks" "Build and test" "CodeQL analysis" "ZAP baseline scan")
 
