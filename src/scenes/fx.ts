@@ -1,0 +1,98 @@
+import Phaser from 'phaser';
+
+/** Small visual effects used by the battle scene. They don't touch game state. */
+
+const TEXT_STYLE = {
+  fontFamily: 'monospace',
+  fontSize: '10px',
+  fontStyle: 'bold',
+  stroke: '#11141b',
+  strokeThickness: 3,
+} as const;
+
+/** Text that rises and fades out, such as damage numbers or "MISS". */
+export function floatText(
+  scene: Phaser.Scene,
+  x: number,
+  y: number,
+  text: string,
+  color: string,
+  depth: number,
+): void {
+  const t = scene.add
+    .text(x, y, text, { ...TEXT_STYLE, color })
+    .setOrigin(0.5, 1)
+    .setDepth(depth)
+    .setResolution(4);
+  scene.tweens.add({
+    targets: t,
+    y: y - 12,
+    alpha: 0,
+    delay: 350,
+    duration: 600,
+    onComplete: () => t.destroy(),
+  });
+}
+
+/** Flashes a sprite solid white for a moment. */
+export function flash(scene: Phaser.Scene, sprite: Phaser.GameObjects.Sprite): void {
+  sprite.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
+  scene.time.delayedCall(90, () => sprite.clearTint().setTintMode(Phaser.TintModes.MULTIPLY));
+}
+
+/** Plays a registered one-shot animation at a point, then removes it. */
+export function playOnce(
+  scene: Phaser.Scene,
+  key: string,
+  x: number,
+  y: number,
+  depth: number,
+): Phaser.GameObjects.Sprite {
+  const s = scene.add.sprite(x, y, key).setDepth(depth);
+  s.play(key);
+  s.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => s.destroy());
+  return s;
+}
+
+/** Health pips over a unit's head: one per hit point, filled for the ones it has left. */
+export function drawPips(
+  g: Phaser.GameObjects.Graphics,
+  centerX: number,
+  top: number,
+  hp: number,
+  maxHp: number,
+  color: number,
+): void {
+  const pip = 3;
+  const gap = 1;
+  const width = maxHp * pip + (maxHp - 1) * gap;
+  const left = Math.round(centerX - width / 2);
+  g.fillStyle(0x11141b, 1).fillRect(left - 1, top - 1, width + 2, 4);
+  for (let i = 0; i < maxHp; i++) {
+    g.fillStyle(i < hp ? color : 0x3a4152, 1).fillRect(left + i * (pip + gap), top, pip, 2);
+  }
+}
+
+/** Red corner brackets around a target's body. */
+export function drawReticle(
+  g: Phaser.GameObjects.Graphics,
+  centerX: number,
+  bottom: number,
+  height: number,
+): void {
+  const w = 22;
+  const left = Math.round(centerX - w / 2);
+  const top = bottom - height - 2;
+  const right = left + w - 1;
+  const low = bottom + 1;
+  g.fillStyle(0xff5a4a, 1);
+  for (const [x, y, dx, dy] of [
+    [left, top, 1, 1],
+    [right, top, -1, 1],
+    [left, low, 1, -1],
+    [right, low, -1, -1],
+  ] as const) {
+    g.fillRect(Math.min(x, x + dx * 4), y, 5, 1);
+    g.fillRect(x, Math.min(y, y + dy * 4), 1, 5);
+  }
+}

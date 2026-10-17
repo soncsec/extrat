@@ -1,7 +1,7 @@
-import { ACTION_POINTS, SKIRMISH, UNITS } from '../config/tuning';
+import { ACTION_POINTS, SHOOTING, SKIRMISH, UNITS } from '../config/tuning';
 import { findPath, reachable, type Point } from './grid';
 import { isWalkable, spawnZone, tileAt, type BattleMap } from './map';
-import { createRng, type Rng } from './rng';
+import { createRng, rngStep, type Rng } from './rng';
 
 /**
  * Battle state and the actions that change it (ADR-E2).
@@ -33,12 +33,27 @@ export interface BattleState {
   turn: Side;
   /** The marine the player is commanding, if any. */
   selected: string | null;
+  /** Random generator state for every roll in the battle (ADR-006): saved with the battle. */
+  rng: number;
+  /** What the most recent shot did, for the scene to animate. */
+  lastShot: ShotResult | null;
+}
+
+export interface ShotResult {
+  shooterId: string;
+  targetId: string;
+  /** Hit chance in percent when the shot was taken. */
+  chance: number;
+  hit: boolean;
+  damage: number;
+  killed: boolean;
 }
 
 export type Action =
   | { type: 'select'; unitId: string }
   | { type: 'deselect' }
-  | { type: 'move'; unitId: string; to: Point };
+  | { type: 'move'; unitId: string; to: Point }
+  | { type: 'shoot'; unitId: string; targetId: string };
 
 const MARINE_NAMES = ['Vasquez', 'Okafor', 'Lindqvist', 'Moreau', 'Tanaka', 'Reyes'];
 
@@ -70,7 +85,14 @@ export function createBattle(map: BattleMap, seed: number): BattleState {
     ap: ACTION_POINTS,
     move: UNITS.walker.move,
   }));
-  return { map, units: [...marines, ...aliens], turn: 'marine', selected: null };
+  return {
+    map,
+    units: [...marines, ...aliens],
+    turn: 'marine',
+    selected: null,
+    rng: (seed ^ 0x9e3779b9) >>> 0,
+    lastShot: null,
+  };
 }
 
 /** Applies one action. Invalid actions return the same state object, unchanged. */
@@ -99,7 +121,49 @@ export function apply(state: BattleState, action: Action): BattleState {
       const { x, y } = action.to;
       return replaceUnit(state, { ...unit, x, y, facing, ap: unit.ap - 1 });
     }
+    case 'shoot':
+      return shoot(state, action.unitId, action.targetId);
   }
+}
+
+/**
+ * Chance in percent that `shooterId` hits `targetId` with a shot now, or null if
+ * the shot isn't allowed (no action points, out of range, same side, dead...).
+ */
+export function hitChance(state: BattleState, shooterId: string, targetId: string): number | null {
+  const shooter = unitById(state, shooterId);
+  const target = unitById(state, targetId);
+  if (!shooter || !target || shooter.hp <= 0 || target.hp <= 0) return null;
+  if (shooter.side === target.side || shooter.ap <= 0) return null;
+  const stats = UNITS[shooter.kind];
+  const dist = Math.hypot(target.x - shooter.x, target.y - shooter.y);
+  if (dist > stats.range) return null;
+  const penalty = Math.max(0, Math.floor(dist) - SHOOTING.closeRange) * SHOOTING.penaltyPerTile;
+  return Math.min(SHOOTING.maxChance, Math.max(SHOOTING.minChance, stats.aim - penalty));
+}
+
+function shoot(state: BattleState, shooterId: string, targetId: string): BattleState {
+  const shooter = unitById(state, shooterId);
+  const target = unitById(state, targetId);
+  const chance = hitChance(state, shooterId, targetId);
+  if (!shooter || !target || chance === null || shooter.side !== state.turn) return state;
+  const roll = rngStep(state.rng);
+  const hit = roll.value * 100 < chance;
+  let rng = roll.state;
+  let damage = 0;
+  if (hit) {
+    const { min, max } = UNITS[shooter.kind].damage;
+    const dmgRoll = rngStep(rng);
+    rng = dmgRoll.state;
+    damage = min + Math.floor(dmgRoll.value * (max - min + 1));
+  }
+  const hp = Math.max(0, target.hp - damage);
+  const facing = target.x === shooter.x ? shooter.facing : target.x > shooter.x ? 1 : -1;
+  // A shot uses all remaining action points, as in XCOM.
+  let next = replaceUnit(state, { ...shooter, facing, ap: 0 });
+  next = replaceUnit(next, { ...target, hp });
+  const lastShot = { shooterId, targetId, chance, hit, damage, killed: hp === 0 };
+  return { ...next, rng, lastShot };
 }
 
 /** Tiles a unit could move to with one move action, keyed by `y * cols + x`, with step counts. */
