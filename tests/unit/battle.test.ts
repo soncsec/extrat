@@ -9,8 +9,10 @@ import {
 } from '../../src/config/tuning';
 import {
   apply,
+  canAct,
   createBattle,
   hitChance,
+  livingUnits,
   moveRange,
   pathFor,
   unitAt,
@@ -371,5 +373,45 @@ describe('shooting', () => {
   it('refuses to shoot out of turn', () => {
     const s = range(8, { turn: 'alien' });
     expect(apply(s, { type: 'shoot', unitId: 'm', targetId: 'a' })).toBe(s);
+  });
+});
+
+describe('ending the turn', () => {
+  it('hands over to the aliens with full action points and clears the selection', () => {
+    const s = battle(6);
+    const marine = must(s.units.find((u) => u.side === 'marine'));
+    const selected = apply(s, { type: 'select', unitId: marine.id });
+    const tiredAliens = {
+      ...selected,
+      units: selected.units.map((u) => (u.side === 'alien' ? { ...u, ap: 0 } : u)),
+    };
+    const next = apply(tiredAliens, { type: 'endTurn' });
+    expect(next.turn).toBe('alien');
+    expect(next.round).toBe(1);
+    expect(next.selected).toBeNull();
+    for (const a of livingUnits(next, 'alien')) expect(a.ap).toBe(ACTION_POINTS);
+  });
+
+  it('starts a new round when the marines get the turn back, skipping the dead', () => {
+    const s = battle(6);
+    const dead = must(s.units.find((u) => u.side === 'marine'));
+    const spent = {
+      ...s,
+      turn: 'alien' as const,
+      units: s.units.map((u) => ({ ...u, ap: 0, hp: u.id === dead.id ? 0 : u.hp })),
+    };
+    const next = apply(spent, { type: 'endTurn' });
+    expect(next.turn).toBe('marine');
+    expect(next.round).toBe(2);
+    expect(unitById(next, dead.id)?.ap).toBe(0);
+    for (const m of livingUnits(next, 'marine')) expect(m.ap).toBe(ACTION_POINTS);
+  });
+
+  it('knows when a side can still act', () => {
+    const s = battle(6);
+    expect(canAct(s, 'marine')).toBe(true);
+    const spent = { ...s, units: s.units.map((u) => (u.side === 'marine' ? { ...u, ap: 0 } : u)) };
+    expect(canAct(spent, 'marine')).toBe(false);
+    expect(livingUnits(spent, 'marine')).toHaveLength(SKIRMISH.marines);
   });
 });

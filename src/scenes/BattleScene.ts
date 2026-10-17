@@ -12,17 +12,22 @@ import {
 import type { Point } from '../logic/grid';
 import {
   apply,
+  canAct,
   createBattle,
   hitChance,
+  livingUnits,
   moveRange,
   pathFor,
   unitAt,
   unitById,
   type Action,
   type BattleState,
+  type ShotResult,
   type Side,
   type Unit,
+  type UnitKind,
 } from '../logic/battle';
+import { planAlienAction } from '../logic/ai';
 import { generateForest, PROPS } from '../logic/map';
 import { createRng, type Rng } from '../logic/rng';
 import {
@@ -33,7 +38,10 @@ import {
   FOREST_SHEET,
   MARINE_SHEET,
   propFrame,
+  UNIT_ANIMS,
   WALKER_SHEET,
+  WALKER_WALK_SHEET,
+  type AnimName,
   type CharacterSheet,
 } from './art';
 import { drawPips, drawReticle, flash, floatText, playOnce } from './fx';
@@ -61,6 +69,10 @@ export interface GameSnapshot {
   /** The alien the selected marine is aiming at, waiting for the player to confirm. */
   aimTarget: string | null;
   lastShot: BattleState['lastShot'];
+  turn: Side;
+  round: number;
+  /** True once one side has been wiped out. */
+  over: boolean;
 }
 
 /** Draw order: ground, dirt, markers, then everything standing, sorted by its bottom edge. */
@@ -77,7 +89,9 @@ const DEPTH = {
   hud: 1000,
 } as const;
 
-const SHEETS: Record<Unit['kind'], CharacterSheet> = { marine: MARINE_SHEET, walker: WALKER_SHEET };
+/** Each kind's main sheet: its idle pose, height and muzzle. */
+const SHEETS: Record<UnitKind, CharacterSheet> = { marine: MARINE_SHEET, walker: WALKER_SHEET };
+const ALL_SHEETS = [MARINE_SHEET, WALKER_SHEET, WALKER_WALK_SHEET];
 const GHOST_COLOR = { marine: 0x7fd4ff, alien: 0xff6a5a } as const;
 /** A unit counts as hidden when a standing object in front covers this much of its body. */
 const HIDDEN_OVERLAP = 0.3;
@@ -85,6 +99,8 @@ const HIDDEN_OVERLAP = 0.3;
 interface UnitView {
   sprite: Phaser.GameObjects.Sprite;
   ghost: Phaser.GameObjects.Sprite;
+  /** The sheet the current animation comes from (sets the feet position). */
+  sheet: CharacterSheet;
   hidden: boolean;
   /** Health as drawn: it catches up with the state when a shot lands, not when it's fired. */
   shownHp: number;
@@ -109,6 +125,10 @@ export class BattleScene extends Phaser.Scene {
   private aimTarget: string | null = null;
   private mapText!: Phaser.GameObjects.Text;
   private unitText!: Phaser.GameObjects.Text;
+  private bannerText: Phaser.GameObjects.Text | null = null;
+  private endTurnButton!: Phaser.GameObjects.Text;
+  /** Set when one side has been wiped out; only a new map can follow. */
+  private over = false;
 
   constructor() {
     super('Battle');
@@ -116,7 +136,7 @@ export class BattleScene extends Phaser.Scene {
 
   preload(): void {
     this.load.image(FOREST_SHEET.key, FOREST_SHEET.url);
-    for (const s of Object.values(SHEETS)) {
+    for (const s of ALL_SHEETS) {
       this.load.spritesheet(s.key, s.url, { frameWidth: s.frameWidth, frameHeight: s.frameHeight });
     }
     for (const e of Object.values(EFFECTS)) {
@@ -127,7 +147,7 @@ export class BattleScene extends Phaser.Scene {
 
   create(): void {
     addFrames(this.textures, FOREST_SHEET.key, FOREST_SHEET.frames);
-    for (const s of Object.values(SHEETS)) addAnims(this.anims, s);
+    for (const s of ALL_SHEETS) addAnims(this.anims, s);
     for (const e of Object.values(EFFECTS)) {
       if (this.anims.exists(e.key)) continue;
       const frames = this.anims.generateFrameNumbers(e.key, { start: 0, end: e.count - 1 });
@@ -164,14 +184,20 @@ export class BattleScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-ENTER', () => {
       if (this.aimTarget && !this.busy) this.fire(this.aimTarget);
     });
-    this.input.keyboard?.on('keydown-N', () => this.startBattle(this.seeds.int(1, 999_999)));
+    this.input.keyboard?.on('keydown-E', () => void this.endTurn());
+    this.input.keyboard?.on('keydown-N', () => {
+      // Not in the middle of an animation or the alien turn.
+      if (!this.busy || this.over) this.startBattle(this.seeds.int(1, 999_999));
+    });
 
     this.startBattle(this.seed);
   }
 
   override update(): void {
     // Ghosts copy their unit's current animation frame.
-    for (const v of this.views.values()) if (v.hidden) v.ghost.setFrame(v.sprite.frame.name);
+    for (const v of this.views.values()) {
+      if (v.hidden) v.ghost.setTexture(v.sprite.texture.key, v.sprite.frame.name);
+    }
     // Health pips follow their units, including while they run.
     this.pips.clear();
     for (const u of this.state.units) {
@@ -203,6 +229,9 @@ export class BattleScene extends Phaser.Scene {
       busy: this.busy,
       aimTarget: this.aimTarget,
       lastShot: this.state.lastShot,
+      turn: this.state.turn,
+      round: this.state.round,
+      over: this.over,
     };
   }
 
@@ -281,38 +310,238 @@ export class BattleScene extends Phaser.Scene {
     g.lineStyle(1, 0xdff1ff, 1).strokeRect(x * TILE + 1.5, y * TILE + 1.5, TILE - 3, TILE - 3);
   }
 
-  /** Applies a move, then runs the sprite along the path. */
+  /** Player move: apply it, then run the sprite along the path. */
   private moveUnit(unitId: string, to: Point): void {
     const path = pathFor(this.state, unitId, to);
-    const view = this.views.get(unitId);
-    const before = unitById(this.state, unitId);
-    if (!path || !view || !before) return;
-    this.dispatch({ type: 'move', unitId, to });
+    const next = apply(this.state, { type: 'move', unitId, to });
+    if (!path || next === this.state) return;
+    this.state = next;
+    void this.run(() => this.playMove(unitId, path));
+  }
+
+  /** Player shot at the aimed target. */
+  private fire(targetId: string): void {
+    const shooterId = this.state.selected;
+    if (!shooterId) return;
+    const next = apply(this.state, { type: 'shoot', unitId: shooterId, targetId });
+    const shot = next.lastShot;
+    if (next === this.state || !shot) return;
+    this.state = next;
+    this.aimTarget = null;
+    this.drawAim(null);
+    void this.run(() => this.playShot(shot));
+  }
+
+  /** Plays an animation with input locked, then hands control back (or ends the turn). */
+  private async run(animation: () => Promise<void>): Promise<void> {
     this.busy = true;
     this.pathLayer.clear();
     this.drawSelection();
-    view.ghost.setVisible(false);
-    const sheet = SHEETS[before.kind];
-    view.sprite.play(`${sheet.key}-run`);
+    await animation();
+    this.busy = false;
+    this.updateHidden();
+    this.drawSelection();
+    if (livingUnits(this.state, 'alien').length === 0) {
+      // Win and loss screens come in M1.6; until then the battle just stops here.
+      this.over = true;
+      this.busy = true;
+      this.drawSelection();
+      await this.banner('ALIENS ELIMINATED', '#8bf06a', true);
+      return;
+    }
+    // Like XCOM, the turn ends by itself once no marine can do anything.
+    if (this.state.turn === 'marine' && !canAct(this.state, 'marine')) void this.endTurn();
+  }
 
-    const stepMs = 1000 / ANIMATION.runSpeed;
-    const step = (i: number, from: Point): void => {
-      const p = path[i];
-      if (!p) {
-        this.finishMove(unitId);
-        return;
+  /** Ends the marines' turn, plays every alien's actions, then starts the next round. */
+  private async endTurn(): Promise<void> {
+    if (this.busy || this.state.turn !== 'marine') return;
+    this.aimTarget = null;
+    this.drawAim(null);
+    this.state = apply(this.state, { type: 'endTurn' });
+    this.busy = true;
+    this.pathLayer.clear();
+    this.drawSelection();
+    await this.banner('ALIEN ACTIVITY', '#ff6a5a');
+
+    for (const alien of livingUnits(this.state, 'alien')) {
+      // Each action costs at least one point, so this always ends.
+      for (let i = 0; i < ACTION_POINTS; i++) {
+        const action = planAlienAction(this.state, alien.id);
+        if (!action) break;
+        const before = this.state;
+        const next = apply(before, action);
+        if (next === before) break;
+        this.state = next;
+        if (action.type === 'move') {
+          const path = pathFor(before, alien.id, action.to);
+          if (path) await this.playMove(alien.id, path);
+        } else if (action.type === 'shoot' && next.lastShot) {
+          await this.playShot(next.lastShot);
+        }
+        this.updateHidden();
       }
-      if (p.x !== from.x) this.face(view, sheet, p.x > from.x ? 1 : -1);
+    }
+
+    if (livingUnits(this.state, 'marine').length === 0) {
+      // Win and loss screens come in M1.6; until then the battle just stops here.
+      this.over = true;
+      this.drawSelection();
+      await this.banner('SQUAD LOST', '#ff6a5a', true);
+      return;
+    }
+    this.state = apply(this.state, { type: 'endTurn' });
+    await this.banner(`TURN ${this.state.round}`, '#f2a33a');
+    this.busy = false;
+    this.updateHidden();
+    this.drawSelection();
+  }
+
+  /** A large message across the middle of the map. */
+  private banner(text: string, color: string, stay = false): Promise<void> {
+    const t = this.add
+      .text(GAME_WIDTH / 2, (MAP_ROWS * TILE) / 2, text, {
+        fontFamily: 'monospace',
+        fontSize: '18px',
+        fontStyle: 'bold',
+        color,
+        backgroundColor: '#11141bcc',
+        padding: { x: 10, y: 4 },
+      })
+      .setOrigin(0.5)
+      .setDepth(DEPTH.hud)
+      .setResolution(4)
+      .setAlpha(0);
+    this.bannerText = t;
+    return new Promise((resolve) => {
       this.tweens.add({
-        targets: view.sprite,
-        x: p.x * TILE + TILE / 2,
-        y: (p.y + 1) * TILE,
-        duration: stepMs,
-        onUpdate: () => view.sprite.setDepth(DEPTH.standing + view.sprite.y + 0.5),
-        onComplete: () => step(i + 1, p),
+        targets: t,
+        alpha: 1,
+        duration: 200,
+        hold: stay ? 0 : 700,
+        yoyo: !stay,
+        onComplete: () => {
+          if (!stay) t.destroy();
+          resolve();
+        },
       });
+    });
+  }
+
+  /** Runs a unit's sprite along a path. The state must already hold the move. */
+  private playMove(unitId: string, path: Point[]): Promise<void> {
+    const unit = unitById(this.state, unitId);
+    const view = this.views.get(unitId);
+    if (!unit || !view) return Promise.resolve();
+    view.ghost.setVisible(false);
+    this.playAnim(view, unit.kind, 'run', view.sprite.flipX ? -1 : 1);
+    const stepMs = 1000 / ANIMATION.runSpeed;
+    return new Promise((resolve) => {
+      const step = (i: number, from: Point): void => {
+        const p = path[i];
+        if (!p) {
+          this.playAnim(view, unit.kind, 'idle', unit.facing);
+          view.ghost.setPosition(view.sprite.x, view.sprite.y);
+          resolve();
+          return;
+        }
+        if (p.x !== from.x) this.face(view, p.x > from.x ? 1 : -1);
+        this.tweens.add({
+          targets: view.sprite,
+          x: p.x * TILE + TILE / 2,
+          y: (p.y + 1) * TILE,
+          duration: stepMs,
+          onUpdate: () => view.sprite.setDepth(DEPTH.standing + view.sprite.y + 0.5),
+          onComplete: () => step(i + 1, p),
+        });
+      };
+      step(0, { x: Math.floor(view.sprite.x / TILE), y: Math.round(view.sprite.y / TILE) - 1 });
+    });
+  }
+
+  /** Plays a shot that the state already holds: turn, muzzle, bullet, then hit or miss. */
+  private playShot(shot: ShotResult): Promise<void> {
+    const shooter = unitById(this.state, shot.shooterId);
+    const target = unitById(this.state, shot.targetId);
+    const sv = this.views.get(shot.shooterId);
+    const tv = this.views.get(shot.targetId);
+    if (!shooter || !target || !sv || !tv) return Promise.resolve();
+    const sheet = SHEETS[shooter.kind];
+    this.playAnim(sv, shooter.kind, 'shoot', shooter.facing);
+    this.face(sv, shooter.facing);
+
+    const from = {
+      x: sv.sprite.x + shooter.facing * sheet.muzzle.x,
+      y: sv.sprite.y - sheet.muzzle.y,
     };
-    step(0, before);
+    const aimY = tv.sprite.y - SHEETS[target.kind].height / 2;
+    // A miss flies past the target and off to one side.
+    const to = shot.hit
+      ? { x: tv.sprite.x, y: aimY }
+      : { x: tv.sprite.x + shooter.facing * 24, y: aimY + (from.y < aimY ? 14 : -14) };
+    const bullet = this.add
+      .image(from.x, from.y, BULLET.key)
+      .setDepth(DEPTH.fx)
+      .setRotation(Math.atan2(to.y - from.y, to.x - from.x));
+    // Alien shots are green.
+    if (shooter.side === 'alien') bullet.setTint(0x8bf06a);
+    const dist = Math.hypot(to.x - from.x, to.y - from.y);
+    return new Promise((resolve) => {
+      this.tweens.add({
+        targets: bullet,
+        x: to.x,
+        y: to.y,
+        duration: Math.max(120, dist * 2.5),
+        onComplete: () => {
+          bullet.destroy();
+          this.showImpact(shot, tv, target);
+          this.time.delayedCall(650, () => {
+            this.playAnim(sv, shooter.kind, 'idle', shooter.facing);
+            resolve();
+          });
+        },
+      });
+    });
+  }
+
+  private showImpact(shot: ShotResult, tv: UnitView, target: Unit): void {
+    const headY = tv.sprite.y - SHEETS[target.kind].height;
+    tv.shownHp = target.hp;
+    if (!shot.hit) {
+      floatText(this, tv.sprite.x, headY - 6, 'MISS', '#dfe4ec', DEPTH.fx);
+    } else {
+      playOnce(this, EFFECTS.hit.key, tv.sprite.x, tv.sprite.y - 14, DEPTH.fx);
+      flash(this, tv.sprite);
+      floatText(this, tv.sprite.x, headY - 6, `-${shot.damage}`, '#ff6a5a', DEPTH.fx);
+    }
+    if (!shot.killed) return;
+    tv.ghost.setVisible(false);
+    if (target.kind === 'marine') {
+      this.playAnim(tv, target.kind, 'die', target.facing);
+      // The last death frame is drawn a few pixels above the feet line; settle it on the ground.
+      this.tweens.add({ targets: tv.sprite, y: tv.sprite.y + 5, delay: 120, duration: 200 });
+    } else {
+      playOnce(this, EFFECTS.death.key, tv.sprite.x, tv.sprite.y - 16, DEPTH.fx);
+      this.tweens.add({ targets: tv.sprite, alpha: 0, delay: 150, duration: 300 });
+    }
+  }
+
+  /** Plays one of a unit's animations, switching sheets if needed. Missing ones are skipped. */
+  private playAnim(view: UnitView, kind: UnitKind, name: AnimName, facing: 1 | -1): void {
+    const sheet = UNIT_ANIMS[kind][name];
+    if (!sheet) return;
+    view.sheet = sheet;
+    this.face(view, facing);
+    view.sprite.play(`${sheet.key}-${name}`);
+  }
+
+  /** Turns a unit's sprite (and its ghost) to face left or right. */
+  private face(view: UnitView, facing: 1 | -1): void {
+    const flip = facing === -1;
+    const { originX, originY } = view.sheet;
+    for (const s of [view.sprite, view.ghost]) {
+      s.setFlipX(flip).setOrigin(flip ? 1 - originX : originX, originY);
+    }
   }
 
   /** Draws the reticle and hit chance over a target, or clears them for null. */
@@ -332,110 +561,6 @@ export class BattleScene extends Phaser.Scene {
       .setVisible(true);
   }
 
-  /** Fires at the target, then plays the shot: turn, muzzle, bullet, hit or miss. */
-  private fire(targetId: string): void {
-    const shooterId = this.state.selected;
-    if (!shooterId) return;
-    const next = apply(this.state, { type: 'shoot', unitId: shooterId, targetId });
-    const shot = next.lastShot;
-    if (next === this.state || !shot) return;
-    this.state = next;
-    this.aimTarget = null;
-    this.busy = true;
-    this.drawAim(null);
-    this.pathLayer.clear();
-    this.drawSelection();
-
-    const shooter = unitById(next, shooterId);
-    const target = unitById(next, targetId);
-    const sv = this.views.get(shooterId);
-    const tv = this.views.get(targetId);
-    if (!shooter || !target || !sv || !tv) return;
-    const sheet = SHEETS[shooter.kind];
-    this.face(sv, sheet, shooter.facing);
-    sv.sprite.play(`${sheet.key}-shoot`);
-
-    const from = {
-      x: sv.sprite.x + shooter.facing * sheet.muzzle.x,
-      y: sv.sprite.y - sheet.muzzle.y,
-    };
-    const aimY = tv.sprite.y - SHEETS[target.kind].height / 2;
-    // A miss flies past the target and off to one side.
-    const to = shot.hit
-      ? { x: tv.sprite.x, y: aimY }
-      : { x: tv.sprite.x + shooter.facing * 24, y: aimY + (from.y < aimY ? 14 : -14) };
-    const bullet = this.add
-      .image(from.x, from.y, BULLET.key)
-      .setDepth(DEPTH.fx)
-      .setRotation(Math.atan2(to.y - from.y, to.x - from.x));
-    const dist = Math.hypot(to.x - from.x, to.y - from.y);
-    this.tweens.add({
-      targets: bullet,
-      x: to.x,
-      y: to.y,
-      duration: Math.max(120, dist * 2.5),
-      onComplete: () => {
-        bullet.destroy();
-        this.resolveShot(shot, tv, target);
-      },
-    });
-  }
-
-  private resolveShot(
-    shot: NonNullable<BattleState['lastShot']>,
-    tv: UnitView,
-    target: Unit,
-  ): void {
-    const headY = tv.sprite.y - SHEETS[target.kind].height;
-    tv.shownHp = target.hp;
-    if (!shot.hit) {
-      floatText(this, tv.sprite.x, headY - 6, 'MISS', '#dfe4ec', DEPTH.fx);
-    } else {
-      playOnce(this, EFFECTS.hit.key, tv.sprite.x, tv.sprite.y - 14, DEPTH.fx);
-      flash(this, tv.sprite);
-      floatText(this, tv.sprite.x, headY - 6, `-${shot.damage}`, '#ff6a5a', DEPTH.fx);
-    }
-    if (shot.killed) {
-      tv.ghost.setVisible(false);
-      if (target.kind === 'marine') {
-        tv.sprite.play(`${MARINE_SHEET.key}-die`);
-      } else {
-        playOnce(this, EFFECTS.death.key, tv.sprite.x, tv.sprite.y - 16, DEPTH.fx);
-        this.tweens.add({ targets: tv.sprite, alpha: 0, delay: 150, duration: 300 });
-      }
-    }
-    this.time.delayedCall(650, () => {
-      const shooter = unitById(this.state, shot.shooterId);
-      const sv = this.views.get(shot.shooterId);
-      if (shooter && sv) sv.sprite.play(`${SHEETS[shooter.kind].key}-idle`);
-      this.busy = false;
-      this.updateHidden();
-      this.drawSelection();
-    });
-  }
-
-  private finishMove(unitId: string): void {
-    const unit = unitById(this.state, unitId);
-    const view = this.views.get(unitId);
-    if (unit && view) {
-      const sheet = SHEETS[unit.kind];
-      this.face(view, sheet, unit.facing);
-      view.ghost.setPosition(view.sprite.x, view.sprite.y);
-      view.sprite.play(`${sheet.key}-idle`);
-    }
-    this.busy = false;
-    this.updateHidden();
-    this.drawSelection();
-  }
-
-  /** Turns a unit's sprite (and its ghost) to face left or right. */
-  private face(view: UnitView, sheet: CharacterSheet, facing: 1 | -1): void {
-    const flip = facing === -1;
-    for (const s of [view.sprite, view.ghost]) {
-      s.setFlipX(flip).setOrigin(flip ? 1 - sheet.originX : sheet.originX, sheet.originY);
-    }
-  }
-
   private startBattle(seed: number): void {
     for (const o of this.mapObjects) o.destroy();
     for (const v of this.views.values()) {
@@ -446,6 +571,10 @@ export class BattleScene extends Phaser.Scene {
     this.props = [];
     this.views.clear();
     this.aimTarget = null;
+    this.bannerText?.destroy();
+    this.bannerText = null;
+    this.busy = false;
+    this.over = false;
 
     const map = generateForest(seed, MAP_COLS, MAP_ROWS);
     this.state = createBattle(map, map.seed);
@@ -497,7 +626,7 @@ export class BattleScene extends Phaser.Scene {
       .setTint(GHOST_COLOR[u.side])
       .setTintMode(Phaser.TintModes.FILL)
       .setAlpha(0.45);
-    return { sprite, ghost, hidden: false, shownHp: u.hp };
+    return { sprite, ghost, sheet, hidden: false, shownHp: u.hp };
   }
 
   /** Shows a ghost for every unit that a standing object in front of it mostly covers. */
@@ -528,6 +657,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private drawSelection(): void {
+    const playerTurn = this.state.turn === 'marine' && !this.busy && !this.over;
+    this.endTurnButton.setAlpha(playerTurn ? 1 : 0.35);
     const g = this.marker.clear();
     this.rangeLayer.clear();
     const unit = this.state.selected ? unitById(this.state, this.state.selected) : undefined;
@@ -571,7 +702,7 @@ export class BattleScene extends Phaser.Scene {
     }
     const ap = unit.ap > 0 ? `AP ${unit.ap}/${ACTION_POINTS}` : 'NO ACTIONS LEFT';
     const aimed = this.aimTarget ? hitChance(this.state, unit.id, this.aimTarget) : null;
-    const status = aimed === null ? ap : `SHOOT ${aimed}%: click again or Enter to fire`;
+    const status = aimed === null ? ap : `SHOOT ${aimed}%  Enter: fire`;
     this.unitText.setText(
       `PVT ${unit.name.toUpperCase()}   HP ${unit.hp}/${unit.maxHp}   ${status}`,
     );
@@ -591,10 +722,23 @@ export class BattleScene extends Phaser.Scene {
       .setDepth(DEPTH.hud)
       .setResolution(4);
     this.add
-      .text(GAME_WIDTH - 6, y + 18, 'Esc: cancel   N: new map', style)
+      .text(GAME_WIDTH - 6, y + 18, 'E: end turn   Esc: cancel   N: new map', style)
       .setOrigin(1, 0)
       .setDepth(DEPTH.hud)
       .setResolution(4);
+    this.endTurnButton = this.add
+      .text(GAME_WIDTH - 6, y + 4, 'END TURN', {
+        ...style,
+        fontStyle: 'bold',
+        color: '#11141b',
+        backgroundColor: '#f2a33a',
+        padding: { x: 4, y: 1 },
+      })
+      .setOrigin(1, 0)
+      .setDepth(DEPTH.hud)
+      .setResolution(4)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => void this.endTurn());
   }
 }
 
