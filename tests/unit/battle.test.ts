@@ -10,7 +10,9 @@ import {
 import {
   apply,
   canAct,
+  canReload,
   canSee,
+  clipSize,
   coverAgainst,
   createBattle,
   hitChance,
@@ -591,5 +593,69 @@ describe('dashing', () => {
     expect(moveRange(once, 'm').size).toBe(move + 1); // x = 0, and x = 2 to 6
     expect(apply(once, { type: 'move', unitId: 'm', to: { x: 1 + move + 1, y: 0 } })).toBe(once);
     expect(pathFor(corridor(1), 'm', { x: move + 1, y: 0 })).toBeNull();
+  });
+});
+
+describe('ammo and reloading', () => {
+  /** A marine 'm' at (0,0) and a walker 'a' at (4,0) on an open row. */
+  function range(marine: Partial<Unit> = {}, turn: 'marine' | 'alien' = 'marine'): BattleState {
+    const s = createBattle(openMap(['.'.repeat(12)]), 1);
+    const m = must(s.units.find((u) => u.side === 'marine'));
+    const a = must(s.units.find((u) => u.side === 'alien'));
+    return {
+      ...s,
+      turn,
+      units: [
+        { ...m, id: 'm', x: 0, y: 0, ...marine },
+        { ...a, id: 'a', x: 4, y: 0 },
+      ],
+    };
+  }
+
+  it('starts marines with a full clip and walkers with a weapon that never runs dry', () => {
+    const s = battle(2);
+    for (const u of s.units) {
+      expect(u.ammo).toBe(u.side === 'marine' ? UNITS.marine.ammo : null);
+    }
+  });
+
+  it('uses one shot per shot fired, but none for walkers', () => {
+    const shot = apply(range(), { type: 'shoot', unitId: 'm', targetId: 'a' });
+    expect(unitById(shot, 'm')?.ammo).toBe(UNITS.marine.ammo - 1);
+    const s = range({}, 'alien');
+    const alienShot = apply(s, { type: 'shoot', unitId: 'a', targetId: 'm' });
+    expect(alienShot.lastShot).not.toBeNull();
+    expect(unitById(alienShot, 'a')?.ammo).toBeNull();
+  });
+
+  it('cannot shoot with an empty clip', () => {
+    const s = range({ ammo: 0 });
+    expect(shotBlock(s, 'm', 'a')).toBe('ammo');
+    expect(hitChance(s, 'm', 'a')).toBeNull();
+    expect(apply(s, { type: 'shoot', unitId: 'm', targetId: 'a' })).toBe(s);
+  });
+
+  it('reloads to a full clip for one action point', () => {
+    const s = range({ ammo: 0 });
+    expect(canReload(s, 'm')).toBe(true);
+    const next = apply(s, { type: 'reload', unitId: 'm' });
+    expect(unitById(next, 'm')).toMatchObject({ ammo: UNITS.marine.ammo, ap: ACTION_POINTS - 1 });
+    expect(clipSize(must(unitById(next, 'm')))).toBe(UNITS.marine.ammo);
+  });
+
+  it('refuses to reload a full clip, a walker, with no action points, dead, or out of turn', () => {
+    const full = range();
+    expect(apply(full, { type: 'reload', unitId: 'm' })).toBe(full);
+    const empty = range({ ammo: 1 });
+    expect(apply({ ...empty, turn: 'alien' }, { type: 'reload', unitId: 'm' }).units).toBe(
+      empty.units,
+    );
+    const tired = range({ ammo: 1, ap: 0 });
+    expect(apply(tired, { type: 'reload', unitId: 'm' })).toBe(tired);
+    const dead = range({ ammo: 1, hp: 0 });
+    expect(apply(dead, { type: 'reload', unitId: 'm' })).toBe(dead);
+    const walkers = range({}, 'alien');
+    expect(canReload(walkers, 'a')).toBe(false);
+    expect(apply(walkers, { type: 'reload', unitId: 'nobody' })).toBe(walkers);
   });
 });

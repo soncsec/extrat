@@ -256,6 +256,32 @@ test('an alien behind a tree or out of range cannot be aimed at', async ({ page 
   await expect.poll(async () => (await snapshot(page)).aimTarget).toBe(alien.id);
 });
 
+test('R reloads an empty clip for one action point, and does nothing when full', async ({
+  page,
+}) => {
+  await openGame(page, '?seed=42');
+  const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
+  if (!marine) throw new Error('no marine');
+  expect(marine.ammo).toBe(3);
+  await clickTile(page, marine.x, marine.y);
+  await page.keyboard.press('r');
+  await page.waitForTimeout(300);
+  expect((await snapshot(page)).units.find((u) => u.id === marine.id)).toMatchObject({
+    ammo: 3,
+    ap: 2,
+  });
+
+  await page.evaluate((id) => window.__game?.setAmmo(id, 0), marine.id);
+  await page.keyboard.press('r');
+  await expect
+    .poll(async () => {
+      const s = await snapshot(page);
+      const u = s.units.find((v) => v.id === marine.id);
+      return s.busy ? 'reloading' : `${u?.ammo},${u?.ap}`;
+    })
+    .toBe('3,1');
+});
+
 test('E ends the turn; the aliens advance, then round 2 begins', async ({ page }) => {
   await openGame(page, '?seed=42');
   const before = await snapshot(page);
