@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import './style.css';
 import { GAME_HEIGHT, GAME_WIDTH } from './config/tuning';
 import { integerZoom } from './logic/scaling';
-import { GameScene } from './scenes/GameScene';
+import { BattleScene } from './scenes/BattleScene';
 
 const zoomForWindow = (): number =>
   integerZoom(window.innerWidth, window.innerHeight, GAME_WIDTH, GAME_HEIGHT);
@@ -12,7 +12,7 @@ export const game = new Phaser.Game({
   parent: 'game',
   width: GAME_WIDTH,
   height: GAME_HEIGHT,
-  backgroundColor: '#05070f',
+  backgroundColor: '#11141b',
   pixelArt: true,
   roundPixels: true,
   scale: {
@@ -20,7 +20,7 @@ export const game = new Phaser.Game({
     mode: Phaser.Scale.NONE,
     zoom: zoomForWindow(),
   },
-  scene: [GameScene],
+  scene: [BattleScene],
 });
 
 window.addEventListener('resize', () => {
