@@ -32,7 +32,7 @@ test('the game runs under the production Content-Security-Policy', async ({ page
   });
 
   await page.goto('./');
-  await expect.poll(() => page.evaluate(() => window.__game?.scene() ?? null)).toBe('Battle');
+  await expect.poll(() => page.evaluate(() => window.__game?.scene() ?? null)).toBe('Title');
   // The page stylesheet applied: the canvas is centred by the flex container.
   expect(
     await page.evaluate(() => {

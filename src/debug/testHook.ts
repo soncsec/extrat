@@ -9,6 +9,10 @@ import type { BattleScene, GameSnapshot } from '../scenes/BattleScene';
 export interface TestHook {
   /** The key of the scene that is running, or null while loading. */
   scene(): string | null;
+  /** Keys of every running scene (the result screen runs over the battle). */
+  scenes(): string[];
+  /** Sets a unit's health in the battle, to reach the win and loss screens quickly. */
+  setHp(unitId: string, hp: number): void;
   snapshot(): GameSnapshot | null;
 }
 
@@ -21,6 +25,8 @@ declare global {
 export function installTestHook(game: Phaser.Game): void {
   window.__game = {
     scene: () => game.scene.getScenes(true)[0]?.scene.key ?? null,
+    scenes: () => game.scene.getScenes(true).map((s) => s.scene.key),
+    setHp: (unitId, hp) => (game.scene.getScene('Battle') as BattleScene).debugSetHp(unitId, hp),
     snapshot: () => {
       const s = game.scene.getScene('Battle') as BattleScene | null;
       return s && game.scene.isActive('Battle') ? s.snapshot() : null;
