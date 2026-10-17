@@ -44,6 +44,16 @@ export const SKIRMISH = {
 
 /** Unit stats. */
 export const UNITS = {
-  marine: { hp: 4 },
-  walker: { hp: 3 },
+  /** move: tiles per move action. */
+  marine: { hp: 4, move: 5 },
+  walker: { hp: 3, move: 4 },
+} as const;
+
+/** Action points each unit gets at the start of its side's turn. A move costs 1. */
+export const ACTION_POINTS = 2;
+
+/** Presentation speeds. */
+export const ANIMATION = {
+  /** Tiles per second when a unit runs along a path. */
+  runSpeed: 6,
 } as const;
