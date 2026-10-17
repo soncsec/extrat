@@ -42,7 +42,7 @@ A small skirmish on a generated forest map: 4 marines against 2 aliens, from the
 - [x] M1.1 Copy the forest art into `public/assets/` and list it in CREDITS.md; draw a simple generated forest grid (grass, trees, rocks) from a seed
 - [x] M1.2 Copy the marine and alien walker art; battle state in `src/logic/` (ADR-E2); place 4 marines and 2 aliens; click to select a marine, with a selection marker
 - [x] M1.3 Movement: reachable tiles shown (BFS, ADR-E5); click a tile to move along the path with the run animation
-- [ ] M1.4 Shooting: click an alien to see the hit chance, confirm to fire; seeded hit roll, damage, health bars, death animation
+- [x] M1.4 Shooting: click an alien to see the hit chance, confirm to fire; seeded hit roll, damage, health bars, death animation
 - [ ] M1.5 Alien turn: each alien moves toward the nearest marine and shoots when in range; End Turn button and key
 - [ ] M1.6 Title, win and loss screens; Playwright plays a fixed-seed turn through the test hook
 

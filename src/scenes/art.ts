@@ -47,6 +47,8 @@ export interface CharacterSheet {
   originY: number;
   /** Height of the character above its feet, in pixels (for markers over its head). */
   height: number;
+  /** Where shots leave from, relative to the feet, for a sprite facing right. */
+  muzzle: { x: number; y: number };
   /** Animations: first frame index and frame count. */
   anims: Readonly<Record<string, { start: number; count: number; fps: number }>>;
 }
@@ -60,11 +62,12 @@ export const MARINE_SHEET: CharacterSheet = {
   originX: 37.5 / 75,
   originY: 1,
   height: 36,
+  muzzle: { x: 20, y: 22 },
   anims: {
     idle: { start: 0, count: 4, fps: 6 },
     run: { start: 10, count: 10, fps: 14 },
     die: { start: 20, count: 3, fps: 8 },
-    shoot: { start: 40, count: 2, fps: 10 },
+    shoot: { start: 40, count: 2, fps: 12 },
     crouch: { start: 50, count: 3, fps: 6 },
     crouchShoot: { start: 60, count: 2, fps: 10 },
   },
@@ -78,6 +81,7 @@ export const WALKER_SHEET: CharacterSheet = {
   originX: 29.5 / 48,
   originY: 45 / 48,
   height: 30,
+  muzzle: { x: 14, y: 16 },
   anims: { idle: { start: 0, count: 4, fps: 5 } },
 };
 
@@ -90,7 +94,29 @@ export function addAnims(anims: Phaser.Animations.AnimationManager, sheet: Chara
       key,
       frames: anims.generateFrameNumbers(sheet.key, { start: a.start, end: a.start + a.count - 1 }),
       frameRate: a.fps,
-      repeat: name === 'die' ? 0 : -1,
+      repeat: name === 'die' || name === 'shoot' ? 0 : -1,
     });
   }
 }
+
+/** One-shot effects: frames of equal size in a strip. */
+export const EFFECTS = {
+  death: {
+    key: 'fx-death',
+    url: 'assets/fx/enemy-death.png',
+    frameWidth: 48,
+    frameHeight: 48,
+    count: 8,
+    fps: 16,
+  },
+  hit: {
+    key: 'fx-hit',
+    url: 'assets/fx/hit.png',
+    frameWidth: 31,
+    frameHeight: 32,
+    count: 3,
+    fps: 16,
+  },
+} as const;
+
+export const BULLET = { key: 'fx-bullet', url: 'assets/fx/bullet.png' } as const;

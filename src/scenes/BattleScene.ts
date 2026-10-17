@@ -13,6 +13,7 @@ import type { Point } from '../logic/grid';
 import {
   apply,
   createBattle,
+  hitChance,
   moveRange,
   pathFor,
   unitAt,
@@ -27,12 +28,15 @@ import { createRng, type Rng } from '../logic/rng';
 import {
   addAnims,
   addFrames,
+  BULLET,
+  EFFECTS,
   FOREST_SHEET,
   MARINE_SHEET,
   propFrame,
   WALKER_SHEET,
   type CharacterSheet,
 } from './art';
+import { drawPips, drawReticle, flash, floatText, playOnce } from './fx';
 
 /** Read-only view of the game state, used by the e2e test hook. */
 export interface GameSnapshot {
@@ -54,6 +58,9 @@ export interface GameSnapshot {
   reachable: Point[];
   /** True while an animation plays; clicks are ignored. */
   busy: boolean;
+  /** The alien the selected marine is aiming at, waiting for the player to confirm. */
+  aimTarget: string | null;
+  lastShot: BattleState['lastShot'];
 }
 
 /** Draw order: ground, dirt, markers, then everything standing, sorted by its bottom edge. */
@@ -65,6 +72,8 @@ const DEPTH = {
   path: 4,
   standing: 10,
   ghost: 900,
+  overlay: 950,
+  fx: 960,
   hud: 1000,
 } as const;
 
@@ -77,6 +86,8 @@ interface UnitView {
   sprite: Phaser.GameObjects.Sprite;
   ghost: Phaser.GameObjects.Sprite;
   hidden: boolean;
+  /** Health as drawn: it catches up with the state when a shot lands, not when it's fired. */
+  shownHp: number;
 }
 
 export class BattleScene extends Phaser.Scene {
@@ -91,6 +102,11 @@ export class BattleScene extends Phaser.Scene {
   private rangeLayer!: Phaser.GameObjects.Graphics;
   private pathLayer!: Phaser.GameObjects.Graphics;
   private busy = false;
+  private pips!: Phaser.GameObjects.Graphics;
+  private aimLayer!: Phaser.GameObjects.Graphics;
+  private aimText!: Phaser.GameObjects.Text;
+  /** Locked target: the next click on it, or Enter, fires. */
+  private aimTarget: string | null = null;
   private mapText!: Phaser.GameObjects.Text;
   private unitText!: Phaser.GameObjects.Text;
 
@@ -103,24 +119,51 @@ export class BattleScene extends Phaser.Scene {
     for (const s of Object.values(SHEETS)) {
       this.load.spritesheet(s.key, s.url, { frameWidth: s.frameWidth, frameHeight: s.frameHeight });
     }
+    for (const e of Object.values(EFFECTS)) {
+      this.load.spritesheet(e.key, e.url, { frameWidth: e.frameWidth, frameHeight: e.frameHeight });
+    }
+    this.load.image(BULLET.key, BULLET.url);
   }
 
   create(): void {
     addFrames(this.textures, FOREST_SHEET.key, FOREST_SHEET.frames);
     for (const s of Object.values(SHEETS)) addAnims(this.anims, s);
+    for (const e of Object.values(EFFECTS)) {
+      if (this.anims.exists(e.key)) continue;
+      const frames = this.anims.generateFrameNumbers(e.key, { start: 0, end: e.count - 1 });
+      this.anims.create({ key: e.key, frames, frameRate: e.fps, repeat: 0 });
+    }
     this.seed = seedFromUrl();
     this.seeds = createRng(this.seed);
     this.createHud();
     this.marker = this.add.graphics().setDepth(DEPTH.marker);
     this.rangeLayer = this.add.graphics().setDepth(DEPTH.range);
     this.pathLayer = this.add.graphics().setDepth(DEPTH.path);
-    this.chevron = this.add.graphics().setDepth(DEPTH.ghost + 1);
+    this.chevron = this.add.graphics().setDepth(DEPTH.overlay + 1);
+    this.pips = this.add.graphics().setDepth(DEPTH.overlay);
+    this.aimLayer = this.add.graphics().setDepth(DEPTH.overlay + 2);
+    this.aimText = this.add
+      .text(0, 0, '', {
+        fontFamily: 'monospace',
+        fontSize: '10px',
+        fontStyle: 'bold',
+        color: '#f2a33a',
+        backgroundColor: '#11141b',
+        padding: { x: 2, y: 0 },
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(DEPTH.overlay + 3)
+      .setResolution(4)
+      .setVisible(false);
     this.tweens.add({ targets: this.chevron, y: -2, duration: 450, yoyo: true, repeat: -1 });
     this.tweens.add({ targets: this.marker, alpha: 0.45, duration: 450, yoyo: true, repeat: -1 });
 
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => this.onClick(p.worldX, p.worldY));
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.onHover(p.worldX, p.worldY));
-    this.input.keyboard?.on('keydown-ESC', () => this.dispatch({ type: 'deselect' }));
+    this.input.keyboard?.on('keydown-ESC', () => this.onEscape());
+    this.input.keyboard?.on('keydown-ENTER', () => {
+      if (this.aimTarget && !this.busy) this.fire(this.aimTarget);
+    });
     this.input.keyboard?.on('keydown-N', () => this.startBattle(this.seeds.int(1, 999_999)));
 
     this.startBattle(this.seed);
@@ -129,6 +172,15 @@ export class BattleScene extends Phaser.Scene {
   override update(): void {
     // Ghosts copy their unit's current animation frame.
     for (const v of this.views.values()) if (v.hidden) v.ghost.setFrame(v.sprite.frame.name);
+    // Health pips follow their units, including while they run.
+    this.pips.clear();
+    for (const u of this.state.units) {
+      const v = this.views.get(u.id);
+      if (!v || v.shownHp <= 0) continue;
+      const top = v.sprite.y - SHEETS[u.kind].height - 5;
+      const color = u.side === 'marine' ? 0x8bf06a : 0xff6a5a;
+      drawPips(this.pips, v.sprite.x, top, v.shownHp, u.maxHp, color);
+    }
   }
 
   snapshot(): GameSnapshot {
@@ -149,6 +201,8 @@ export class BattleScene extends Phaser.Scene {
       selected,
       reachable: selected ? this.rangeTiles(selected) : [],
       busy: this.busy,
+      aimTarget: this.aimTarget,
+      lastShot: this.state.lastShot,
     };
   }
 
@@ -174,20 +228,52 @@ export class BattleScene extends Phaser.Scene {
     // Characters stand about two tiles tall, so a click on the tile above one also counts.
     const unit = unitAt(this.state, x, y) ?? unitAt(this.state, x, y + 1);
     if (unit?.side === 'marine') {
+      this.aimTarget = null;
       this.dispatch({ type: 'select', unitId: unit.id });
+      this.drawSelection();
+      return;
+    }
+    if (unit?.side === 'alien') {
+      // First click aims, second click on the same alien fires.
+      if (this.aimTarget === unit.id) this.fire(unit.id);
+      else if (this.canShoot(unit.id)) {
+        this.aimTarget = unit.id;
+        this.drawSelection();
+      }
       return;
     }
     const selected = this.state.selected;
-    if (selected && !unitAt(this.state, x, y)) this.moveUnit(selected, { x, y });
+    if (selected && !unitAt(this.state, x, y)) {
+      this.aimTarget = null;
+      this.moveUnit(selected, { x, y });
+    }
   }
 
-  /** Previews the path to the tile under the pointer. */
+  private onEscape(): void {
+    if (this.busy) return;
+    if (this.aimTarget) this.aimTarget = null;
+    else this.dispatch({ type: 'deselect' });
+    this.drawSelection();
+  }
+
+  /** True if the selected marine could shoot this unit now. */
+  private canShoot(targetId: string): boolean {
+    const id = this.state.selected;
+    return id !== null && hitChance(this.state, id, targetId) !== null;
+  }
+
+  /** Previews the path to the tile under the pointer, or the shot at the alien under it. */
   private onHover(px: number, py: number): void {
     const g = this.pathLayer.clear();
     const id = this.state.selected;
     if (!id || this.busy) return;
     const x = Math.floor(px / TILE);
     const y = Math.floor(py / TILE);
+    if (!this.aimTarget) {
+      const alien = unitAt(this.state, x, y) ?? unitAt(this.state, x, y + 1);
+      this.drawAim(alien?.side === 'alien' && this.canShoot(alien.id) ? alien.id : null);
+      if (alien?.side === 'alien') return;
+    }
     const path = y < MAP_ROWS ? pathFor(this.state, id, { x, y }) : null;
     if (!path) return;
     g.fillStyle(0xdff1ff, 0.9);
@@ -229,6 +315,105 @@ export class BattleScene extends Phaser.Scene {
     step(0, before);
   }
 
+  /** Draws the reticle and hit chance over a target, or clears them for null. */
+  private drawAim(targetId: string | null): void {
+    this.aimLayer.clear();
+    this.aimText.setVisible(false);
+    const shooter = this.state.selected;
+    const target = targetId ? unitById(this.state, targetId) : undefined;
+    const view = targetId ? this.views.get(targetId) : undefined;
+    const chance = shooter && targetId ? hitChance(this.state, shooter, targetId) : null;
+    if (!target || !view || chance === null) return;
+    const height = SHEETS[target.kind].height;
+    drawReticle(this.aimLayer, view.sprite.x, view.sprite.y, height);
+    this.aimText
+      .setText(`${chance}%`)
+      .setPosition(view.sprite.x, view.sprite.y - height - 8)
+      .setVisible(true);
+  }
+
+  /** Fires at the target, then plays the shot: turn, muzzle, bullet, hit or miss. */
+  private fire(targetId: string): void {
+    const shooterId = this.state.selected;
+    if (!shooterId) return;
+    const next = apply(this.state, { type: 'shoot', unitId: shooterId, targetId });
+    const shot = next.lastShot;
+    if (next === this.state || !shot) return;
+    this.state = next;
+    this.aimTarget = null;
+    this.busy = true;
+    this.drawAim(null);
+    this.pathLayer.clear();
+    this.drawSelection();
+
+    const shooter = unitById(next, shooterId);
+    const target = unitById(next, targetId);
+    const sv = this.views.get(shooterId);
+    const tv = this.views.get(targetId);
+    if (!shooter || !target || !sv || !tv) return;
+    const sheet = SHEETS[shooter.kind];
+    this.face(sv, sheet, shooter.facing);
+    sv.sprite.play(`${sheet.key}-shoot`);
+
+    const from = {
+      x: sv.sprite.x + shooter.facing * sheet.muzzle.x,
+      y: sv.sprite.y - sheet.muzzle.y,
+    };
+    const aimY = tv.sprite.y - SHEETS[target.kind].height / 2;
+    // A miss flies past the target and off to one side.
+    const to = shot.hit
+      ? { x: tv.sprite.x, y: aimY }
+      : { x: tv.sprite.x + shooter.facing * 24, y: aimY + (from.y < aimY ? 14 : -14) };
+    const bullet = this.add
+      .image(from.x, from.y, BULLET.key)
+      .setDepth(DEPTH.fx)
+      .setRotation(Math.atan2(to.y - from.y, to.x - from.x));
+    const dist = Math.hypot(to.x - from.x, to.y - from.y);
+    this.tweens.add({
+      targets: bullet,
+      x: to.x,
+      y: to.y,
+      duration: Math.max(120, dist * 2.5),
+      onComplete: () => {
+        bullet.destroy();
+        this.resolveShot(shot, tv, target);
+      },
+    });
+  }
+
+  private resolveShot(
+    shot: NonNullable<BattleState['lastShot']>,
+    tv: UnitView,
+    target: Unit,
+  ): void {
+    const headY = tv.sprite.y - SHEETS[target.kind].height;
+    tv.shownHp = target.hp;
+    if (!shot.hit) {
+      floatText(this, tv.sprite.x, headY - 6, 'MISS', '#dfe4ec', DEPTH.fx);
+    } else {
+      playOnce(this, EFFECTS.hit.key, tv.sprite.x, tv.sprite.y - 14, DEPTH.fx);
+      flash(this, tv.sprite);
+      floatText(this, tv.sprite.x, headY - 6, `-${shot.damage}`, '#ff6a5a', DEPTH.fx);
+    }
+    if (shot.killed) {
+      tv.ghost.setVisible(false);
+      if (target.kind === 'marine') {
+        tv.sprite.play(`${MARINE_SHEET.key}-die`);
+      } else {
+        playOnce(this, EFFECTS.death.key, tv.sprite.x, tv.sprite.y - 16, DEPTH.fx);
+        this.tweens.add({ targets: tv.sprite, alpha: 0, delay: 150, duration: 300 });
+      }
+    }
+    this.time.delayedCall(650, () => {
+      const shooter = unitById(this.state, shot.shooterId);
+      const sv = this.views.get(shot.shooterId);
+      if (shooter && sv) sv.sprite.play(`${SHEETS[shooter.kind].key}-idle`);
+      this.busy = false;
+      this.updateHidden();
+      this.drawSelection();
+    });
+  }
+
   private finishMove(unitId: string): void {
     const unit = unitById(this.state, unitId);
     const view = this.views.get(unitId);
@@ -260,6 +445,7 @@ export class BattleScene extends Phaser.Scene {
     this.mapObjects = [];
     this.props = [];
     this.views.clear();
+    this.aimTarget = null;
 
     const map = generateForest(seed, MAP_COLS, MAP_ROWS);
     this.state = createBattle(map, map.seed);
@@ -311,7 +497,7 @@ export class BattleScene extends Phaser.Scene {
       .setTint(GHOST_COLOR[u.side])
       .setTintMode(Phaser.TintModes.FILL)
       .setAlpha(0.45);
-    return { sprite, ghost, hidden: false };
+    return { sprite, ghost, hidden: false, shownHp: u.hp };
   }
 
   /** Shows a ghost for every unit that a standing object in front of it mostly covers. */
@@ -319,6 +505,11 @@ export class BattleScene extends Phaser.Scene {
     for (const u of this.state.units) {
       const v = this.views.get(u.id);
       if (!v) continue;
+      if (u.hp <= 0) {
+        v.hidden = false;
+        v.ghost.setVisible(false);
+        continue;
+      }
       // The body: one tile wide, two tiles tall, standing on the unit's tile.
       const body = new Phaser.Geom.Rectangle(
         u.x * TILE + 3,
@@ -340,9 +531,14 @@ export class BattleScene extends Phaser.Scene {
     const g = this.marker.clear();
     this.rangeLayer.clear();
     const unit = this.state.selected ? unitById(this.state, this.state.selected) : undefined;
+    if (this.aimTarget && !this.canShoot(this.aimTarget)) this.aimTarget = null;
+    this.drawAim(this.aimTarget);
     if (!unit || this.busy) {
       this.chevron.clear();
-      if (this.busy) return;
+      if (this.busy) {
+        this.unitText.setText(unit ? `PVT ${unit.name.toUpperCase()}` : '');
+        return;
+      }
       this.unitText.setText('Click a marine to select it');
       return;
     }
@@ -360,7 +556,7 @@ export class BattleScene extends Phaser.Scene {
       g.fillRect(cx, Math.min(cy, cy + dy * 3), 1, 4);
     }
     // The body hides the tile marker, so a chevron also floats over the head.
-    const top = (unit.y + 1) * TILE - SHEETS[unit.kind].height - 3;
+    const top = (unit.y + 1) * TILE - SHEETS[unit.kind].height - 8;
     const cx = x + TILE / 2;
     this.chevron
       .clear()
@@ -374,7 +570,11 @@ export class BattleScene extends Phaser.Scene {
         .fillRect(t.x * TILE + 1, t.y * TILE + 1, TILE - 2, TILE - 2);
     }
     const ap = unit.ap > 0 ? `AP ${unit.ap}/${ACTION_POINTS}` : 'NO ACTIONS LEFT';
-    this.unitText.setText(`PVT ${unit.name.toUpperCase()}   HP ${unit.hp}/${unit.maxHp}   ${ap}`);
+    const aimed = this.aimTarget ? hitChance(this.state, unit.id, this.aimTarget) : null;
+    const status = aimed === null ? ap : `SHOOT ${aimed}%: click again or Enter to fire`;
+    this.unitText.setText(
+      `PVT ${unit.name.toUpperCase()}   HP ${unit.hp}/${unit.maxHp}   ${status}`,
+    );
   }
 
   private createHud(): void {
@@ -391,7 +591,7 @@ export class BattleScene extends Phaser.Scene {
       .setDepth(DEPTH.hud)
       .setResolution(4);
     this.add
-      .text(GAME_WIDTH - 6, y + 18, 'Esc: deselect   N: new map', style)
+      .text(GAME_WIDTH - 6, y + 18, 'Esc: cancel   N: new map', style)
       .setOrigin(1, 0)
       .setDepth(DEPTH.hud)
       .setResolution(4);

@@ -44,9 +44,22 @@ export const SKIRMISH = {
 
 /** Unit stats. */
 export const UNITS = {
-  /** move: tiles per move action. */
-  marine: { hp: 4, move: 5 },
-  walker: { hp: 3, move: 4 },
+  /**
+   * move: tiles per move action. aim: base hit chance in percent.
+   * damage: inclusive range per hit. range: farthest shot in tiles.
+   */
+  marine: { hp: 4, move: 5, aim: 70, damage: { min: 2, max: 3 }, range: 16 },
+  walker: { hp: 3, move: 4, aim: 60, damage: { min: 1, max: 2 }, range: 6 },
+} as const;
+
+/** Hit chance rules (M1; cover and flanking come in M2). */
+export const SHOOTING = {
+  /** Shots up to this distance (tiles) get no distance penalty. */
+  closeRange: 5,
+  /** Percent lost per tile beyond closeRange. */
+  penaltyPerTile: 3,
+  minChance: 10,
+  maxChance: 95,
 } as const;
 
 /** Action points each unit gets at the start of its side's turn. A move costs 1. */

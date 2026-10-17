@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { ACTION_POINTS, MAP_COLS, MAP_ROWS, SKIRMISH, UNITS } from '../../src/config/tuning';
+import {
+  ACTION_POINTS,
+  MAP_COLS,
+  MAP_ROWS,
+  SHOOTING,
+  SKIRMISH,
+  UNITS,
+} from '../../src/config/tuning';
 import {
   apply,
   createBattle,
+  hitChance,
   moveRange,
   pathFor,
   unitAt,
@@ -258,5 +266,110 @@ describe('moving', () => {
     const tired = { ...s, units: s.units.map((u) => (u.id === m ? { ...u, ap: 0 } : u)) };
     expect(moveRange(tired, m).size).toBe(0);
     expect(pathFor(tired, m, { x: 3, y: 1 })).toBeNull();
+  });
+});
+
+describe('shooting', () => {
+  /** A 24 x 3 open field: marine at (2,1) facing west, alien at `alienX`. */
+  function range(alienX: number, overrides: Partial<BattleState> = {}): BattleState {
+    const s = createBattle(openMap(Array(3).fill('.'.repeat(24))), 1);
+    const marine = must(s.units.find((u) => u.side === 'marine'));
+    const alien = must(s.units.find((u) => u.side === 'alien'));
+    return {
+      ...s,
+      units: [
+        { ...marine, id: 'm', x: 2, y: 1, facing: -1 },
+        { ...alien, id: 'a', x: alienX, y: 1 },
+      ],
+      ...overrides,
+    };
+  }
+
+  it('gives full aim at close range and loses some per tile beyond it', () => {
+    expect(hitChance(range(2 + SHOOTING.closeRange), 'm', 'a')).toBe(UNITS.marine.aim);
+    const far = 2 + SHOOTING.closeRange + 4;
+    expect(hitChance(range(far), 'm', 'a')).toBe(UNITS.marine.aim - 4 * SHOOTING.penaltyPerTile);
+  });
+
+  it('refuses shots out of range, at allies, at or by the dead, or with no action points', () => {
+    expect(hitChance(range(2 + UNITS.marine.range + 1), 'm', 'a')).toBeNull();
+    const s = range(6);
+    const ally = { ...s, units: [...s.units, { ...must(s.units[0]), id: 'm2', x: 3 }] };
+    expect(hitChance(ally, 'm', 'm2')).toBeNull();
+    const deadTarget = { ...s, units: s.units.map((u) => (u.id === 'a' ? { ...u, hp: 0 } : u)) };
+    expect(hitChance(deadTarget, 'm', 'a')).toBeNull();
+    const tired = { ...s, units: s.units.map((u) => (u.id === 'm' ? { ...u, ap: 0 } : u)) };
+    expect(hitChance(tired, 'm', 'a')).toBeNull();
+    expect(hitChance(s, 'm', 'nobody')).toBeNull();
+  });
+
+  it('keeps the hit chance between the minimum and maximum', () => {
+    const s = range(6);
+    const sharp = {
+      ...s,
+      units: s.units.map((u) => (u.id === 'm' ? { ...u, kind: 'walker' as const } : u)),
+    };
+    // A walker shooting at a marine from the edge of its range still has at least minChance.
+    expect(hitChance(sharp, 'm', 'a')).toBeGreaterThanOrEqual(SHOOTING.minChance);
+    expect(hitChance(range(3), 'm', 'a')).toBeLessThanOrEqual(SHOOTING.maxChance);
+  });
+
+  it('uses all action points, turns toward the target and records the shot', () => {
+    const s = range(2 + SHOOTING.closeRange);
+    const next = apply(s, { type: 'shoot', unitId: 'm', targetId: 'a' });
+    expect(unitById(next, 'm')).toMatchObject({ ap: 0, facing: 1 });
+    expect(next.lastShot).toMatchObject({
+      shooterId: 'm',
+      targetId: 'a',
+      chance: UNITS.marine.aim,
+    });
+    expect(next.rng).not.toBe(s.rng);
+  });
+
+  it('deals damage in range on a hit and none on a miss', () => {
+    let hits = 0;
+    let misses = 0;
+    for (let rng = 1; rng <= 200; rng++) {
+      const next = apply(range(8, { rng }), { type: 'shoot', unitId: 'm', targetId: 'a' });
+      const shot = must(next.lastShot ?? undefined);
+      const hp = must(unitById(next, 'a')).hp;
+      if (shot.hit) {
+        hits++;
+        expect(shot.damage).toBeGreaterThanOrEqual(UNITS.marine.damage.min);
+        expect(shot.damage).toBeLessThanOrEqual(UNITS.marine.damage.max);
+        expect(hp).toBe(Math.max(0, UNITS.walker.hp - shot.damage));
+        expect(shot.killed).toBe(hp === 0);
+      } else {
+        misses++;
+        expect(shot.damage).toBe(0);
+        expect(hp).toBe(UNITS.walker.hp);
+      }
+    }
+    // About 70% should hit at this range.
+    expect(hits).toBeGreaterThan(120);
+    expect(misses).toBeGreaterThan(30);
+  });
+
+  it('gives the same result for the same random state', () => {
+    const a = apply(range(9, { rng: 77 }), { type: 'shoot', unitId: 'm', targetId: 'a' });
+    const b = apply(range(9, { rng: 77 }), { type: 'shoot', unitId: 'm', targetId: 'a' });
+    expect(a).toEqual(b);
+  });
+
+  it('leaves a killed alien out of the fight', () => {
+    // Find a random state that kills: a hit for the walker's full health.
+    for (let rng = 1; rng <= 500; rng++) {
+      const next = apply(range(4, { rng }), { type: 'shoot', unitId: 'm', targetId: 'a' });
+      if (!next.lastShot?.killed) continue;
+      expect(unitById(next, 'a')?.hp).toBe(0);
+      expect(unitAt(next, 4, 1)).toBeUndefined();
+      return;
+    }
+    throw new Error('no killing shot in 500 random states');
+  });
+
+  it('refuses to shoot out of turn', () => {
+    const s = range(8, { turn: 'alien' });
+    expect(apply(s, { type: 'shoot', unitId: 'm', targetId: 'a' })).toBe(s);
   });
 });

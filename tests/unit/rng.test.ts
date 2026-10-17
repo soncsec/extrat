@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createRng } from '../../src/logic/rng';
+import { createRng, rngStep } from '../../src/logic/rng';
 
 describe('createRng', () => {
   it('replays the same sequence for the same seed', () => {
@@ -53,5 +53,17 @@ describe('createRng', () => {
     expect(() => rng.int(0.5, 2)).toThrow(RangeError);
     expect(() => rng.range(2, 1)).toThrow(RangeError);
     expect(() => rng.pick([])).toThrow(RangeError);
+  });
+});
+
+describe('rngStep', () => {
+  it('matches createRng step for step', () => {
+    const rng = createRng(99);
+    let state = 99;
+    for (let i = 0; i < 20; i++) {
+      const step = rngStep(state);
+      expect(step.value).toBe(rng.next());
+      state = step.state;
+    }
   });
 });

@@ -127,6 +127,65 @@ test('clicking a tile out of range does not move the marine', async ({ page }) =
   expect(after).toMatchObject({ x: marine.x, y: marine.y, ap: marine.ap });
 });
 
+test('a marine aims at an alien, fires, and the shot is resolved', async ({ page }) => {
+  await openGame(page, '?seed=42');
+  const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
+  if (!marine) throw new Error('no marine');
+  // Move east first so an alien is in range.
+  await clickTile(page, marine.x, marine.y);
+  const target = (await snapshot(page)).reachable.reduce((a, b) => (b.x > a.x ? b : a));
+  await clickTile(page, target.x, target.y);
+  await expect.poll(async () => (await snapshot(page)).busy).toBe(false);
+  const s = await snapshot(page);
+  const me = s.units.find((u) => u.id === marine.id);
+  if (!me) throw new Error('marine vanished');
+  const alien = s.units
+    .filter((u) => u.side === 'alien')
+    .sort((a, b) => Math.hypot(a.x - me.x, a.y - me.y) - Math.hypot(b.x - me.x, b.y - me.y))[0];
+  if (!alien) throw new Error('no alien');
+
+  await clickTile(page, alien.x, alien.y);
+  await expect.poll(async () => (await snapshot(page)).aimTarget).toBe(alien.id);
+  expect((await snapshot(page)).lastShot).toBeNull();
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await snapshot(page)).lastShot?.targetId).toBe(alien.id);
+  await expect.poll(async () => (await snapshot(page)).busy).toBe(false);
+
+  const after = await snapshot(page);
+  const shot = after.lastShot;
+  if (!shot) throw new Error('no shot');
+  expect(after.units.find((u) => u.id === marine.id)?.ap).toBe(0);
+  expect(after.units.find((u) => u.id === alien.id)?.hp).toBe(Math.max(0, alien.hp - shot.damage));
+  expect(after.aimTarget).toBeNull();
+});
+
+test('Esc cancels aiming before the shot', async ({ page }) => {
+  await openGame(page, '?seed=42');
+  const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
+  if (!marine) throw new Error('no marine');
+  await clickTile(page, marine.x, marine.y);
+  const target = (await snapshot(page)).reachable.reduce((a, b) => (b.x > a.x ? b : a));
+  await clickTile(page, target.x, target.y);
+  await expect.poll(async () => (await snapshot(page)).busy).toBe(false);
+  const s = await snapshot(page);
+  const me = s.units.find((u) => u.id === marine.id);
+  const alien = s.units
+    .filter((u) => u.side === 'alien')
+    .sort(
+      (a, b) =>
+        Math.hypot(a.x - (me?.x ?? 0), a.y - (me?.y ?? 0)) -
+        Math.hypot(b.x - (me?.x ?? 0), b.y - (me?.y ?? 0)),
+    )[0];
+  if (!alien) throw new Error('no alien');
+  await clickTile(page, alien.x, alien.y);
+  await expect.poll(async () => (await snapshot(page)).aimTarget).toBe(alien.id);
+  await page.keyboard.press('Escape');
+  await expect.poll(async () => (await snapshot(page)).aimTarget).toBeNull();
+  const after = await snapshot(page);
+  expect(after.selected).toBe(marine.id);
+  expect(after.lastShot).toBeNull();
+});
+
 test('?seed= in the URL sets the random seed', async ({ page }) => {
   await openGame(page, '?seed=42');
   expect((await snapshot(page)).seed).toBe(42);
