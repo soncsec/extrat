@@ -18,6 +18,7 @@ import {
   moveRange,
   pathFor,
   shotBlock,
+  shotOdds,
   unitAt,
   unitById,
   type BattleState,
@@ -342,12 +343,15 @@ describe('shooting', () => {
       const hp = must(unitById(next, 'a')).hp;
       if (shot.hit) {
         hits++;
-        expect(shot.damage).toBeGreaterThanOrEqual(UNITS.marine.damage.min);
-        expect(shot.damage).toBeLessThanOrEqual(UNITS.marine.damage.max);
+        // A critical hit adds SHOOTING.critDamage on top of the normal range.
+        const bonus = shot.crit ? SHOOTING.critDamage : 0;
+        expect(shot.damage).toBeGreaterThanOrEqual(UNITS.marine.damage.min + bonus);
+        expect(shot.damage).toBeLessThanOrEqual(UNITS.marine.damage.max + bonus);
         expect(hp).toBe(Math.max(0, UNITS.walker.hp - shot.damage));
         expect(shot.killed).toBe(hp === 0);
       } else {
         misses++;
+        expect(shot.crit).toBe(false);
         expect(shot.damage).toBe(0);
         expect(hp).toBe(UNITS.walker.hp);
       }
@@ -487,5 +491,65 @@ describe('cover and line of sight', () => {
     const s = field(rows, { x: 3, y: 6 }, { x: 6, y: 2 });
     expect(shotBlock(s, 'm', 'a')).toBeNull();
     expect(hitChance(s, 'm', 'a')).toBe(UNITS.marine.aim - SHOOTING.cover.full);
+  });
+});
+
+describe('shot odds, flanking and crits', () => {
+  /** Marine 'm' and alien 'a' on a one-row map drawn as a picture. */
+  function row(picture: string, mx: number, ax: number, rng = 1): BattleState {
+    const s = createBattle(openMap(['.'.repeat(picture.length)]), 1);
+    const marine = must(s.units.find((u) => u.side === 'marine'));
+    const alien = must(s.units.find((u) => u.side === 'alien'));
+    return {
+      ...s,
+      rng,
+      map: openMap([picture]),
+      units: [
+        { ...marine, id: 'm', x: mx, y: 0 },
+        { ...alien, id: 'a', x: ax, y: 0 },
+      ],
+    };
+  }
+
+  it('breaks the hit chance into aim, range and cover', () => {
+    // 9 tiles apart (4 beyond close range), bush in front of the alien.
+    const odds = shotOdds(row('........b..', 0, 9), 'm', 'a');
+    expect(odds).toEqual({
+      aim: UNITS.marine.aim,
+      range: -4 * SHOOTING.penaltyPerTile,
+      cover: 'half',
+      coverPenalty: SHOOTING.cover.half,
+      flanked: false,
+      hit: UNITS.marine.aim - 4 * SHOOTING.penaltyPerTile - SHOOTING.cover.half,
+      crit: UNITS.marine.crit,
+    });
+  });
+
+  it('counts a target with no cover facing the shooter as flanked, with extra crit chance', () => {
+    // The bush is behind the alien, so it doesn't count.
+    const odds = must(shotOdds(row('......b', 0, 5), 'm', 'a') ?? undefined);
+    expect(odds.flanked).toBe(true);
+    expect(odds.cover).toBeNull();
+    expect(odds.crit).toBe(UNITS.marine.crit + SHOOTING.flankCrit);
+    expect(shotOdds(row('......#', 0, 20), 'm', 'a')).toBeNull(); // out of range
+  });
+
+  it('crits about as often as the odds say, and only on hits', () => {
+    let flankedCrits = 0;
+    let coveredCrits = 0;
+    let flankedHits = 0;
+    let coveredHits = 0;
+    for (let rng = 1; rng <= 400; rng++) {
+      const open = apply(row('.......', 0, 4, rng), { type: 'shoot', unitId: 'm', targetId: 'a' });
+      const cover = apply(row('...b...', 0, 4, rng), { type: 'shoot', unitId: 'm', targetId: 'a' });
+      if (open.lastShot?.hit) flankedHits++;
+      if (open.lastShot?.crit) flankedCrits++;
+      if (cover.lastShot?.hit) coveredHits++;
+      if (cover.lastShot?.crit) coveredCrits++;
+    }
+    // Flanked: 50% of hits should crit; in cover: 10%.
+    expect(flankedCrits / flankedHits).toBeGreaterThan(0.38);
+    expect(flankedCrits / flankedHits).toBeLessThan(0.62);
+    expect(coveredCrits / coveredHits).toBeLessThan(0.2);
   });
 });

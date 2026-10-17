@@ -36,6 +36,7 @@ export function planAlienAction(state: BattleState, alienId: string): Action | n
   const range = UNITS[alien.kind].range;
   const dist = (p: Point, q: Point): number => Math.hypot(q.x - p.x, q.y - p.y);
   const COVER_SCORE = { full: 20, half: 10 } as const;
+  const FLANK_SCORE = 5;
   // A tile with a clear shot beats one without; then cover facing the nearest marine;
   // then fewer steps. Without a shot, closer is better.
   const score = (p: Point, steps: number): number => {
@@ -43,7 +44,12 @@ export function planAlienAction(state: BattleState, alienId: string): Action | n
     const shot = marines.some((m) => dist(p, m) <= range && canSee(state.map, p, m));
     if (!shot) return -dist(p, nearest);
     const cover = coverAgainst(state.map, p, nearest);
-    return 100 + (cover ? COVER_SCORE[cover] : 0) - steps * 0.1;
+    // A bonus for a tile that flanks a marine it can shoot: crits are likelier.
+    const flanks = marines.some(
+      (m) =>
+        dist(p, m) <= range && canSee(state.map, p, m) && coverAgainst(state.map, m, p) === null,
+    );
+    return 100 + (cover ? COVER_SCORE[cover] : 0) + (flanks ? FLANK_SCORE : 0) - steps * 0.1;
   };
 
   const cols = state.map.cols;

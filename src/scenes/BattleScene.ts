@@ -20,10 +20,12 @@ import {
   moveRange,
   pathFor,
   shotBlock,
+  shotOdds,
   unitAt,
   unitById,
   type Action,
   type BattleState,
+  type ShotOdds,
   type ShotResult,
   type Side,
   type Unit,
@@ -71,6 +73,8 @@ export interface GameSnapshot {
   busy: boolean;
   /** The alien the selected marine is aiming at, waiting for the player to confirm. */
   aimTarget: string | null;
+  /** The odds of that shot, as the breakdown panel shows them. */
+  aimOdds: ShotOdds | null;
   lastShot: BattleState['lastShot'];
   turn: Side;
   round: number;
@@ -127,6 +131,8 @@ export class BattleScene extends Phaser.Scene {
   private pips!: Phaser.GameObjects.Graphics;
   private aimLayer!: Phaser.GameObjects.Graphics;
   private aimText!: Phaser.GameObjects.Text;
+  /** The hit-chance breakdown shown while aiming. */
+  private oddsPanel!: Phaser.GameObjects.Text;
   /** Locked target: the next click on it, or Enter, fires. */
   private aimTarget: string | null = null;
   private mapText!: Phaser.GameObjects.Text;
@@ -161,6 +167,21 @@ export class BattleScene extends Phaser.Scene {
       })
       .setOrigin(0.5, 1)
       .setDepth(DEPTH.overlay + 3)
+      .setResolution(4)
+      .setVisible(false);
+    // Thin strokes like '-' can fall between the pixels sampled when small text is
+    // scaled down pixel-sharp; an outline in the text's own colour thickens them.
+    this.oddsPanel = this.add
+      .text(0, 0, '', {
+        fontFamily: 'monospace',
+        fontSize: '9px',
+        color: '#dfe4ec',
+        stroke: '#dfe4ec',
+        strokeThickness: 1,
+        backgroundColor: '#11141b',
+        padding: { x: 4, y: 3 },
+      })
+      .setDepth(DEPTH.hud)
       .setResolution(4)
       .setVisible(false);
     this.tweens.add({ targets: this.chevron, y: -2, duration: 450, yoyo: true, repeat: -1 });
@@ -238,6 +259,7 @@ export class BattleScene extends Phaser.Scene {
         : [],
       busy: this.busy,
       aimTarget: this.aimTarget,
+      aimOdds: this.aimTarget && selected ? shotOdds(this.state, selected, this.aimTarget) : null,
       lastShot: this.state.lastShot,
       turn: this.state.turn,
       round: this.state.round,
@@ -567,7 +589,8 @@ export class BattleScene extends Phaser.Scene {
     } else {
       playOnce(this, EFFECTS.hit.key, tv.sprite.x, tv.sprite.y - 14, DEPTH.fx);
       flash(this, tv.sprite);
-      floatText(this, tv.sprite.x, headY - 6, `-${shot.damage}`, '#ff6a5a', DEPTH.fx);
+      const text = shot.crit ? `CRIT -${shot.damage}` : `-${shot.damage}`;
+      floatText(this, tv.sprite.x, headY - 6, text, shot.crit ? '#ffd23a' : '#ff6a5a', DEPTH.fx);
     }
     if (!shot.killed) return;
     tv.ghost.setVisible(false);
@@ -603,23 +626,44 @@ export class BattleScene extends Phaser.Scene {
   private drawAim(targetId: string | null): void {
     this.aimLayer.clear();
     this.aimText.setVisible(false);
+    this.oddsPanel.setVisible(false);
     const shooter = this.state.selected;
     const target = targetId ? unitById(this.state, targetId) : undefined;
     const view = targetId ? this.views.get(targetId) : undefined;
     if (!shooter || !target || !view) return;
     const height = SHEETS[target.kind].height;
-    const chance = hitChance(this.state, shooter, target.id);
+    const odds = shotOdds(this.state, shooter, target.id);
     const block = shotBlock(this.state, shooter, target.id);
     const why = block === 'sight' ? 'NO LINE OF SIGHT' : block === 'range' ? 'OUT OF RANGE' : null;
-    if (chance === null && why === null) return;
-    if (chance !== null) drawReticle(this.aimLayer, view.sprite.x, view.sprite.y, height);
+    if (odds === null && why === null) return;
+    if (odds) {
+      drawReticle(this.aimLayer, view.sprite.x, view.sprite.y, height);
+      this.drawOdds(odds, view.sprite.x);
+    }
     this.aimText
-      .setText(chance !== null ? `${chance}%` : (why as string))
-      .setColor(chance !== null ? '#f2a33a' : '#8d97a8');
+      .setText(odds ? `${odds.hit}%${odds.flanked ? ' FLANKED' : ''}` : (why as string))
+      .setColor(odds ? (odds.flanked ? '#ffd23a' : '#f2a33a') : '#8d97a8');
     // Keep the label on screen for units near the edges.
     const half = this.aimText.width / 2;
     const x = Math.min(Math.max(view.sprite.x, half + 2), GAME_WIDTH - half - 2);
     this.aimText.setPosition(x, view.sprite.y - height - 8).setVisible(true);
+  }
+
+  /** The breakdown panel, on the side of the map away from the target. */
+  private drawOdds(odds: ShotOdds, targetX: number): void {
+    const line = (label: string, value: string): string =>
+      `${label.padEnd(12)}${value.padStart(5)}`;
+    const signed = (n: number): string => (n > 0 ? `+${n}` : `${n}`);
+    const lines = [line('AIM', `${odds.aim}`)];
+    if (odds.range !== 0) lines.push(line('DISTANCE', signed(odds.range)));
+    if (odds.cover)
+      lines.push(line(`${odds.cover.toUpperCase()} COVER`, signed(-odds.coverPenalty)));
+    lines.push('-'.repeat(17), line('HIT', `${odds.hit}%`));
+    lines.push(line(odds.flanked ? 'CRIT (FLANK)' : 'CRIT', `${odds.crit}%`));
+    this.oddsPanel.setText(lines.join('\n'));
+    const left = targetX > GAME_WIDTH / 2;
+    const x = left ? 4 : GAME_WIDTH - this.oddsPanel.width - 4;
+    this.oddsPanel.setPosition(x, 2 * TILE + 2).setVisible(true);
   }
 
   private startBattle(seed: number): void {

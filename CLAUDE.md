@@ -62,6 +62,7 @@ Read `PROJECT.md` (scope), `ARCHITECTURE.md` (decisions), and `ROADMAP.md` (curr
 
 - Node.js comes from nvm. Run `export NVM_DIR=$HOME/.nvm; . $NVM_DIR/nvm.sh` before using `node` or `npm` in a fresh shell.
 - The GitHub CLI is at `~/.local/bin/gh`.
+- Stop only processes you started, by PID or port, never by name (no `pkill`, `killall` or `pkill -f` patterns). Other sessions on this machine run the same kinds of processes (Vite, Playwright) for other games. For example, find the PID listening on this game's port with `ss -ltnp | grep ':6175 '` and `kill` that PID. (Owner rule, 2026-10-17.)
 
 ## Docs
 

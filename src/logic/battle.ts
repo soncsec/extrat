@@ -55,6 +55,8 @@ export interface ShotResult {
   /** Hit chance in percent when the shot was taken. */
   chance: number;
   hit: boolean;
+  /** A critical hit: extra damage, more likely when flanking. */
+  crit: boolean;
   damage: number;
   killed: boolean;
 }
@@ -199,38 +201,69 @@ export function shotBlock(
  * minus the target's cover facing the shooter.
  */
 export function hitChance(state: BattleState, shooterId: string, targetId: string): number | null {
+  return shotOdds(state, shooterId, targetId)?.hit ?? null;
+}
+
+/** Everything that goes into a shot's odds, for the breakdown panel. */
+export interface ShotOdds {
+  /** The shooter's base aim. */
+  aim: number;
+  /** Lost to distance beyond close range (zero or negative). */
+  range: number;
+  /** The target's cover facing the shooter, and what it costs. */
+  cover: Cover | null;
+  coverPenalty: number;
+  /** No cover facing the shooter: the shot gets the flanking crit bonus. */
+  flanked: boolean;
+  /** Final chances in percent. */
+  hit: number;
+  crit: number;
+}
+
+/** The odds of a shot now, or null if it isn't allowed (see shotBlock). */
+export function shotOdds(state: BattleState, shooterId: string, targetId: string): ShotOdds | null {
   if (shotBlock(state, shooterId, targetId) !== null) return null;
   const shooter = unitById(state, shooterId) as Unit;
   const target = unitById(state, targetId) as Unit;
+  const stats = UNITS[shooter.kind];
   const dist = Math.hypot(target.x - shooter.x, target.y - shooter.y);
-  const range = Math.max(0, Math.floor(dist) - SHOOTING.closeRange) * SHOOTING.penaltyPerTile;
+  const range = -Math.max(0, Math.floor(dist) - SHOOTING.closeRange) * SHOOTING.penaltyPerTile;
   const cover = coverAgainst(state.map, target, shooter);
   const coverPenalty = cover ? SHOOTING.cover[cover] : 0;
-  const chance = UNITS[shooter.kind].aim - range - coverPenalty;
-  return Math.min(SHOOTING.maxChance, Math.max(SHOOTING.minChance, chance));
+  const flanked = cover === null;
+  const hit = Math.min(
+    SHOOTING.maxChance,
+    Math.max(SHOOTING.minChance, stats.aim + range - coverPenalty),
+  );
+  const crit = Math.min(100, stats.crit + (flanked ? SHOOTING.flankCrit : 0));
+  return { aim: stats.aim, range, cover, coverPenalty, flanked, hit, crit };
 }
 
 function shoot(state: BattleState, shooterId: string, targetId: string): BattleState {
   const shooter = unitById(state, shooterId);
   const target = unitById(state, targetId);
-  const chance = hitChance(state, shooterId, targetId);
-  if (!shooter || !target || chance === null || shooter.side !== state.turn) return state;
+  const odds = shotOdds(state, shooterId, targetId);
+  if (!shooter || !target || odds === null || shooter.side !== state.turn) return state;
+  const chance = odds.hit;
   const roll = rngStep(state.rng);
   const hit = roll.value * 100 < chance;
   let rng = roll.state;
   let damage = 0;
+  let crit = false;
   if (hit) {
     const { min, max } = UNITS[shooter.kind].damage;
     const dmgRoll = rngStep(rng);
-    rng = dmgRoll.state;
-    damage = min + Math.floor(dmgRoll.value * (max - min + 1));
+    const critRoll = rngStep(dmgRoll.state);
+    rng = critRoll.state;
+    crit = critRoll.value * 100 < odds.crit;
+    damage = min + Math.floor(dmgRoll.value * (max - min + 1)) + (crit ? SHOOTING.critDamage : 0);
   }
   const hp = Math.max(0, target.hp - damage);
   const facing = target.x === shooter.x ? shooter.facing : target.x > shooter.x ? 1 : -1;
   // A shot uses all remaining action points, as in XCOM.
   let next = replaceUnit(state, { ...shooter, facing, ap: 0 });
   next = replaceUnit(next, { ...target, hp });
-  const lastShot = { shooterId, targetId, chance, hit, damage, killed: hp === 0 };
+  const lastShot = { shooterId, targetId, chance, hit, crit, damage, killed: hp === 0 };
   return { ...next, rng, lastShot };
 }
 
