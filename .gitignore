@@ -1,0 +1,32 @@
+# Source art pack (CC0, ~5,000 files) — kept local; only used assets are copied into public/assets/
+legacy
+
+# Dependencies and build output
+node_modules/
+dist/
+dist-e2e/
+coverage/
+playwright-report/
+test-results/
+
+# Environment and secrets
+.env
+.env.*
+*.pem
+*.key
+
+# OS and editor files
+.DS_Store
+__MACOSX/
+.vscode/
+.idea/
+*.swp
+
+# Local deployment settings (server address, SSH user)
+deploy/server.env
+
+# Built docs page (published as an artifact, not committed)
+tools/docs-page/out/
+
+# Python bytecode
+__pycache__/

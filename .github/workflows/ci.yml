@@ -1,0 +1,199 @@
+name: CI
+
+# On pushes to main, once all checks pass, also deploy to GitHub Pages staging
+# and run an OWASP ZAP baseline scan against it (ADR-005, ADR-007).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  repo-checks:
+    name: Repo checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Asset and file hygiene
+        run: python3 scripts/check_repo.py
+
+      - name: Install gitleaks (pinned, checksum verified)
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          curl -fsSL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar xzf gitleaks.tar.gz gitleaks
+          rm gitleaks.tar.gz
+
+      - name: Secret scan (full history)
+        run: ./gitleaks git --redact --verbose --exit-code 1 .
+
+  build-and-test:
+    name: Build and test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js (version from .nvmrc)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies (lockfile only, no install scripts)
+        run: npm ci
+
+      - name: Dependency audit (high and critical)
+        run: npm audit --audit-level=high
+
+      - name: Format
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Unit tests with coverage
+        run: npm run test:coverage
+
+      - name: Release scripts (shellcheck + tests against a fake server)
+        run: |
+          git ls-files -z '*.sh' | xargs -0 shellcheck
+          npm run test:release
+          # Only in the template itself; init-game.sh removes this test.
+          if [ -f tests/template/test_init.sh ]; then bash tests/template/test_init.sh; fi
+
+      - name: Build
+        run: npm run build
+
+      - name: Install Playwright browsers (version from the lockfile)
+        run: npx playwright install --with-deps chromium firefox
+
+      - name: End-to-end tests (Chromium and Firefox)
+        run: npm run test:e2e
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  staging-build:
+    name: Staging build
+    # Deploy only pushes to main, and only after every check above passed.
+    needs: [repo-checks, build-and-test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js (version from .nvmrc)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies (lockfile only, no install scripts)
+        run: npm ci
+
+      - name: Build (normal build, no test hook)
+        run: npm run build
+
+      - name: Confirm the test hook is not in the build
+        run: |
+          if grep -rq __game dist; then
+            echo "::error::test hook found in the staging build"
+            exit 1
+          fi
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: dist
+
+  staging-deploy:
+    name: Deploy to GitHub Pages
+    needs: staging-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: staging
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+  staging-zap:
+    name: ZAP baseline scan
+    needs: staging-deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run ZAP 2.17.0 baseline (passive scan only)
+        env:
+          TARGET: ${{ needs.staging-deploy.outputs.url }}
+          ZAP_IMAGE: ghcr.io/zaproxy/zaproxy@sha256:5ccfff9a411743ab2615136a2edd7416bec9ce41572fa94e935df38c14adb2b6 # 2.17.0
+        run: |
+          mkdir -p zap && chmod 777 zap
+          # -I: warnings alone don't fail the run; scripts/zap_check.py decides.
+          set +e
+          docker run --rm -v "$PWD/zap:/zap/wrk:rw" "$ZAP_IMAGE" \
+            zap-baseline.py -t "$TARGET" -J report.json -r report.html -I
+          rc=$?
+          set -e
+          # 0-2 = scan finished; 3 or more = ZAP itself failed.
+          if [ "$rc" -ge 3 ]; then exit "$rc"; fi
+
+      - name: Fail on high-risk findings
+        run: python3 scripts/zap_check.py zap/report.json
+
+      - name: Upload ZAP report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: zap-report
+          path: zap/
+          retention-days: 30

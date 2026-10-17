@@ -1,0 +1,9 @@
+legacy/
+dist/
+coverage/
+public/assets/
+package-lock.json
+playwright-report/
+test-results/
+*.md
+tools/docs-page/

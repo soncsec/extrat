@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    # Matches the project rule: new versions must be at least two weeks old.
+    cooldown:
+      default-days: 14
+    open-pull-requests-limit: 5
+    groups:
+      dev-tooling:
+        dependency-type: development
+    ignore:
+      # typescript-eslint 8.x supports TypeScript < 6.1 only (ARCHITECTURE.md ADR-003).
+      # Remove this once typescript-eslint supports newer TypeScript.
+      - dependency-name: typescript
+        versions: ['>=6.1.0']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
