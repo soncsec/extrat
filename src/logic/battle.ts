@@ -133,7 +133,8 @@ export function apply(state: BattleState, action: Action): BattleState {
         prev = p;
       }
       const { x, y } = action.to;
-      return replaceUnit(state, { ...unit, x, y, facing, ap: unit.ap - 1 });
+      const ap = unit.ap - moveCost(unit, path.length);
+      return replaceUnit(state, { ...unit, x, y, facing, ap });
     }
     case 'shoot':
       return shoot(state, action.unitId, action.targetId);
@@ -271,17 +272,31 @@ function shoot(state: BattleState, shooterId: string, targetId: string): BattleS
 export function moveRange(state: BattleState, unitId: string): Map<number, number> {
   const unit = unitById(state, unitId);
   if (!unit || unit.hp <= 0 || unit.ap <= 0) return new Map();
-  const range = reachable(state.map.cols, state.map.rows, passableFor(state), unit, unit.move);
+  const steps = maxSteps(unit);
+  const range = reachable(state.map.cols, state.map.rows, passableFor(state), unit, steps);
   range.delete(unit.y * state.map.cols + unit.x);
   return range;
 }
 
-/** The path a unit would run to reach `to` with one move action, or null if it can't. */
+/**
+ * Action points a move of `steps` tiles costs: 1 within the unit's move range,
+ * 2 for a dash (up to twice as far), which needs both points.
+ */
+export function moveCost(unit: Unit, steps: number): number {
+  return steps <= unit.move ? 1 : 2;
+}
+
+/** The farthest a unit can move now: a dash if it has both action points. */
+function maxSteps(unit: Unit): number {
+  return unit.ap >= ACTION_POINTS ? unit.move * 2 : unit.move;
+}
+
+/** The path a unit would run to reach `to` with one move, or null if it can't. */
 export function pathFor(state: BattleState, unitId: string, to: Point): Point[] | null {
   const unit = unitById(state, unitId);
   if (!unit || unit.hp <= 0 || unit.ap <= 0) return null;
   const { cols, rows } = state.map;
-  return findPath(cols, rows, passableFor(state), unit, to, unit.move);
+  return findPath(cols, rows, passableFor(state), unit, to, maxSteps(unit));
 }
 
 /** Units block movement (living ones only); so do props. */

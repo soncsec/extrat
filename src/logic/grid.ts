@@ -56,6 +56,8 @@ export function findPath(
   goal: Point,
   maxSteps = Number.POSITIVE_INFINITY,
 ): Point[] | null {
+  // Off-map goals would alias onto real tiles through the y * cols + x key.
+  if (goal.x < 0 || goal.y < 0 || goal.x >= cols || goal.y >= rows) return null;
   const startKey = start.y * cols + start.x;
   const goalKey = goal.y * cols + goal.x;
   const parent = new Map<number, number>([[startKey, -1]]);

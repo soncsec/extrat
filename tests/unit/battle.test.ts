@@ -15,6 +15,7 @@ import {
   createBattle,
   hitChance,
   livingUnits,
+  moveCost,
   moveRange,
   pathFor,
   shotBlock,
@@ -231,8 +232,10 @@ describe('moving', () => {
   it('refuses tiles out of range, blocked, occupied or off the map', () => {
     const s = field();
     const m = id(s, 'marine');
+    // With one action point left, one tile past the move range is too far (no dash).
+    const tired = { ...s, units: s.units.map((u) => (u.id === m ? { ...u, ap: 1 } : u)) };
     const tooFar = { x: 2 + UNITS.marine.move + 1, y: 1 };
-    expect(apply(s, { type: 'move', unitId: m, to: tooFar })).toBe(s);
+    expect(apply(tired, { type: 'move', unitId: m, to: tooFar })).toBe(tired);
     expect(apply(s, { type: 'move', unitId: m, to: { x: 8, y: 1 } })).toBe(s);
     expect(apply(s, { type: 'move', unitId: m, to: { x: -1, y: 1 } })).toBe(s);
     const blocked = { ...s, map: openMap(['..........', '...#......', '..........']) };
@@ -551,5 +554,42 @@ describe('shot odds, flanking and crits', () => {
     expect(flankedCrits / flankedHits).toBeGreaterThan(0.38);
     expect(flankedCrits / flankedHits).toBeLessThan(0.62);
     expect(coveredCrits / coveredHits).toBeLessThan(0.2);
+  });
+});
+
+describe('dashing', () => {
+  /** A 24 x 1 corridor with the marine at x = 0. */
+  function corridor(ap = ACTION_POINTS): BattleState {
+    const s = createBattle(openMap(['.'.repeat(24)]), 1);
+    const marine = must(s.units.find((u) => u.side === 'marine'));
+    return { ...s, units: [{ ...marine, id: 'm', x: 0, y: 0, ap }] };
+  }
+  const move = UNITS.marine.move;
+
+  it('costs one action point within the move range and two beyond it', () => {
+    const s = corridor();
+    expect(unitById(apply(s, { type: 'move', unitId: 'm', to: { x: move, y: 0 } }), 'm')?.ap).toBe(
+      ACTION_POINTS - 1,
+    );
+    expect(
+      unitById(apply(s, { type: 'move', unitId: 'm', to: { x: move + 1, y: 0 } }), 'm')?.ap,
+    ).toBe(0);
+    expect(moveCost(must(s.units[0]), move)).toBe(1);
+    expect(moveCost(must(s.units[0]), move + 1)).toBe(2);
+  });
+
+  it('reaches up to twice the move range with both points, no further', () => {
+    const s = corridor();
+    const far = apply(s, { type: 'move', unitId: 'm', to: { x: move * 2, y: 0 } });
+    expect(unitById(far, 'm')).toMatchObject({ x: move * 2, ap: 0 });
+    expect(apply(s, { type: 'move', unitId: 'm', to: { x: move * 2 + 1, y: 0 } })).toBe(s);
+    expect(moveRange(s, 'm').size).toBe(move * 2);
+  });
+
+  it('cannot dash after moving once', () => {
+    const once = apply(corridor(), { type: 'move', unitId: 'm', to: { x: 1, y: 0 } });
+    expect(moveRange(once, 'm').size).toBe(move + 1); // x = 0, and x = 2 to 6
+    expect(apply(once, { type: 'move', unitId: 'm', to: { x: 1 + move + 1, y: 0 } })).toBe(once);
+    expect(pathFor(corridor(1), 'm', { x: move + 1, y: 0 })).toBeNull();
   });
 });
