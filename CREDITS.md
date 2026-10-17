@@ -12,3 +12,4 @@ List every file copied into `public/assets/` here, one per line, as its path fro
 - `assets/fx/enemy-death.png`: Explosions and Magic, Enemy Death
 - `assets/fx/hit.png`: Explosions and Magic, Hit
 - `assets/fx/bullet.png`: Warped, Space Marine Lite (bullet)
+- `assets/alien-walker/alien-enemy-walk.png`: Warped, Alien Walking Enemy (walk)

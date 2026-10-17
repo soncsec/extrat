@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { GAME_WIDTH, TILE } from '../../src/config/tuning';
+import { GAME_WIDTH, MAP_ROWS, TILE } from '../../src/config/tuning';
 import type { GameSnapshot } from '../../src/scenes/BattleScene';
 
 /** Records console errors, uncaught exceptions and requests to other hosts. */
@@ -184,6 +184,39 @@ test('Esc cancels aiming before the shot', async ({ page }) => {
   const after = await snapshot(page);
   expect(after.selected).toBe(marine.id);
   expect(after.lastShot).toBeNull();
+});
+
+test('E ends the turn; the aliens advance, then round 2 begins', async ({ page }) => {
+  await openGame(page, '?seed=42');
+  const before = await snapshot(page);
+  expect(before).toMatchObject({ turn: 'marine', round: 1 });
+  await page.locator('#game canvas').click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('e');
+  await expect.poll(async () => (await snapshot(page)).turn).toBe('alien');
+  await expect
+    .poll(
+      async () => {
+        const s = await snapshot(page);
+        return s.turn === 'marine' && !s.busy ? s.round : 0;
+      },
+      { timeout: 20_000 },
+    )
+    .toBe(2);
+  const after = await snapshot(page);
+  const westmost = (s: typeof after): number =>
+    Math.min(...s.units.filter((u) => u.side === 'alien').map((u) => u.x));
+  expect(westmost(after)).toBeLessThan(westmost(before));
+  expect(after.units.filter((u) => u.side === 'marine').every((u) => u.ap === 2)).toBe(true);
+});
+
+test('the End Turn button ends the turn', async ({ page }) => {
+  await openGame(page, '?seed=42');
+  const box = await page.locator('#game canvas').boundingBox();
+  if (!box) throw new Error('no canvas');
+  const zoom = box.width / GAME_WIDTH;
+  // The button sits at the right end of the info bar's first line.
+  await page.mouse.click(box.x + (GAME_WIDTH - 25) * zoom, box.y + (MAP_ROWS * TILE + 9) * zoom);
+  await expect.poll(async () => (await snapshot(page)).turn).toBe('alien');
 });
 
 test('?seed= in the URL sets the random seed', async ({ page }) => {

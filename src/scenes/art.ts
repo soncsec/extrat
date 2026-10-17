@@ -1,4 +1,5 @@
 import type Phaser from 'phaser';
+import type { UnitKind } from '../logic/battle';
 import type { PropKind } from '../logic/map';
 
 /** Where each piece of art sits in its sheet. Pixel rectangles measured from the files. */
@@ -83,6 +84,26 @@ export const WALKER_SHEET: CharacterSheet = {
   height: 30,
   muzzle: { x: 14, y: 16 },
   anims: { idle: { start: 0, count: 4, fps: 5 } },
+};
+
+export const WALKER_WALK_SHEET: CharacterSheet = {
+  key: 'walker-walk',
+  url: 'assets/alien-walker/alien-enemy-walk.png',
+  frameWidth: 57,
+  frameHeight: 42,
+  originX: 30 / 57,
+  originY: 38 / 42,
+  height: 30,
+  muzzle: WALKER_SHEET.muzzle,
+  anims: { run: { start: 0, count: 6, fps: 10 } },
+};
+
+export type AnimName = 'idle' | 'run' | 'die' | 'shoot';
+
+/** Which sheet holds each unit kind's animations. A missing one means the kind has none. */
+export const UNIT_ANIMS: Readonly<Record<UnitKind, Partial<Record<AnimName, CharacterSheet>>>> = {
+  marine: { idle: MARINE_SHEET, run: MARINE_SHEET, die: MARINE_SHEET, shoot: MARINE_SHEET },
+  walker: { idle: WALKER_SHEET, run: WALKER_WALK_SHEET },
 };
 
 /** Registers a sheet's animations as `<key>-<name>`, once. */

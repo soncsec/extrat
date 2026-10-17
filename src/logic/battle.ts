@@ -31,6 +31,8 @@ export interface BattleState {
   units: Unit[];
   /** Whose turn it is. */
   turn: Side;
+  /** Starts at 1; goes up each time the marines' turn begins again. */
+  round: number;
   /** The marine the player is commanding, if any. */
   selected: string | null;
   /** Random generator state for every roll in the battle (ADR-006): saved with the battle. */
@@ -53,7 +55,8 @@ export type Action =
   | { type: 'select'; unitId: string }
   | { type: 'deselect' }
   | { type: 'move'; unitId: string; to: Point }
-  | { type: 'shoot'; unitId: string; targetId: string };
+  | { type: 'shoot'; unitId: string; targetId: string }
+  | { type: 'endTurn' };
 
 const MARINE_NAMES = ['Vasquez', 'Okafor', 'Lindqvist', 'Moreau', 'Tanaka', 'Reyes'];
 
@@ -89,6 +92,7 @@ export function createBattle(map: BattleMap, seed: number): BattleState {
     map,
     units: [...marines, ...aliens],
     turn: 'marine',
+    round: 1,
     selected: null,
     rng: (seed ^ 0x9e3779b9) >>> 0,
     lastShot: null,
@@ -123,6 +127,15 @@ export function apply(state: BattleState, action: Action): BattleState {
     }
     case 'shoot':
       return shoot(state, action.unitId, action.targetId);
+    case 'endTurn': {
+      // The other side's living units get their action points back.
+      const turn: Side = state.turn === 'marine' ? 'alien' : 'marine';
+      const units = state.units.map((u) =>
+        u.side === turn && u.hp > 0 ? { ...u, ap: ACTION_POINTS } : u,
+      );
+      const round = turn === 'marine' ? state.round + 1 : state.round;
+      return { ...state, units, turn, round, selected: null };
+    }
   }
 }
 
@@ -190,6 +203,16 @@ function passableFor(state: BattleState): (x: number, y: number) => boolean {
 
 function replaceUnit(state: BattleState, unit: Unit): BattleState {
   return { ...state, units: state.units.map((u) => (u.id === unit.id ? unit : u)) };
+}
+
+/** Living units on one side. */
+export function livingUnits(state: BattleState, side: Side): Unit[] {
+  return state.units.filter((u) => u.side === side && u.hp > 0);
+}
+
+/** True if any living unit on the side still has action points. */
+export function canAct(state: BattleState, side: Side): boolean {
+  return livingUnits(state, side).some((u) => u.ap > 0);
 }
 
 export function unitById(state: BattleState, id: string): Unit | undefined {
