@@ -1,5 +1,5 @@
-import { SKIRMISH, UNITS } from '../config/tuning';
-import type { Point } from './grid';
+import { ACTION_POINTS, SKIRMISH, UNITS } from '../config/tuning';
+import { findPath, reachable, type Point } from './grid';
 import { isWalkable, spawnZone, tileAt, type BattleMap } from './map';
 import { createRng, type Rng } from './rng';
 
@@ -20,6 +20,10 @@ export interface Unit extends Point {
   maxHp: number;
   /** 1 faces right (east), -1 faces left (west). */
   facing: 1 | -1;
+  /** Action points left this turn. */
+  ap: number;
+  /** Tiles per move action. */
+  move: number;
 }
 
 export interface BattleState {
@@ -31,7 +35,10 @@ export interface BattleState {
   selected: string | null;
 }
 
-export type Action = { type: 'select'; unitId: string } | { type: 'deselect' };
+export type Action =
+  | { type: 'select'; unitId: string }
+  | { type: 'deselect' }
+  | { type: 'move'; unitId: string; to: Point };
 
 const MARINE_NAMES = ['Vasquez', 'Okafor', 'Lindqvist', 'Moreau', 'Tanaka', 'Reyes'];
 
@@ -48,6 +55,8 @@ export function createBattle(map: BattleMap, seed: number): BattleState {
     hp: UNITS.marine.hp,
     maxHp: UNITS.marine.hp,
     facing: 1,
+    ap: ACTION_POINTS,
+    move: UNITS.marine.move,
   }));
   const aliens = deploy(map, rng, 'east', SKIRMISH.aliens).map((p, i): Unit => ({
     ...p,
@@ -58,6 +67,8 @@ export function createBattle(map: BattleMap, seed: number): BattleState {
     hp: UNITS.walker.hp,
     maxHp: UNITS.walker.hp,
     facing: -1,
+    ap: ACTION_POINTS,
+    move: UNITS.walker.move,
   }));
   return { map, units: [...marines, ...aliens], turn: 'marine', selected: null };
 }
@@ -73,7 +84,48 @@ export function apply(state: BattleState, action: Action): BattleState {
     }
     case 'deselect':
       return state.selected === null ? state : { ...state, selected: null };
+    case 'move': {
+      const unit = unitById(state, action.unitId);
+      if (!unit || unit.side !== state.turn) return state;
+      const path = pathFor(state, unit.id, action.to);
+      if (!path) return state;
+      // Face the way the last sideways step went; straight up or down keeps the old facing.
+      let facing = unit.facing;
+      let prev: Point = unit;
+      for (const p of path) {
+        if (p.x !== prev.x) facing = p.x > prev.x ? 1 : -1;
+        prev = p;
+      }
+      const { x, y } = action.to;
+      return replaceUnit(state, { ...unit, x, y, facing, ap: unit.ap - 1 });
+    }
   }
+}
+
+/** Tiles a unit could move to with one move action, keyed by `y * cols + x`, with step counts. */
+export function moveRange(state: BattleState, unitId: string): Map<number, number> {
+  const unit = unitById(state, unitId);
+  if (!unit || unit.hp <= 0 || unit.ap <= 0) return new Map();
+  const range = reachable(state.map.cols, state.map.rows, passableFor(state), unit, unit.move);
+  range.delete(unit.y * state.map.cols + unit.x);
+  return range;
+}
+
+/** The path a unit would run to reach `to` with one move action, or null if it can't. */
+export function pathFor(state: BattleState, unitId: string, to: Point): Point[] | null {
+  const unit = unitById(state, unitId);
+  if (!unit || unit.hp <= 0 || unit.ap <= 0) return null;
+  const { cols, rows } = state.map;
+  return findPath(cols, rows, passableFor(state), unit, to, unit.move);
+}
+
+/** Units block movement (living ones only); so do props. */
+function passableFor(state: BattleState): (x: number, y: number) => boolean {
+  return (x, y) => isWalkable(state.map, x, y) && unitAt(state, x, y) === undefined;
+}
+
+function replaceUnit(state: BattleState, unit: Unit): BattleState {
+  return { ...state, units: state.units.map((u) => (u.id === unit.id ? unit : u)) };
 }
 
 export function unitById(state: BattleState, id: string): Unit | undefined {

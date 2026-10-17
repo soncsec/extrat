@@ -98,6 +98,35 @@ test('clicking an alien does not select it', async ({ page }) => {
   expect((await snapshot(page)).selected).toBeNull();
 });
 
+test('a selected marine runs to a clicked tile and spends an action point', async ({ page }) => {
+  await openGame(page, '?seed=42');
+  const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
+  if (!marine) throw new Error('no marine');
+  await clickTile(page, marine.x, marine.y);
+  await expect.poll(async () => (await snapshot(page)).reachable.length).toBeGreaterThan(0);
+  // The farthest reachable tile to the east, so the run is easy to see.
+  const target = (await snapshot(page)).reachable.reduce((a, b) => (b.x > a.x ? b : a));
+  await clickTile(page, target.x, target.y);
+  await expect
+    .poll(async () => {
+      const s = await snapshot(page);
+      const u = s.units.find((v) => v.id === marine.id);
+      return s.busy ? 'running' : `${u?.x},${u?.y},${u?.ap}`;
+    })
+    .toBe(`${target.x},${target.y},${marine.ap - 1}`);
+});
+
+test('clicking a tile out of range does not move the marine', async ({ page }) => {
+  await openGame(page, '?seed=42');
+  const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
+  if (!marine) throw new Error('no marine');
+  await clickTile(page, marine.x, marine.y);
+  await clickTile(page, 12, 13);
+  await page.waitForTimeout(500);
+  const after = (await snapshot(page)).units.find((u) => u.id === marine.id);
+  expect(after).toMatchObject({ x: marine.x, y: marine.y, ap: marine.ap });
+});
+
 test('?seed= in the URL sets the random seed', async ({ page }) => {
   await openGame(page, '?seed=42');
   expect((await snapshot(page)).seed).toBe(42);

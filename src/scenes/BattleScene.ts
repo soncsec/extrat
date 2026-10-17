@@ -1,8 +1,20 @@
 import Phaser from 'phaser';
-import { DEFAULT_SEED, GAME_WIDTH, HUD_HEIGHT, MAP_COLS, MAP_ROWS, TILE } from '../config/tuning';
+import {
+  ACTION_POINTS,
+  ANIMATION,
+  DEFAULT_SEED,
+  GAME_WIDTH,
+  HUD_HEIGHT,
+  MAP_COLS,
+  MAP_ROWS,
+  TILE,
+} from '../config/tuning';
+import type { Point } from '../logic/grid';
 import {
   apply,
   createBattle,
+  moveRange,
+  pathFor,
   unitAt,
   unitById,
   type Action,
@@ -28,12 +40,33 @@ export interface GameSnapshot {
   mapSeed: number;
   /** One character per tile, row by row: '.' free, or the first letter of the prop. */
   layout: string;
-  units: { id: string; side: Side; x: number; y: number; hp: number; hidden: boolean }[];
+  units: {
+    id: string;
+    side: Side;
+    x: number;
+    y: number;
+    hp: number;
+    ap: number;
+    hidden: boolean;
+  }[];
   selected: string | null;
+  /** Tiles the selected unit can move to now. */
+  reachable: Point[];
+  /** True while an animation plays; clicks are ignored. */
+  busy: boolean;
 }
 
 /** Draw order: ground, dirt, markers, then everything standing, sorted by its bottom edge. */
-const DEPTH = { ground: 0, decal: 1, marker: 2, standing: 10, ghost: 900, hud: 1000 } as const;
+const DEPTH = {
+  ground: 0,
+  decal: 1,
+  range: 2,
+  marker: 3,
+  path: 4,
+  standing: 10,
+  ghost: 900,
+  hud: 1000,
+} as const;
 
 const SHEETS: Record<Unit['kind'], CharacterSheet> = { marine: MARINE_SHEET, walker: WALKER_SHEET };
 const GHOST_COLOR = { marine: 0x7fd4ff, alien: 0xff6a5a } as const;
@@ -55,6 +88,9 @@ export class BattleScene extends Phaser.Scene {
   private views = new Map<string, UnitView>();
   private marker!: Phaser.GameObjects.Graphics;
   private chevron!: Phaser.GameObjects.Graphics;
+  private rangeLayer!: Phaser.GameObjects.Graphics;
+  private pathLayer!: Phaser.GameObjects.Graphics;
+  private busy = false;
   private mapText!: Phaser.GameObjects.Text;
   private unitText!: Phaser.GameObjects.Text;
 
@@ -76,11 +112,14 @@ export class BattleScene extends Phaser.Scene {
     this.seeds = createRng(this.seed);
     this.createHud();
     this.marker = this.add.graphics().setDepth(DEPTH.marker);
+    this.rangeLayer = this.add.graphics().setDepth(DEPTH.range);
+    this.pathLayer = this.add.graphics().setDepth(DEPTH.path);
     this.chevron = this.add.graphics().setDepth(DEPTH.ghost + 1);
     this.tweens.add({ targets: this.chevron, y: -2, duration: 450, yoyo: true, repeat: -1 });
     this.tweens.add({ targets: this.marker, alpha: 0.45, duration: 450, yoyo: true, repeat: -1 });
 
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => this.onClick(p.worldX, p.worldY));
+    this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.onHover(p.worldX, p.worldY));
     this.input.keyboard?.on('keydown-ESC', () => this.dispatch({ type: 'deselect' }));
     this.input.keyboard?.on('keydown-N', () => this.startBattle(this.seeds.int(1, 999_999)));
 
@@ -104,10 +143,21 @@ export class BattleScene extends Phaser.Scene {
         x: u.x,
         y: u.y,
         hp: u.hp,
+        ap: u.ap,
         hidden: this.views.get(u.id)?.hidden ?? false,
       })),
       selected,
+      reachable: selected ? this.rangeTiles(selected) : [],
+      busy: this.busy,
     };
+  }
+
+  private rangeTiles(unitId: string): Point[] {
+    const cols = this.state.map.cols;
+    return [...moveRange(this.state, unitId).keys()].map((k) => ({
+      x: k % cols,
+      y: Math.floor(k / cols),
+    }));
   }
 
   private dispatch(action: Action): void {
@@ -120,10 +170,85 @@ export class BattleScene extends Phaser.Scene {
   private onClick(px: number, py: number): void {
     const x = Math.floor(px / TILE);
     const y = Math.floor(py / TILE);
-    if (y >= MAP_ROWS) return;
+    if (y >= MAP_ROWS || this.busy) return;
     // Characters stand about two tiles tall, so a click on the tile above one also counts.
     const unit = unitAt(this.state, x, y) ?? unitAt(this.state, x, y + 1);
-    if (unit?.side === 'marine') this.dispatch({ type: 'select', unitId: unit.id });
+    if (unit?.side === 'marine') {
+      this.dispatch({ type: 'select', unitId: unit.id });
+      return;
+    }
+    const selected = this.state.selected;
+    if (selected && !unitAt(this.state, x, y)) this.moveUnit(selected, { x, y });
+  }
+
+  /** Previews the path to the tile under the pointer. */
+  private onHover(px: number, py: number): void {
+    const g = this.pathLayer.clear();
+    const id = this.state.selected;
+    if (!id || this.busy) return;
+    const x = Math.floor(px / TILE);
+    const y = Math.floor(py / TILE);
+    const path = y < MAP_ROWS ? pathFor(this.state, id, { x, y }) : null;
+    if (!path) return;
+    g.fillStyle(0xdff1ff, 0.9);
+    for (const p of path.slice(0, -1)) g.fillRect(p.x * TILE + 7, p.y * TILE + 7, 2, 2);
+    g.lineStyle(1, 0xdff1ff, 1).strokeRect(x * TILE + 1.5, y * TILE + 1.5, TILE - 3, TILE - 3);
+  }
+
+  /** Applies a move, then runs the sprite along the path. */
+  private moveUnit(unitId: string, to: Point): void {
+    const path = pathFor(this.state, unitId, to);
+    const view = this.views.get(unitId);
+    const before = unitById(this.state, unitId);
+    if (!path || !view || !before) return;
+    this.dispatch({ type: 'move', unitId, to });
+    this.busy = true;
+    this.pathLayer.clear();
+    this.drawSelection();
+    view.ghost.setVisible(false);
+    const sheet = SHEETS[before.kind];
+    view.sprite.play(`${sheet.key}-run`);
+
+    const stepMs = 1000 / ANIMATION.runSpeed;
+    const step = (i: number, from: Point): void => {
+      const p = path[i];
+      if (!p) {
+        this.finishMove(unitId);
+        return;
+      }
+      if (p.x !== from.x) this.face(view, sheet, p.x > from.x ? 1 : -1);
+      this.tweens.add({
+        targets: view.sprite,
+        x: p.x * TILE + TILE / 2,
+        y: (p.y + 1) * TILE,
+        duration: stepMs,
+        onUpdate: () => view.sprite.setDepth(DEPTH.standing + view.sprite.y + 0.5),
+        onComplete: () => step(i + 1, p),
+      });
+    };
+    step(0, before);
+  }
+
+  private finishMove(unitId: string): void {
+    const unit = unitById(this.state, unitId);
+    const view = this.views.get(unitId);
+    if (unit && view) {
+      const sheet = SHEETS[unit.kind];
+      this.face(view, sheet, unit.facing);
+      view.ghost.setPosition(view.sprite.x, view.sprite.y);
+      view.sprite.play(`${sheet.key}-idle`);
+    }
+    this.busy = false;
+    this.updateHidden();
+    this.drawSelection();
+  }
+
+  /** Turns a unit's sprite (and its ghost) to face left or right. */
+  private face(view: UnitView, sheet: CharacterSheet, facing: 1 | -1): void {
+    const flip = facing === -1;
+    for (const s of [view.sprite, view.ghost]) {
+      s.setFlipX(flip).setOrigin(flip ? 1 - sheet.originX : sheet.originX, sheet.originY);
+    }
   }
 
   private startBattle(seed: number): void {
@@ -213,9 +338,11 @@ export class BattleScene extends Phaser.Scene {
 
   private drawSelection(): void {
     const g = this.marker.clear();
+    this.rangeLayer.clear();
     const unit = this.state.selected ? unitById(this.state, this.state.selected) : undefined;
-    if (!unit) {
+    if (!unit || this.busy) {
       this.chevron.clear();
+      if (this.busy) return;
       this.unitText.setText('Click a marine to select it');
       return;
     }
@@ -241,7 +368,13 @@ export class BattleScene extends Phaser.Scene {
       .fillTriangle(cx - 4, top - 5, cx + 4, top - 5, cx, top - 1)
       .fillStyle(0xf2a33a, 1)
       .fillTriangle(cx - 3, top - 5, cx + 3, top - 5, cx, top - 2);
-    this.unitText.setText(`PVT ${unit.name.toUpperCase()}   HP ${unit.hp}/${unit.maxHp}`);
+    for (const t of this.rangeTiles(unit.id)) {
+      this.rangeLayer
+        .fillStyle(0x4aa8ff, 0.3)
+        .fillRect(t.x * TILE + 1, t.y * TILE + 1, TILE - 2, TILE - 2);
+    }
+    const ap = unit.ap > 0 ? `AP ${unit.ap}/${ACTION_POINTS}` : 'NO ACTIONS LEFT';
+    this.unitText.setText(`PVT ${unit.name.toUpperCase()}   HP ${unit.hp}/${unit.maxHp}   ${ap}`);
   }
 
   private createHud(): void {

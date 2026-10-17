@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { MAP_COLS, MAP_ROWS, SKIRMISH, UNITS } from '../../src/config/tuning';
-import { apply, createBattle, unitAt, unitById, type BattleState } from '../../src/logic/battle';
+import { ACTION_POINTS, MAP_COLS, MAP_ROWS, SKIRMISH, UNITS } from '../../src/config/tuning';
+import {
+  apply,
+  createBattle,
+  moveRange,
+  pathFor,
+  unitAt,
+  unitById,
+  type BattleState,
+} from '../../src/logic/battle';
 import { generateForest, isWalkable, spawnZone, type BattleMap } from '../../src/logic/map';
 
 function must<T>(value: T | undefined): T {
@@ -167,5 +175,88 @@ describe('unit lookups', () => {
   it('ignores dead units on a tile', () => {
     const dead = { ...s, units: s.units.map((x) => (x.id === u.id ? { ...x, hp: 0 } : x)) };
     expect(unitAt(dead, u.x, u.y)).toBeUndefined();
+  });
+});
+
+describe('moving', () => {
+  /** A 10 x 3 open field with one marine at (2,1) and one alien at (8,1). */
+  function field(): BattleState {
+    const s = createBattle(openMap(['..........', '..........', '..........']), 1);
+    const marine = must(s.units.find((u) => u.side === 'marine'));
+    const alien = must(s.units.find((u) => u.side === 'alien'));
+    return {
+      ...s,
+      units: [
+        { ...marine, x: 2, y: 1, facing: 1 },
+        { ...alien, x: 8, y: 1, facing: -1 },
+      ],
+    };
+  }
+  const id = (s: BattleState, side: 'marine' | 'alien'): string =>
+    must(s.units.find((u) => u.side === side)).id;
+
+  it('moves a marine, spends an action point, and leaves the old state alone', () => {
+    const s = field();
+    const m = id(s, 'marine');
+    const next = apply(s, { type: 'move', unitId: m, to: { x: 5, y: 1 } });
+    expect(unitById(next, m)).toMatchObject({ x: 5, y: 1, ap: ACTION_POINTS - 1 });
+    expect(unitById(s, m)).toMatchObject({ x: 2, y: 1, ap: ACTION_POINTS });
+  });
+
+  it('turns the unit toward its last sideways step', () => {
+    const s = field();
+    const m = id(s, 'marine');
+    const left = apply(s, { type: 'move', unitId: m, to: { x: 0, y: 2 } });
+    expect(unitById(left, m)?.facing).toBe(-1);
+    const down = apply(s, { type: 'move', unitId: m, to: { x: 2, y: 2 } });
+    expect(unitById(down, m)?.facing).toBe(1);
+  });
+
+  it('refuses tiles out of range, blocked, occupied or off the map', () => {
+    const s = field();
+    const m = id(s, 'marine');
+    const tooFar = { x: 2 + UNITS.marine.move + 1, y: 1 };
+    expect(apply(s, { type: 'move', unitId: m, to: tooFar })).toBe(s);
+    expect(apply(s, { type: 'move', unitId: m, to: { x: 8, y: 1 } })).toBe(s);
+    expect(apply(s, { type: 'move', unitId: m, to: { x: -1, y: 1 } })).toBe(s);
+    const blocked = { ...s, map: openMap(['..........', '...#......', '..........']) };
+    expect(apply(blocked, { type: 'move', unitId: m, to: { x: 3, y: 1 } })).toBe(blocked);
+  });
+
+  it('refuses to move with no action points, when dead, or out of turn', () => {
+    const s = field();
+    const m = id(s, 'marine');
+    const once = apply(s, { type: 'move', unitId: m, to: { x: 3, y: 1 } });
+    const twice = apply(once, { type: 'move', unitId: m, to: { x: 4, y: 1 } });
+    expect(unitById(twice, m)).toMatchObject({ x: 4, ap: 0 });
+    expect(apply(twice, { type: 'move', unitId: m, to: { x: 5, y: 1 } })).toBe(twice);
+    const dead = { ...s, units: s.units.map((u) => (u.id === m ? { ...u, hp: 0 } : u)) };
+    expect(apply(dead, { type: 'move', unitId: m, to: { x: 3, y: 1 } })).toBe(dead);
+    expect(apply(s, { type: 'move', unitId: id(s, 'alien'), to: { x: 7, y: 1 } })).toBe(s);
+    expect(apply(s, { type: 'move', unitId: 'nobody', to: { x: 3, y: 1 } })).toBe(s);
+  });
+
+  it('walks around other units', () => {
+    const s = field();
+    const m = id(s, 'marine');
+    const walled = {
+      ...s,
+      units: [...s.units, { ...must(s.units[1]), id: 'a9', x: 3, y: 1 }],
+    };
+    expect(pathFor(walled, m, { x: 4, y: 1 })).toHaveLength(4);
+  });
+
+  it('lists the reachable tiles, not including the unit itself', () => {
+    const s = field();
+    const m = id(s, 'marine');
+    const range = moveRange(s, m);
+    const cols = s.map.cols;
+    expect(range.has(1 * cols + 2)).toBe(false);
+    expect(range.get(1 * cols + 7)).toBe(5);
+    expect(range.has(1 * cols + 8)).toBe(false); // the alien's tile
+    expect(moveRange(s, 'nobody').size).toBe(0);
+    const tired = { ...s, units: s.units.map((u) => (u.id === m ? { ...u, ap: 0 } : u)) };
+    expect(moveRange(tired, m).size).toBe(0);
+    expect(pathFor(tired, m, { x: 3, y: 1 })).toBeNull();
   });
 });
