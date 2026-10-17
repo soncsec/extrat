@@ -6,8 +6,8 @@ The order follows the risks: first prove the core fight is fun and readable with
 
 | Milestone | Status |
 |---|---|
-| M0 Setup | In progress |
-| M1 Walking skeleton | Not started |
+| M0 Setup | Waiting for the portal claim (M0.4) |
+| M1 Walking skeleton | In progress |
 | M2 Tactical core | Not started |
 | M3 Aliens and ambush | Not started |
 | M4 Maps and landscapes | Not started |
@@ -29,7 +29,7 @@ The order follows the risks: first prove the core fight is fun and readable with
 
 - [x] M0.1 Repo created from `soncsec/game-template`, `scripts/init-game.sh` run
 - [x] M0.2 Branch protection on `main` with the four required checks, secret scanning and Dependabot alerts on
-- [ ] M0.3 GitHub Pages turned on (Actions mode, `main` only); first staging deploy and ZAP scan pass
+- [x] M0.3 GitHub Pages turned on (Actions mode, `main` only); first staging deploy and ZAP scan pass
 - [ ] M0.4 Portal entry `games/extrat.json` (status `in-development`, dev port 5175) merged in `soncsec/games-portal`
 - [x] M0.5 PROJECT.md, ARCHITECTURE.md (ADR-E1 to E6), ROADMAP.md and CLAUDE.md approved by the owner
 
@@ -39,8 +39,8 @@ The order follows the risks: first prove the core fight is fun and readable with
 
 A small skirmish on a generated forest map: 4 marines against 2 aliens, from the title screen to a win or loss screen.
 
-- [ ] M1.1 Copy the marine, alien walker and forest art into `public/assets/` and list it in CREDITS.md; draw a simple generated forest grid (grass, trees, rocks) from a seed
-- [ ] M1.2 Battle state in `src/logic/` (ADR-E2); place 4 marines and 2 aliens; click to select a marine, with a selection marker
+- [x] M1.1 Copy the forest art into `public/assets/` and list it in CREDITS.md; draw a simple generated forest grid (grass, trees, rocks) from a seed
+- [ ] M1.2 Copy the marine and alien walker art; battle state in `src/logic/` (ADR-E2); place 4 marines and 2 aliens; click to select a marine, with a selection marker
 - [ ] M1.3 Movement: reachable tiles shown (BFS, ADR-E5); click a tile to move along the path with the run animation
 - [ ] M1.4 Shooting: click an alien to see the hit chance, confirm to fire; seeded hit roll, damage, health bars, death animation
 - [ ] M1.5 Alien turn: each alien moves toward the nearest marine and shoots when in range; End Turn button and key

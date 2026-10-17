@@ -1,5 +1,5 @@
 import type Phaser from 'phaser';
-import type { GameScene, GameSnapshot } from '../scenes/GameScene';
+import type { BattleScene, GameSnapshot } from '../scenes/BattleScene';
 
 /**
  * Test-only hook for Playwright (ADR-006). It is loaded only in the e2e build
@@ -22,8 +22,8 @@ export function installTestHook(game: Phaser.Game): void {
   window.__game = {
     scene: () => game.scene.getScenes(true)[0]?.scene.key ?? null,
     snapshot: () => {
-      const s = game.scene.getScene('Game') as GameScene | null;
-      return s && game.scene.isActive('Game') ? s.snapshot() : null;
+      const s = game.scene.getScene('Battle') as BattleScene | null;
+      return s && game.scene.isActive('Battle') ? s.snapshot() : null;
     },
   };
 }

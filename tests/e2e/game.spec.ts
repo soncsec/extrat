@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import type { GameSnapshot } from '../../src/scenes/GameScene';
+import type { GameSnapshot } from '../../src/scenes/BattleScene';
 
 /** Records console errors, uncaught exceptions and requests to other hosts. */
 function watchPage(page: Page): { errors: string[]; foreignRequests: string[] } {
@@ -28,7 +28,7 @@ async function openGame(page: Page, query = ''): Promise<void> {
   await page.goto(`./${query}`);
   await expect
     .poll(() => page.evaluate(() => window.__game?.scene() ?? null), { timeout: 15_000 })
-    .toBe('Game');
+    .toBe('Battle');
 }
 
 test('boots with no console errors and no third-party requests', async ({ page }) => {
@@ -40,16 +40,21 @@ test('boots with no console errors and no third-party requests', async ({ page }
   expect(watched.foreignRequests).toEqual([]);
 });
 
-test('arrow keys move the player and it stays on screen', async ({ page }) => {
-  await openGame(page);
-  const start = (await snapshot(page)).player;
-  await page.keyboard.down('ArrowLeft');
-  await expect.poll(async () => (await snapshot(page)).player.x).toBeLessThan(start.x - 20);
-  await page.waitForTimeout(2000); // long enough to reach the edge
-  await page.keyboard.up('ArrowLeft');
-  const left = (await snapshot(page)).player;
-  expect(left.x).toBeGreaterThan(0);
-  expect(left.y).toBe(start.y);
+test('the same seed always draws the same map', async ({ page }) => {
+  await openGame(page, '?seed=777');
+  const first = await snapshot(page);
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => window.__game?.scene() ?? null)).toBe('Battle');
+  expect((await snapshot(page)).layout).toBe(first.layout);
+});
+
+test('N generates a different map', async ({ page }) => {
+  await openGame(page, '?seed=777');
+  const before = await snapshot(page);
+  await page.locator('#game canvas').click();
+  await page.keyboard.press('n');
+  await expect.poll(async () => (await snapshot(page)).mapSeed).not.toBe(before.mapSeed);
+  expect((await snapshot(page)).layout).not.toBe(before.layout);
 });
 
 test('?seed= in the URL sets the random seed', async ({ page }) => {
