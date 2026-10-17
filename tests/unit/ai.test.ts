@@ -69,13 +69,25 @@ describe('planAlienAction', () => {
     expect(planAlienAction(s, 'a')).toMatchObject({ type: 'shoot', targetId: 'm1' });
   });
 
-  it('moves into range when the squad is far away', () => {
+  it('dashes into range when only a dash gets there', () => {
+    // 13 tiles away: a normal move (4) can't reach range 6, a dash (8) can.
     const s = scene(open, [{ x: 1, y: 2 }], { x: 14, y: 2 });
     const plan = planAlienAction(s, 'a');
     if (plan?.type !== 'move') throw new Error(`expected a move, got ${JSON.stringify(plan)}`);
-    expect(plan.to.x).toBeLessThan(14);
     const after = apply(s, plan);
-    expect(hitChance(after, 'a', 'm0')).toBeNull(); // 4 tiles closer is still 9 away
+    expect(Math.hypot(plan.to.x - 1, plan.to.y - 2)).toBeLessThanOrEqual(UNITS.walker.range);
+    expect(after.units.find((u) => u.id === 'a')?.ap).toBe(0); // the dash used both points
+    expect(hitChance(after, 'a', 'm0')).toBeNull(); // so no shot until next turn
+  });
+
+  it('prefers a normal move into range over a dash, keeping a point to shoot', () => {
+    // 9 tiles away: 3 steps west is enough for range 6.
+    const s = scene(open, [{ x: 1, y: 2 }], { x: 10, y: 2 });
+    const plan = planAlienAction(s, 'a');
+    if (plan?.type !== 'move') throw new Error(`expected a move, got ${JSON.stringify(plan)}`);
+    const after = apply(s, plan);
+    expect(after.units.find((u) => u.id === 'a')?.ap).toBe(1);
+    expect(hitChance(after, 'a', 'm0')).not.toBeNull();
   });
 
   it('ends up in range and in cover when it can', () => {

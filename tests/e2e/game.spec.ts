@@ -117,7 +117,9 @@ test('a selected marine runs to a clicked tile and spends an action point', asyn
   await clickTile(page, marine.x, marine.y);
   await expect.poll(async () => (await snapshot(page)).reachable.length).toBeGreaterThan(0);
   // The farthest reachable tile to the east, so the run is easy to see.
-  const target = (await snapshot(page)).reachable.reduce((a, b) => (b.x > a.x ? b : a));
+  const target = (await snapshot(page)).reachable
+    .filter((t) => t.cost === 1)
+    .reduce((a, b) => (b.x > a.x ? b : a));
   await clickTile(page, target.x, target.y);
   await expect
     .poll(async () => {
@@ -126,6 +128,46 @@ test('a selected marine runs to a clicked tile and spends an action point', asyn
       return s.busy ? 'running' : `${u?.x},${u?.y},${u?.ap}`;
     })
     .toBe(`${target.x},${target.y},${marine.ap - 1}`);
+});
+
+test('a dash to a yellow tile uses both action points', async ({ page }) => {
+  await openGame(page, '?seed=42');
+  const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
+  if (!marine) throw new Error('no marine');
+  await clickTile(page, marine.x, marine.y);
+  const dash = (await snapshot(page)).reachable.find((t) => t.cost === 2);
+  if (!dash) throw new Error('no dash tile');
+  await clickTile(page, dash.x, dash.y);
+  await expect
+    .poll(async () => {
+      const s = await snapshot(page);
+      const u = s.units.find((v) => v.id === marine.id);
+      return s.busy ? 'running' : `${u?.x},${u?.y},${u?.ap}`;
+    })
+    .toBe(`${dash.x},${dash.y},0`);
+});
+
+test('a marine can move onto the tile just above a squadmate', async ({ page }) => {
+  await openGame(page, '?seed=42');
+  const marines = (await snapshot(page)).units.filter((u) => u.side === 'marine');
+  const mover = marines[0];
+  if (!mover) throw new Error('no marine');
+  await clickTile(page, mover.x, mover.y);
+  const { reachable } = await snapshot(page);
+  // That tile is also where the squadmate's head is drawn.
+  const target = marines
+    .slice(1)
+    .map((m) => ({ x: m.x, y: m.y - 1 }))
+    .find((t) => reachable.some((r) => r.x === t.x && r.y === t.y));
+  if (!target) throw new Error('no squadmate with a reachable tile above it on this map');
+  await clickTile(page, target.x, target.y);
+  await expect
+    .poll(async () => {
+      const s = await snapshot(page);
+      const u = s.units.find((v) => v.id === mover.id);
+      return s.busy ? 'running' : `${s.selected} ${u?.x},${u?.y}`;
+    })
+    .toBe(`${mover.id} ${target.x},${target.y}`);
 });
 
 test('clicking a tile out of range does not move the marine', async ({ page }) => {
@@ -151,7 +193,9 @@ async function moveEastForAShot(
   const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
   if (!marine) throw new Error('no marine');
   await clickTile(page, marine.x, marine.y);
-  const dest = (await snapshot(page)).reachable.reduce((a, b) => (b.x > a.x ? b : a));
+  const dest = (await snapshot(page)).reachable
+    .filter((t) => t.cost === 1)
+    .reduce((a, b) => (b.x > a.x ? b : a));
   await clickTile(page, dest.x, dest.y);
   await expect.poll(async () => (await snapshot(page)).busy, { timeout: 20_000 }).toBe(false);
   const s = await snapshot(page);

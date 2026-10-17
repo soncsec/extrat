@@ -52,7 +52,7 @@ A small skirmish on a generated forest map: 4 marines against 2 aliens, from the
 
 Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M2.7 (line of sight first, since shots passed through trees).
 
-- [ ] M2.1 Two actions per turn (move, move again or act); moving far ends the turn ("dash")
+- [x] M2.1 Two actions per turn (move, move again or act); moving far ends the turn ("dash")
 - [x] M2.2 Line of sight; half and full cover by direction, with shield icons on hover
 - [x] M2.3 Hit chance from aim, cover, distance and flanking, with a breakdown panel
 - [ ] M2.4 Ammo and reload

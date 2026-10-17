@@ -37,6 +37,7 @@ export function planAlienAction(state: BattleState, alienId: string): Action | n
   const dist = (p: Point, q: Point): number => Math.hypot(q.x - p.x, q.y - p.y);
   const COVER_SCORE = { full: 20, half: 10 } as const;
   const FLANK_SCORE = 5;
+  const DASH_PENALTY = 50;
   // A tile with a clear shot beats one without; then cover facing the nearest marine;
   // then fewer steps. Without a shot, closer is better.
   const score = (p: Point, steps: number): number => {
@@ -49,7 +50,9 @@ export function planAlienAction(state: BattleState, alienId: string): Action | n
       (m) =>
         dist(p, m) <= range && canSee(state.map, p, m) && coverAgainst(state.map, m, p) === null,
     );
-    return 100 + (cover ? COVER_SCORE[cover] : 0) + (flanks ? FLANK_SCORE : 0) - steps * 0.1;
+    // Dashing into position leaves no action point to shoot with this turn.
+    const dash = steps > alien.move ? DASH_PENALTY : 0;
+    return 100 + (cover ? COVER_SCORE[cover] : 0) + (flanks ? FLANK_SCORE : 0) - dash - steps * 0.1;
   };
 
   const cols = state.map.cols;

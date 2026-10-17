@@ -17,6 +17,7 @@ import {
   coverAgainst,
   hitChance,
   livingUnits,
+  moveCost,
   moveRange,
   pathFor,
   shotBlock,
@@ -49,6 +50,11 @@ import { drawPips, drawReticle, drawShield, flash, floatText, playOnce } from '.
 import type { BattleResult } from './ResultScene';
 import { initialSeed } from './seed';
 
+/** A tile a unit can move to, and the action points that costs (2 means a dash). */
+export interface MoveTile extends Point {
+  cost: number;
+}
+
 /** Read-only view of the game state, used by the e2e test hook. */
 export interface GameSnapshot {
   seed: number;
@@ -66,7 +72,7 @@ export interface GameSnapshot {
   }[];
   selected: string | null;
   /** Tiles the selected unit can move to now. */
-  reachable: Point[];
+  reachable: MoveTile[];
   /** Aliens the selected marine could shoot now (in range and in sight). */
   shootable: string[];
   /** True while an animation plays; clicks are ignored. */
@@ -267,11 +273,15 @@ export class BattleScene extends Phaser.Scene {
     };
   }
 
-  private rangeTiles(unitId: string): Point[] {
+  /** Tiles the unit can move to now, with the action points each move costs (2 = dash). */
+  private rangeTiles(unitId: string): MoveTile[] {
+    const unit = unitById(this.state, unitId);
+    if (!unit) return [];
     const cols = this.state.map.cols;
-    return [...moveRange(this.state, unitId).keys()].map((k) => ({
+    return [...moveRange(this.state, unitId)].map(([k, steps]) => ({
       x: k % cols,
       y: Math.floor(k / cols),
+      cost: moveCost(unit, steps),
     }));
   }
 
@@ -286,8 +296,7 @@ export class BattleScene extends Phaser.Scene {
     const x = Math.floor(px / TILE);
     const y = Math.floor(py / TILE);
     if (y >= MAP_ROWS || this.busy) return;
-    // Characters stand about two tiles tall, so a click on the tile above one also counts.
-    const unit = unitAt(this.state, x, y) ?? unitAt(this.state, x, y + 1);
+    const unit = this.unitUnderPointer(x, y);
     if (unit?.side === 'marine') {
       this.aimTarget = null;
       this.dispatch({ type: 'select', unitId: unit.id });
@@ -308,6 +317,19 @@ export class BattleScene extends Phaser.Scene {
       this.aimTarget = null;
       this.moveUnit(selected, { x, y });
     }
+  }
+
+  /**
+   * The unit a click or hover on tile (x, y) means. Characters stand about two tiles
+   * tall, so the tile above a unit counts as its head, unless the selected marine can
+   * move to that tile, in which case the tile wins (so squadmates don't block it).
+   */
+  private unitUnderPointer(x: number, y: number): Unit | undefined {
+    const here = unitAt(this.state, x, y);
+    if (here) return here;
+    const selected = this.state.selected;
+    if (selected && pathFor(this.state, selected, { x, y })) return undefined;
+    return unitAt(this.state, x, y + 1);
   }
 
   private onEscape(): void {
@@ -332,15 +354,18 @@ export class BattleScene extends Phaser.Scene {
     const x = Math.floor(px / TILE);
     const y = Math.floor(py / TILE);
     if (!this.aimTarget) {
-      const alien = unitAt(this.state, x, y) ?? unitAt(this.state, x, y + 1);
+      const alien = this.unitUnderPointer(x, y);
       this.drawAim(alien?.side === 'alien' ? alien.id : null);
       if (alien?.side === 'alien') return;
     }
     const path = y < MAP_ROWS ? pathFor(this.state, id, { x, y }) : null;
     if (!path) return;
-    g.fillStyle(0xdff1ff, 0.9);
+    const mover = unitById(this.state, id);
+    const dash = mover !== undefined && moveCost(mover, path.length) > 1;
+    const color = dash ? 0xffd23a : 0xdff1ff;
+    g.fillStyle(color, 0.9);
     for (const p of path.slice(0, -1)) g.fillRect(p.x * TILE + 7, p.y * TILE + 7, 2, 2);
-    g.lineStyle(1, 0xdff1ff, 1).strokeRect(x * TILE + 1.5, y * TILE + 1.5, TILE - 3, TILE - 3);
+    g.lineStyle(1, color, 1).strokeRect(x * TILE + 1.5, y * TILE + 1.5, TILE - 3, TILE - 3);
     // Shields on each side of the tile that has cover.
     for (const [dx, dy] of [
       [1, 0],
@@ -799,8 +824,10 @@ export class BattleScene extends Phaser.Scene {
       .fillStyle(0xf2a33a, 1)
       .fillTriangle(cx - 3, top - 5, cx + 3, top - 5, cx, top - 2);
     for (const t of this.rangeTiles(unit.id)) {
+      // Blue: a normal move (1 point). Yellow: a dash (both points).
+      const [color, alpha] = t.cost === 1 ? [0x4aa8ff, 0.3] : [0xf2c94a, 0.22];
       this.rangeLayer
-        .fillStyle(0x4aa8ff, 0.3)
+        .fillStyle(color, alpha)
         .fillRect(t.x * TILE + 1, t.y * TILE + 1, TILE - 2, TILE - 2);
     }
     const ap = unit.ap > 0 ? `AP ${unit.ap}/${ACTION_POINTS}` : 'NO ACTIONS LEFT';

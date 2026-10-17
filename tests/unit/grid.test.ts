@@ -71,6 +71,14 @@ describe('findPath', () => {
     expect(findPath(open.cols, open.rows, open.open, { x: 1, y: 0 }, { x: 1, y: 0 })).toBeNull();
   });
 
+  it('returns null for a goal off the map, even one whose index matches a real tile', () => {
+    const b = board(['....', '....']);
+    // (-1, 1) has index 1 * 4 - 1 = 3, the same as (3, 0).
+    expect(findPath(b.cols, b.rows, b.open, { x: 0, y: 0 }, { x: -1, y: 1 })).toBeNull();
+    expect(findPath(b.cols, b.rows, b.open, { x: 0, y: 0 }, { x: 4, y: 0 })).toBeNull();
+    expect(findPath(b.cols, b.rows, b.open, { x: 0, y: 0 }, { x: 0, y: 2 })).toBeNull();
+  });
+
   it('gives the same path every time', () => {
     const b = board(['....', '....', '....']);
     const a = findPath(b.cols, b.rows, b.open, { x: 0, y: 0 }, { x: 3, y: 2 });
