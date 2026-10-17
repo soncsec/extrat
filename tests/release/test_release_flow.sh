@@ -45,7 +45,7 @@ cat >"$T/bin/npm" <<'SH'
 # "npm run check" builds a tiny site; FAKE_BROKEN=1 builds one missing its script.
 if [[ "$*" == "run check" ]]; then
   rm -rf dist && mkdir -p dist/assets
-  printf '<!doctype html><title>Game Template</title><script type="module" src="./assets/index-AbCd1234.js"></script>\n' >dist/index.html
+  printf '<!doctype html><title>Extrat</title><script type="module" src="./assets/index-AbCd1234.js"></script>\n' >dist/index.html
   [[ "${FAKE_BROKEN:-}" == 1 ]] || echo "// game" >dist/assets/index-AbCd1234.js
 fi
 SH
@@ -53,7 +53,7 @@ chmod +x "$T/bin/"*
 
 # --- a throwaway repo whose HEAD is origin/main ---------------------------------------
 # The fake GitHub remote is named after this game (init-game.sh renames GAME_REPO).
-GAME_REPO=game-template
+GAME_REPO=extrat
 mkdir -p "$T/remote/soncsec" && git init -q --bare "$T/remote/soncsec/$GAME_REPO.git"
 mkdir "$T/repo" && cd "$T/repo" || exit 1
 git init -q -b main
@@ -62,15 +62,15 @@ git config user.name test && git config user.email test@example.invalid
 mkdir -p scripts deploy
 cp "$SRC/scripts/release.sh" "$SRC/scripts/release-remote.sh" "$SRC/scripts/smoke_test.py" scripts/
 printf 'dist/\ndeploy/server.env\n' >.gitignore
-printf '{"name": "game-template"}\n' >package.json
+printf '{"name": "extrat"}\n' >package.json
 git add -A && git commit -q -m init
 git remote add origin "$T/remote/soncsec/$GAME_REPO.git" && git push -q origin main
 touch "$T/fake_key"
 printf 'SERVER=127.0.0.1:%s\nSSH_USER=deploy\nSSH_KEY=%s\n' "$PORT" "$T/fake_key" >deploy/server.env
 
 release() { PATH="$T/bin:$PATH" bash scripts/release.sh "$@" 2>&1; }
-live() { basename "$(readlink "$T/server/web/game-template" 2>/dev/null)" 2>/dev/null; }
-count() { find "$T/server/releases/game-template" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l; }
+live() { basename "$(readlink "$T/server/web/extrat" 2>/dev/null)" 2>/dev/null; }
+count() { find "$T/server/releases/extrat" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l; }
 
 # --- the tests -------------------------------------------------------------------
 # T1.3: a game can only release into its own slot.
@@ -89,7 +89,7 @@ if [[ "$out" == *"refusing to release into another game's slot"* && "$(count)" =
 else bad "other slug: $out"; fi
 out="$(with_change scripts/release.sh 's/^SLUG=.*/SLUG=_portal/' release rollback)"
 if [[ "$out" == *"reserved for the portal"* ]]; then ok "refuses the portal's slot"; else bad "_portal slug: $out"; fi
-out="$(with_change package.json 's/game-template/other-game/' release status)"
+out="$(with_change package.json 's/extrat/other-game/' release status)"
 if [[ "$out" == *"package.json says 'other-game'"* ]]; then ok "refuses when package.json names another game"; else bad "pkg mismatch: $out"; fi
 git remote set-url origin "$T/remote/soncsec/other-game.git"
 out="$(release activate 20990101T000000Z-deadbeef)"
@@ -113,8 +113,8 @@ if [[ $? -eq 0 && -n "$first" && "$out" == *"smoke test: passed"* ]]; then ok "f
 sleep 1 # release ids have one-second resolution
 out="$(release deploy)"; second="$(live)"
 if [[ $? -eq 0 && "$second" != "$first" && "$(count)" == 2 ]]; then ok "second release replaces the first"; else bad "second release: $out"; fi
-a="$T/server/releases/game-template/$first/assets/index-AbCd1234.js"
-b="$T/server/releases/game-template/$second/assets/index-AbCd1234.js"
+a="$T/server/releases/extrat/$first/assets/index-AbCd1234.js"
+b="$T/server/releases/extrat/$second/assets/index-AbCd1234.js"
 if [[ -f "$a" && -f "$b" ]]; then ok "both releases keep their files"; else bad "release files missing"; fi
 
 sleep 1
@@ -134,7 +134,7 @@ out="$(release status)"
 if [[ "$out" == *"* $first (live)"* ]]; then ok "status shows the live release"; else bad "status: $out"; fi
 
 for _ in 1 2 3 4 5; do sleep 1; release deploy >/dev/null; done
-if [[ "$(count)" -eq 5 && -d "$T/server/releases/game-template/$(live)" ]]; then ok "old releases are pruned to the newest 5, including the live one"; else bad "count is $(count)"; fi
+if [[ "$(count)" -eq 5 && -d "$T/server/releases/extrat/$(live)" ]]; then ok "old releases are pruned to the newest 5, including the live one"; else bad "count is $(count)"; fi
 
 echo
 echo "$PASS passed, $FAIL failed"
