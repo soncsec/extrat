@@ -47,9 +47,10 @@ export const UNITS = {
   /**
    * move: tiles per move action. aim: base hit chance in percent.
    * damage: inclusive range per hit. range: farthest shot in tiles.
+   * crit: base chance in percent that a hit is critical.
    */
-  marine: { hp: 4, move: 5, aim: 70, damage: { min: 2, max: 3 }, range: 16 },
-  walker: { hp: 3, move: 4, aim: 60, damage: { min: 1, max: 2 }, range: 6 },
+  marine: { hp: 4, move: 5, aim: 70, damage: { min: 2, max: 3 }, range: 16, crit: 10 },
+  walker: { hp: 3, move: 4, aim: 60, damage: { min: 1, max: 2 }, range: 6, crit: 0 },
 } as const;
 
 /** Hit chance rules (M1; cover and flanking come in M2). */
@@ -62,6 +63,10 @@ export const SHOOTING = {
   maxChance: 95,
   /** Percent taken off the hit chance when the target has cover facing the shooter. */
   cover: { half: 20, full: 40 },
+  /** Extra crit chance, in percent, against a flanked target (no cover facing the shooter). */
+  flankCrit: 40,
+  /** Extra damage a critical hit does. */
+  critDamage: 2,
 } as const;
 
 /** Action points each unit gets at the start of its side's turn. A move costs 1. */

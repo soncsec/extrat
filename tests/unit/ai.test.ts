@@ -120,3 +120,18 @@ describe('planAlienAction with sight and cover', () => {
     expect(canSee(after.map, plan.to, { x: 3, y: 2 })).toBe(true);
   });
 });
+
+describe('planAlienAction and flanking', () => {
+  it('walks a little further to flank a marine in cover', () => {
+    // The marine at (3,2) has a bush to its south. From the south-east the alien could
+    // stop at (8,5) after 1 step, but the bush would protect the marine there. Tiles
+    // level with the marine (y <= 2) flank it.
+    const rows = Array(8).fill('.'.repeat(12)) as string[];
+    rows[3] = '...b........';
+    const s = scene(rows, [{ x: 3, y: 2 }], { x: 9, y: 5 });
+    expect(hitChance(s, 'a', 'm0')).toBeNull(); // out of range to start with
+    const plan = planAlienAction(s, 'a');
+    if (plan?.type !== 'move') throw new Error(`expected a move, got ${JSON.stringify(plan)}`);
+    expect(plan.to.y).toBeLessThanOrEqual(2);
+  });
+});

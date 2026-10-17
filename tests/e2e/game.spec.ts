@@ -166,7 +166,11 @@ test('a marine aims at an alien, fires, and the shot is resolved', async ({ page
   const { marineId, alien } = await moveEastForAShot(page);
   await clickTile(page, alien.x, alien.y);
   await expect.poll(async () => (await snapshot(page)).aimTarget).toBe(alien.id);
-  expect((await snapshot(page)).lastShot).toBeNull();
+  const aimed = await snapshot(page);
+  expect(aimed.lastShot).toBeNull();
+  const odds = aimed.aimOdds;
+  if (!odds) throw new Error('no odds shown while aiming');
+  expect(odds.hit).toBe(odds.aim + odds.range - odds.coverPenalty);
   await page.keyboard.press('Enter');
   await expect.poll(async () => (await snapshot(page)).lastShot?.targetId).toBe(alien.id);
   await expect.poll(async () => (await snapshot(page)).busy).toBe(false);
@@ -174,6 +178,7 @@ test('a marine aims at an alien, fires, and the shot is resolved', async ({ page
   const after = await snapshot(page);
   const shot = after.lastShot;
   if (!shot) throw new Error('no shot');
+  expect(shot.chance).toBe(odds.hit); // the shot used the odds the panel showed
   expect(after.units.find((u) => u.id === marineId)?.ap).toBe(0);
   expect(after.units.find((u) => u.id === alien.id)?.hp).toBe(Math.max(0, alien.hp - shot.damage));
   expect(after.aimTarget).toBeNull();
