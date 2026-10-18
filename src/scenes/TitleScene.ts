@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH, TILE } from '../config/tuning';
 import { FOREST_SHEET, MARINE_SHEET, WALKER_SHEET } from './art';
 import { initialSeed } from './seed';
-import { button, label } from './ui';
+import { pixelButton, pixelText } from './pixelFont';
 
 /** Where the games portal lives, relative to this game's folder (games.soncrant.com/extrat/). */
 export const PORTAL_URL = '../';
@@ -40,19 +40,26 @@ export class TitleScene extends Phaser.Scene {
       .play('walker-idle');
 
     const cx = GAME_WIDTH / 2;
-    label(this, cx, 52, 'EXTRAT', 36, '#f2a33a', true);
-    label(this, cx, 80, 'Hunt the aliens hiding on Earth, one turn at a time.', 10, '#dfe4ec');
-    label(
+    pixelText(this, cx, 34, 'EXTRAT', 0xf2a33a, 5);
+    pixelText(this, cx, 64, 'Hunt the aliens hiding on Earth, one turn at a time.', 0xdfe4ec);
+    // The controls on a dark panel, so they read clearly over the forest.
+    this.add.rectangle(cx, 113, 312, 66, 0x05070f, 0.8).setStrokeStyle(1, 0x2b3242);
+    pixelText(
       this,
       cx,
-      122,
-      'Click a marine, then a blue tile to move (yellow: dash).\nClick an alien to aim, click again to fire.\nTab or 1-4: marine   F: target   Enter: fire\nR reload   O watch   G grenade   E end turn',
-      9,
-      '#8d97a8',
+      113,
+      [
+        'Click a marine, then a blue tile to move.',
+        'Yellow tiles are a dash: both actions.',
+        'Click an alien to aim, again to fire.',
+        'Tab or 1-4: marine   F: target   E: end turn',
+        'R: reload   O: watch   G: grenade',
+      ].join('\n'),
+      0xc8d0dc,
     );
-    button(this, cx, 172, 'START MISSION', () => this.start());
-    button(this, cx, 196, 'BACK TO GAMES', () => window.location.assign(PORTAL_URL), false);
-    label(this, cx, GAME_HEIGHT - 10, 'Enter: start', 8, '#8d97a8');
+    pixelButton(this, cx, 172, 'START MISSION', () => this.start());
+    pixelButton(this, cx, 194, 'BACK TO GAMES', () => window.location.assign(PORTAL_URL), false);
+    pixelText(this, cx, 214, 'Enter: start', 0xa3adbd);
 
     this.input.keyboard?.once('keydown-ENTER', () => this.start());
   }
