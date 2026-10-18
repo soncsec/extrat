@@ -5,6 +5,7 @@ import {
   MAP_COLS,
   MAP_ROWS,
   OVERWATCH,
+  PODS,
   SHOOTING,
   SIGHT,
   SKIRMISH,
@@ -69,7 +70,7 @@ function openMap(rows: string[]): BattleMap {
 }
 
 describe('createBattle', () => {
-  it('deploys the squad in the west and the aliens in the east', () => {
+  it('deploys the squad in the west and the alien pods in the east, hidden and dormant', () => {
     for (let seed = 1; seed <= 100; seed++) {
       const s = battle(seed);
       const marines = s.units.filter((u) => u.side === 'marine');
@@ -77,9 +78,25 @@ describe('createBattle', () => {
       expect(marines).toHaveLength(SKIRMISH.marines);
       expect(aliens).toHaveLength(SKIRMISH.aliens);
       const [wMin, wMax] = spawnZone(MAP_COLS, 'west');
-      const [eMin, eMax] = spawnZone(MAP_COLS, 'east');
-      for (const m of marines) expect(m.x >= wMin && m.x <= wMax, `seed ${seed}`).toBe(true);
-      for (const a of aliens) expect(a.x >= eMin && a.x <= eMax, `seed ${seed}`).toBe(true);
+      const [, eMax] = spawnZone(MAP_COLS, 'east');
+      for (const m of marines) {
+        expect(m.x >= wMin && m.x <= wMax, `seed ${seed}`).toBe(true);
+        expect(m).toMatchObject({ pod: null, dormant: false });
+      }
+      for (const a of aliens) {
+        expect(a.x >= PODS.westmostColumn && a.x <= eMax, `seed ${seed}`).toBe(true);
+        expect(a.dormant, `seed ${seed}`).toBe(true);
+        expect(isVisibleTo(s, 'marine', a), `seed ${seed}: ${a.id} starts in sight`).toBe(false);
+      }
+      // PODS.count pods of PODS.size, each member close to its pod's first member.
+      for (let pod = 0; pod < PODS.count; pod++) {
+        const members = aliens.filter((a) => a.pod === pod);
+        expect(members, `seed ${seed} pod ${pod}`).toHaveLength(PODS.size);
+        const [lead, ...rest] = members as [Unit, ...Unit[]];
+        for (const m of rest) {
+          expect(Math.abs(m.x - lead.x) + Math.abs(m.y - lead.y)).toBeLessThanOrEqual(PODS.spread);
+        }
+      }
     }
   });
 
@@ -218,9 +235,10 @@ describe('moving', () => {
     const alien = must(s.units.find((u) => u.side === 'alien'));
     return {
       ...s,
+      // An alien that has already been spotted: these tests are about plain movement.
       units: [
         { ...marine, x: 2, y: 1, facing: 1 },
-        { ...alien, x: 8, y: 1, facing: -1 },
+        { ...alien, x: 8, y: 1, facing: -1, dormant: false },
       ],
     };
   }
@@ -975,5 +993,94 @@ describe('sight and fog of war', () => {
       [{ x: 14, y: 0 }],
     );
     expect(shotBlock(spotted, 'm0', 'a0')).toBeNull();
+  });
+});
+
+describe('pods: spotting and the scramble to cover', () => {
+  /**
+   * A 20 x 7 field. Marine 'm' at (1,3); a dormant pod (pod 0) of 'a1' at (15,3) and
+   * 'a2' at (15,5), 14 tiles away: out of sight (12). A bush at (13,1) offers cover.
+   */
+  function field(rows?: string[]): BattleState {
+    const pic = rows ?? Array(7).fill('.'.repeat(20));
+    const s = createBattle(openMap(pic.map((r) => '.'.repeat(r.length))), 1);
+    const m = must(s.units.find((u) => u.side === 'marine'));
+    const a = must(s.units.find((u) => u.side === 'alien'));
+    return {
+      ...s,
+      map: openMap(pic),
+      units: [
+        { ...m, id: 'm', x: 1, y: 3, ap: ACTION_POINTS },
+        { ...a, id: 'a1', x: 15, y: 3, pod: 0, dormant: true },
+        { ...a, id: 'a2', x: 15, y: 5, pod: 0, dormant: true },
+      ],
+    };
+  }
+
+  it('stops a marine on the tile where it spots a pod, which wakes and scrambles', () => {
+    const s = field();
+    const next = apply(s, { type: 'move', unitId: 'm', to: { x: 6, y: 3 } });
+    const moved = must(next.lastMove ?? undefined);
+    // From (3,3) a1 is 12 tiles away: the first tile in sight. The run stops there.
+    expect(moved.path.at(-1)).toEqual({ x: 3, y: 3 });
+    expect(unitById(next, 'm')).toMatchObject({ x: 3, y: 3, ap: ACTION_POINTS - 1 });
+    expect(moved.spotted.sort()).toEqual(['a1', 'a2']);
+    for (const id of ['a1', 'a2']) expect(unitById(next, id)?.dormant).toBe(false);
+  });
+
+  it('sends woken aliens to cover facing the squad, without spending points', () => {
+    const rows = Array(7).fill('.'.repeat(20));
+    rows[3] = '.............b......'; // a bush at (13,3), west of a1
+    const next = apply(field(rows), { type: 'move', unitId: 'm', to: { x: 6, y: 3 } });
+    const a1 = must(unitById(next, 'a1'));
+    expect(coverAgainst(next.map, a1, must(unitById(next, 'm')))).not.toBeNull();
+    expect(a1).toMatchObject({ ap: ACTION_POINTS, facing: -1 });
+    const scamper = next.lastMove?.scampers.find((sc) => sc.unitId === 'a1');
+    expect(scamper?.path.at(-1)).toEqual({ x: a1.x, y: a1.y });
+  });
+
+  it('does not trigger overwatch with the scramble', () => {
+    const s = field();
+    const watching = {
+      ...s,
+      units: [...s.units, { ...must(s.units[0]), id: 'm2', x: 2, y: 5, ap: 0, overwatch: true }],
+    };
+    const next = apply(watching, { type: 'move', unitId: 'm', to: { x: 6, y: 3 } });
+    expect(next.lastMove?.reactions).toEqual([]);
+    expect(unitById(next, 'm2')?.overwatch).toBe(true);
+  });
+
+  it('lets marines plan through tiles of aliens they cannot see, and stops them short', () => {
+    // A dormant alien hidden behind a pine wall, right on the marine's straight path.
+    const rows = ['....#...', '....#...', '........'];
+    const s = createBattle(openMap(rows.map((r) => '.'.repeat(r.length))), 1);
+    const m = must(s.units.find((u) => u.side === 'marine'));
+    const a = must(s.units.find((u) => u.side === 'alien'));
+    const state: BattleState = {
+      ...s,
+      map: openMap(rows),
+      units: [
+        { ...m, id: 'm', x: 2, y: 0, ap: ACTION_POINTS },
+        { ...a, id: 'a', x: 6, y: 0, pod: 0, dormant: true },
+      ],
+    };
+    // Unseen, its tile is part of the marine's move range...
+    expect(moveRange(state, 'm').has(0 * 8 + 6)).toBe(true);
+    // ...and a run there stops at the first tile where the alien is spotted.
+    const next = apply(state, { type: 'move', unitId: 'm', to: { x: 6, y: 0 } });
+    const end = must(next.lastMove?.path.at(-1));
+    expect(end.x === 6 && end.y === 0).toBe(false);
+    expect(next.lastMove?.spotted).toEqual(['a']);
+  });
+
+  it('wakes a pod caught in a grenade blast', () => {
+    const s = field();
+    const near = {
+      ...s,
+      units: s.units.map((u) => (u.id === 'm' ? { ...u, x: 9, y: 3 } : u)),
+    };
+    const next = apply(near, { type: 'throw', unitId: 'm', at: { x: 15, y: 4 } });
+    for (const id of ['a1', 'a2']) expect(unitById(next, id)?.dormant).toBe(false);
+    expect(next.lastThrow?.hits.map((h) => h.unitId).sort()).toEqual(['a1', 'a2']);
   });
 });
