@@ -86,7 +86,7 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 *Order changed (owner, 2026-10-18): a playable campaign skeleton on forest maps comes before the other landscapes (M4.3), then one landscape per PR. Mission ramp (owner decision): missions 1-2 two groups of 2 aliens, 3-4 three of 2, 5 three of 3, 6 the boss (three of 3 until M5.6). The debrief keeps REPLAY (same map) in the campaign.*
 
 - [ ] M5.1 Campaign of 6 missions, one per landscape; briefing and debrief screens. *Loop, briefing, debrief and mission ramp built; every mission uses the forest until M4.3 adds the other landscapes.*
-- [ ] M5.2 XP, ranks and stat increases
+- [x] M5.2 XP, ranks and stat increases. *Kills and wins earn XP; five ranks add aim and health; a replayed battle earns no XP (owner, 2026-10-18).*
 - [ ] M5.3 Fallen marines return next mission; Wall of Shame (nicknames, death counts, debrief jokes)
 - [x] M5.4 Squad wiped out: retry the mission on a new map
 - [x] M5.5 Autosave every turn; resume from the title screen; versioned save with validation (ADR-E6)

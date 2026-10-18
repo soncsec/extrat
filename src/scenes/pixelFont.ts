@@ -10,6 +10,10 @@ export const PIXEL_FONT = 'pixel-font';
 /** A glyph plus one pixel of spacing to the right and below. */
 export const CELL_W = GLYPH_WIDTH + 1;
 export const CELL_H = GLYPH_HEIGHT + 1;
+/** Extra pixels between lines of text... */
+const LINE_SPACING = 3;
+/** ...so lines are this far apart. */
+export const LINE_H = CELL_H + LINE_SPACING;
 const PER_ROW = 16;
 
 /** Draws the glyphs into a texture and registers the font, once. */
@@ -43,7 +47,7 @@ export function buildPixelFont(scene: Phaser.Scene): void {
     'offset.y': 0,
     'spacing.x': 0,
     'spacing.y': 0,
-    lineSpacing: 3,
+    lineSpacing: LINE_SPACING,
   }) as unknown as { data: Phaser.Types.GameObjects.BitmapText.BitmapFontData };
   scene.cache.bitmapFont.add(PIXEL_FONT, entry);
 }

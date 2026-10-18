@@ -612,7 +612,7 @@ test('a campaign runs mission after mission with the same squad', async ({ page 
   test.setTimeout(90_000);
   await openGame(page, '?campaign=7');
   const first = await snapshot(page);
-  expect(first.campaign).toEqual({ mission: 0, attempt: 0 });
+  expect(first.campaign).toMatchObject({ mission: 0, attempt: 0 });
   const squad = first.units.filter((u) => u.side === 'marine').map((u) => u.name);
   // Mission 1 won: Enter goes to the next briefing, then the next mission.
   await wipeOut(page, 'alien');
@@ -621,7 +621,7 @@ test('a campaign runs mission after mission with the same squad', async ({ page 
   await page.keyboard.press('Enter');
   await waitForScene(page, 'Battle');
   const second = await snapshot(page);
-  expect(second.campaign).toEqual({ mission: 1, attempt: 0 });
+  expect(second.campaign).toMatchObject({ mission: 1, attempt: 0 });
   expect(second.mapSeed).not.toBe(first.mapSeed);
   expect(second.units.filter((u) => u.side === 'marine').map((u) => u.name)).toEqual(squad);
 });
@@ -634,7 +634,7 @@ test('a lost campaign mission is retried on a new map; REPLAY keeps the map', as
   await page.keyboard.press('r');
   await expect.poll(() => activeScenes(page)).not.toContain('Result');
   const replay = await snapshot(page);
-  expect(replay.campaign).toEqual({ mission: 0, attempt: 0 });
+  expect(replay.campaign).toMatchObject({ mission: 0, attempt: 0 });
   expect(replay.mapSeed).toBe(first.mapSeed);
   // Lost again: Enter retries the mission on a new map.
   await wipeOut(page, 'marine');
@@ -643,8 +643,47 @@ test('a lost campaign mission is retried on a new map; REPLAY keeps the map', as
   await page.keyboard.press('Enter');
   await waitForScene(page, 'Battle');
   const retry = await snapshot(page);
-  expect(retry.campaign).toEqual({ mission: 0, attempt: 1 });
+  expect(retry.campaign).toMatchObject({ mission: 0, attempt: 1 });
   expect(retry.mapSeed).not.toBe(first.mapSeed);
+});
+
+test('wins earn XP and promotions; a replayed win earns none (M5.2)', async ({ page }) => {
+  test.setTimeout(90_000);
+  await openGame(page, '?campaign=7');
+  expect((await snapshot(page)).campaign?.xp).toEqual([0, 0, 0, 0]);
+  // Mission 1 won: everyone gets the mission bonus. R replays the same map.
+  await wipeOut(page, 'alien');
+  await page.keyboard.press('r');
+  await expect.poll(() => activeScenes(page)).not.toContain('Result');
+  const replay = await snapshot(page);
+  expect(replay.replaying).toBe(true);
+  expect(replay.campaign?.xp).toEqual([10, 10, 10, 10]);
+  // Closing the browser mid-replay and continuing still knows it is a replay. (The
+  // plain address: ?campaign= would start that campaign afresh.)
+  await page.goto('./');
+  await waitForScene(page, 'Title');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Battle');
+  expect((await snapshot(page)).replaying).toBe(true);
+  // The replayed win earns nothing; the debrief says so.
+  await wipeOut(page, 'alien');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Briefing');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Battle');
+  const second = await snapshot(page);
+  expect(second.replaying).toBe(false);
+  expect(second.campaign).toMatchObject({ mission: 1, xp: [10, 10, 10, 10] });
+  expect(second.units.filter((u) => u.side === 'marine').every((u) => u.rank === 0)).toBe(true);
+  // Mission 2 won: 20 XP each makes them all Squaddies.
+  await wipeOut(page, 'alien');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Briefing');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Battle');
+  const third = await snapshot(page);
+  expect(third.campaign?.xp).toEqual([20, 20, 20, 20]);
+  expect(third.units.filter((u) => u.side === 'marine').every((u) => u.rank === 1)).toBe(true);
 });
 
 test('winning all six missions completes the campaign', async ({ page }) => {
@@ -839,7 +878,7 @@ test('a campaign saved between missions resumes at the next briefing', async ({ 
   await waitForScene(page, 'Briefing');
   await page.keyboard.press('Enter');
   await waitForScene(page, 'Battle');
-  expect((await snapshot(page)).campaign).toEqual({ mission: 1, attempt: 0 });
+  expect((await snapshot(page)).campaign).toMatchObject({ mission: 1, attempt: 0 });
 });
 
 test('a damaged save is cleared with a message, never loaded', async ({ page }) => {
