@@ -1,6 +1,7 @@
 import { FOREST } from '../config/tuning';
+import { chunkCell, FOREST_CHUNKS, type Chunk, type ChunkSet } from './chunks';
 import { reachable, type Point } from './grid';
-import { createRng } from './rng';
+import { createRng, type Rng } from './rng';
 
 /** Things that stand on a tile. */
 export type PropKind = 'pine' | 'oak' | 'boulder' | 'rocks' | 'bush';
@@ -44,13 +45,14 @@ export interface BattleMap {
 export interface ForestOptions {
   treeLineRows: number;
   spawnCols: number;
-  clusters: { min: number; max: number };
-  clusterSize: { min: number; max: number };
-  boulders: number;
-  bushes: number;
-  rocks: number;
+  chunk: { width: number; height: number };
+  maybeCover: { bush: number; rocks: number };
+  maybeTree: { pine: number; oak: number };
+  scatter: { bushes: number; rocks: number };
   dirtPatches: number;
   minSpawnTiles: number;
+  minSquadCover: number;
+  minSpawnSteps: number;
   maxAttempts: number;
 }
 
@@ -118,7 +120,59 @@ export function validateMap(map: BattleMap, opts: ForestOptions = FOREST): strin
   const east = free.filter((p) => inZone(p, spawnZone(map.cols, 'east', opts))).length;
   if (west < opts.minSpawnTiles) problems.push(`west spawn zone has only ${west} free tiles`);
   if (east < opts.minSpawnTiles) problems.push(`east spawn zone has only ${east} free tiles`);
+
+  // The squad deploys in the west facing east: it needs cover on the east side of
+  // enough tiles to start behind something.
+  const westZone = spawnZone(map.cols, 'west', opts);
+  const covered = free.filter(
+    (p) => inZone(p, westZone) && tileAt(map, p.x + 1, p.y)?.prop != null,
+  ).length;
+  if (covered < opts.minSquadCover) {
+    problems.push(`only ${covered} squad spawn tiles have cover facing the enemy`);
+  }
+
+  // The sides must start a fair walk apart.
+  const steps = stepsBetween(map, free, westZone, spawnZone(map.cols, 'east', opts));
+  if (steps < opts.minSpawnSteps) problems.push(`spawn zones are only ${steps} steps apart`);
   return problems;
+}
+
+/**
+ * The fewest steps on foot from a free tile in columns `from` to one in columns `to`
+ * (Infinity if none connects).
+ */
+function stepsBetween(
+  map: BattleMap,
+  free: readonly Point[],
+  from: [number, number],
+  to: [number, number],
+): number {
+  // One search from all the starting tiles at once.
+  const dist = new Map<number, number>();
+  const queue: Point[] = [];
+  for (const p of free) {
+    if (p.x < from[0] || p.x > from[1]) continue;
+    dist.set(p.y * map.cols + p.x, 0);
+    queue.push(p);
+  }
+  for (let head = 0; head < queue.length; head++) {
+    const p = queue[head] as Point;
+    const d = dist.get(p.y * map.cols + p.x) as number;
+    if (p.x >= to[0] && p.x <= to[1]) return d;
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      const q = { x: p.x + dx, y: p.y + dy };
+      const key = q.y * map.cols + q.x;
+      if (dist.has(key) || !isWalkable(map, q.x, q.y)) continue;
+      dist.set(key, d + 1);
+      queue.push(q);
+    }
+  }
+  return Infinity;
 }
 
 function buildForest(seed: number, cols: number, rows: number, opts: ForestOptions): BattleMap {
@@ -148,24 +202,23 @@ function buildForest(seed: number, cols: number, rows: number, opts: ForestOptio
     }
   }
 
-  // Clumps of trees in the middle, away from the spawn zones.
-  const clusters = rng.int(opts.clusters.min, opts.clusters.max);
-  for (let c = 0; c < clusters; c++) {
-    const [, westEdge] = spawnZone(cols, 'west', opts);
-    const [eastEdge] = spawnZone(cols, 'east', opts);
-    let x = rng.int(westEdge + 2, eastEdge - 2);
-    let y = rng.int(top + 1, rows - 2);
-    const size = rng.int(opts.clusterSize.min, opts.clusterSize.max);
-    for (let i = 0; i < size; i++) {
-      place(x, y, rng.pick(['pine', 'oak'] as const));
-      x = clamp(x + rng.int(-1, 1), westEdge + 1, eastEdge - 1);
-      y = clamp(y + rng.int(-1, 1), top, rows - 1);
+  // The field below is a grid of chunks: light ones where the sides deploy, varied
+  // ones between. Leftover columns or rows (on maps that don't divide evenly) stay open.
+  const { width: w, height: h } = opts.chunk;
+  const [, westEdge] = spawnZone(cols, 'west', opts);
+  const [eastEdge] = spawnZone(cols, 'east', opts);
+  for (let cy = 0; top + (cy + 1) * h <= rows; cy++) {
+    for (let cx = 0; (cx + 1) * w <= cols; cx++) {
+      const x0 = cx * w;
+      const inSpawn = x0 <= westEdge || x0 + w - 1 >= eastEdge;
+      const set: ChunkSet = FOREST_CHUNKS;
+      const chunk = rng.pick(inSpawn ? set.spawn : set.field);
+      stamp(chunk, x0, top + cy * h, rng, opts, place);
     }
   }
 
-  scatter(opts.boulders, () => place(rng.int(1, cols - 3), rng.int(top, rows - 1), 'boulder'));
-  scatter(opts.bushes, () => place(rng.int(0, cols - 1), rng.int(top, rows - 1), 'bush'));
-  scatter(opts.rocks, () => place(rng.int(0, cols - 1), rng.int(top, rows - 1), 'rocks'));
+  scatter(opts.scatter.bushes, () => place(rng.int(0, cols - 1), rng.int(top, rows - 1), 'bush'));
+  scatter(opts.scatter.rocks, () => place(rng.int(0, cols - 1), rng.int(top, rows - 1), 'rocks'));
 
   for (let i = 0; i < opts.dirtPatches; i++) {
     map.decals.push({
@@ -177,12 +230,49 @@ function buildForest(seed: number, cols: number, rows: number, opts: ForestOptio
   return map;
 }
 
+/**
+ * Draws a chunk with its top-left at (x0, y0), mirrored at random, settling its
+ * maybe-tiles with the seed.
+ */
+function stamp(
+  chunk: Chunk,
+  x0: number,
+  y0: number,
+  rng: Rng,
+  opts: ForestOptions,
+  place: (x: number, y: number, kind: PropKind) => boolean,
+): void {
+  const flipX = rng.next() < 0.5;
+  const flipY = rng.next() < 0.5;
+  const w = chunk.rows[0]?.length ?? 0;
+  const h = chunk.rows.length;
+  const mx = (i: number): number => x0 + (flipX ? w - 1 - i : i);
+  const my = (j: number): number => y0 + (flipY ? h - 1 - j : j);
+  chunk.rows.forEach((row, j) => {
+    [...row].forEach((ch, i) => {
+      const cell = chunkCell(ch);
+      const y = my(j);
+      if (cell.kind === 'prop') {
+        // A boulder's anchor is its left tile, which mirroring moves to the other end.
+        const x = cell.prop === 'boulder' && flipX ? mx(i + 1) : mx(i);
+        place(x, y, cell.prop);
+      } else if (cell.kind === 'maybeCover') {
+        const r = rng.next();
+        const { bush, rocks } = opts.maybeCover;
+        if (r < bush) place(mx(i), y, 'bush');
+        else if (r < bush + rocks) place(mx(i), y, 'rocks');
+      } else if (cell.kind === 'maybeTree') {
+        const r = rng.next();
+        const { pine, oak } = opts.maybeTree;
+        if (r < pine) place(mx(i), y, 'pine');
+        else if (r < pine + oak) place(mx(i), y, 'oak');
+      }
+    });
+  });
+}
+
 /** Calls `tryPlace` until it succeeds `count` times, with a cap on attempts. */
 function scatter(count: number, tryPlace: () => boolean): void {
   let placed = 0;
   for (let tries = 0; placed < count && tries < count * 20; tries++) if (tryPlace()) placed++;
-}
-
-function clamp(v: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, v));
 }

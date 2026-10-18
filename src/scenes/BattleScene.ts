@@ -71,7 +71,7 @@ import {
   drawShield,
   flash,
   floatText,
-  playOnce,
+  FxPool,
 } from './fx';
 import type { BattleResult } from './ResultScene';
 import { PixelButton, PixelText } from './pixelFont';
@@ -113,6 +113,10 @@ export interface GameSnapshot {
   reachable: MoveTile[];
   /** Aliens the selected marine could shoot now (in range and in sight). */
   shootable: string[];
+  /** Effect sprites made so far: they are reused, so this stays small. */
+  fxSprites: number;
+  /** Effects shown so far (bullets, hits, deaths, blasts). */
+  fxUses: number;
   /** True while an animation plays; clicks are ignored. */
   busy: boolean;
   /** The alien the selected marine is aiming at, waiting for the player to confirm. */
@@ -145,6 +149,13 @@ const DEPTH = {
 
 /** Each kind's main sheet: its idle pose, height and muzzle. */
 const SHEETS = BASE_SHEETS;
+
+/** Alien attacks' effects are tinted green. */
+const ALIEN_FX_TINT = 0x8bf06a;
+/** Pixels a unit without a hurt animation jolts away from a hit. */
+const FLINCH_PX = 2;
+/** Pixels a dying flyer falls as it fades. */
+const FLYER_DROP = 8;
 
 /** The tongue as drawn, and how long its parts take. */
 const TONGUE = { color: 0xd8326e, tip: 0xff7aa8, outMs: 160, dragMs: 260 } as const;
@@ -190,6 +201,8 @@ export class BattleScene extends Phaser.Scene {
   private coverLayer!: Phaser.GameObjects.Graphics;
   private busy = false;
   private pips!: Phaser.GameObjects.Graphics;
+  /** Reused sprites for hits, deaths, blasts and projectiles. */
+  private fx!: FxPool;
   private aimLayer!: Phaser.GameObjects.Graphics;
   private aimText!: PixelText;
   /** The hit-chance breakdown shown while aiming. */
@@ -216,6 +229,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   create(data: { seed?: number }): void {
+    this.fx = new FxPool(this);
     this.seed = data.seed ?? initialSeed();
     this.seeds = createRng(this.seed);
     this.createHud();
@@ -361,6 +375,8 @@ export class BattleScene extends Phaser.Scene {
             .filter((a) => hitChance(this.state, selected, a.id) !== null)
             .map((a) => a.id)
         : [],
+      fxSprites: this.fx.size,
+      fxUses: this.fx.uses,
       busy: this.busy,
       aimTarget: this.aimTarget,
       aimOdds: this.aimTarget && selected ? shotOdds(this.state, selected, this.aimTarget) : null,
@@ -672,13 +688,13 @@ export class BattleScene extends Phaser.Scene {
       }),
     );
     ball.destroy();
-    playOnce(this, EFFECTS.blast.key, to.x, to.y, DEPTH.fx, 2);
+    this.fx.play(EFFECTS.blast.key, to.x, to.y, DEPTH.fx, { scale: 2 });
     this.cameras.main.shake(160, 0.006);
     for (const hit of thrown.hits) {
       const unit = unitById(this.state, hit.unitId);
       const view = this.views.get(hit.unitId);
       if (!unit || !view) continue;
-      this.showDamage(view, unit, hit.damage, hit.hpAfter, hit.killed, false);
+      this.showDamage(view, unit, hit.damage, hit.hpAfter, hit.killed, false, to);
       view.exposed = !hit.killed;
     }
     await new Promise((resolve) => this.time.delayedCall(700, resolve));
@@ -1013,16 +1029,19 @@ export class BattleScene extends Phaser.Scene {
     } else if (ability === 'pull') {
       await this.tongue(shot, from, to, tv, target);
     } else if (ability === 'poison') {
-      const blob = this.add.sprite(from.x, from.y, SPIT.key, 0).setDepth(DEPTH.fx);
-      await this.fly(blob, to);
+      await this.fly(this.fx.take(SPIT.key, from.x, from.y, DEPTH.fx, { frame: 0 }), to);
       this.showImpact(shot, tv, target);
     } else {
-      const bullet = this.add
-        .image(from.x, from.y, BULLET.key)
-        .setDepth(DEPTH.fx)
-        .setRotation(Math.atan2(to.y - from.y, to.x - from.x));
       // Alien shots are green.
-      if (shooter.side === 'alien') bullet.setTint(0x8bf06a);
+      const bullet = this.fx
+        .take(
+          BULLET.key,
+          from.x,
+          from.y,
+          DEPTH.fx,
+          shooter.side === 'alien' ? { tint: ALIEN_FX_TINT } : {},
+        )
+        .setRotation(Math.atan2(to.y - from.y, to.x - from.x));
       await this.fly(bullet, to);
       this.showImpact(shot, tv, target);
     }
@@ -1037,11 +1056,8 @@ export class BattleScene extends Phaser.Scene {
     this.playAnim(sv, shooter.kind, 'idle', shooter.facing);
   }
 
-  /** Moves a projectile to `to`, then removes it. */
-  private fly(
-    shot: Phaser.GameObjects.Image | Phaser.GameObjects.Sprite,
-    to: Point,
-  ): Promise<void> {
+  /** Moves a projectile to `to`, then returns it to the pool. */
+  private fly(shot: Phaser.GameObjects.Sprite, to: Point): Promise<void> {
     const dist = Math.hypot(to.x - shot.x, to.y - shot.y);
     return new Promise((resolve) => {
       this.tweens.add({
@@ -1050,7 +1066,7 @@ export class BattleScene extends Phaser.Scene {
         y: to.y,
         duration: Math.max(120, dist * 2.5),
         onComplete: () => {
-          shot.destroy();
+          this.fx.give(shot);
           resolve();
         },
       });
@@ -1145,9 +1161,22 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private showImpact(shot: ShotResult, tv: UnitView, target: Unit): void {
+    const shooter = unitById(this.state, shot.shooterId);
+    const from = shooter ? this.views.get(shooter.id)?.sprite : undefined;
     if (shot.hit) {
-      playOnce(this, EFFECTS.hit.key, tv.sprite.x, tv.sprite.y - 14, DEPTH.fx);
-      this.showDamage(tv, target, shot.damage, shot.hpAfter, shot.killed, shot.crit);
+      const x = tv.sprite.x;
+      const y = tv.sprite.y - SHEETS[target.kind].height / 2;
+      if (shooter && UNITS[shooter.kind].ability === 'melee') {
+        this.fx.play(EFFECTS.slash.key, x, y, DEPTH.fx, {
+          flipX: shooter.facing === -1,
+          tint: ALIEN_FX_TINT,
+        });
+      } else if (shooter?.side === 'alien') {
+        this.fx.play(EFFECTS.sparkle.key, x, y, DEPTH.fx, { tint: ALIEN_FX_TINT });
+      } else {
+        this.fx.play(EFFECTS.hit.key, x, tv.sprite.y - 14, DEPTH.fx);
+      }
+      this.showDamage(tv, target, shot.damage, shot.hpAfter, shot.killed, shot.crit, from);
       return;
     }
     const headY = tv.sprite.y - SHEETS[target.kind].height;
@@ -1155,7 +1184,10 @@ export class BattleScene extends Phaser.Scene {
     floatText(this, tv.sprite.x, headY - 6, 'MISS', '#dfe4ec', DEPTH.fx);
   }
 
-  /** Damage landing on a unit: flash, number, health pips, and death if it was fatal. */
+  /**
+   * Damage landing on a unit: flash, number, health pips, a flinch away from `from`
+   * (or its hurt animation), and a death if it was fatal.
+   */
   private showDamage(
     tv: UnitView,
     target: Unit,
@@ -1163,22 +1195,64 @@ export class BattleScene extends Phaser.Scene {
     hpAfter: number,
     killed: boolean,
     crit: boolean,
+    from?: Point,
   ): void {
     const headY = tv.sprite.y - SHEETS[target.kind].height;
     tv.shownHp = hpAfter;
     flash(this, tv.sprite);
     const text = crit ? `CRIT -${damage}` : `-${damage}`;
     floatText(this, tv.sprite.x, headY - 6, text, crit ? '#ffd23a' : '#ff6a5a', DEPTH.fx);
-    if (!killed) return;
+    if (!killed) {
+      this.flinch(tv, target, from);
+      return;
+    }
     tv.ghost.setVisible(false);
     if (target.kind === 'marine') {
       this.playAnim(tv, target.kind, 'die', target.facing);
       // The last death frame is drawn a few pixels above the feet line; settle it on the ground.
       this.tweens.add({ targets: tv.sprite, y: tv.sprite.y + 5, delay: 120, duration: 200 });
-    } else {
-      playOnce(this, EFFECTS.death.key, tv.sprite.x, tv.sprite.y - 16, DEPTH.fx);
-      this.tweens.add({ targets: tv.sprite, alpha: 0, delay: 150, duration: 300 });
+      return;
     }
+    const small = target.kind === 'lizard' || target.kind === 'snake';
+    const death = small ? EFFECTS.smallDeath : EFFECTS.death;
+    this.fx.play(death.key, tv.sprite.x, tv.sprite.y - (small ? 10 : 16), DEPTH.fx);
+    // A flyer drops out of the air as it goes.
+    const drop = target.kind === 'flyer' ? FLYER_DROP : 0;
+    this.tweens.add({
+      targets: tv.sprite,
+      alpha: 0,
+      y: tv.sprite.y + drop,
+      delay: 150,
+      duration: 300,
+    });
+  }
+
+  /**
+   * A hit that doesn't kill: kinds with a hurt animation play it, the others jolt a
+   * couple of pixels away from the attacker and back.
+   */
+  private flinch(tv: UnitView, target: Unit, from?: Point): void {
+    if (UNIT_ANIMS[target.kind].hurt && !tv.moving) {
+      this.playAnim(tv, target.kind, 'hurt', target.facing);
+      tv.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+        // Unless something else has started meanwhile (a run, a death).
+        if (tv.sheet === UNIT_ANIMS[target.kind].hurt) {
+          this.playAnim(tv, target.kind, 'idle', target.facing);
+        }
+      });
+      return;
+    }
+    if (!from) return;
+    const dx = tv.sprite.x - from.x;
+    const dy = tv.sprite.y - from.y;
+    const len = Math.hypot(dx, dy) || 1;
+    this.tweens.add({
+      targets: tv.sprite,
+      x: tv.sprite.x + Math.round((dx / len) * FLINCH_PX),
+      y: tv.sprite.y + Math.round((dy / len) * FLINCH_PX),
+      duration: 60,
+      yoyo: true,
+    });
   }
 
   /** Plays one of a unit's animations, switching sheets if needed. Missing ones are skipped. */

@@ -15,7 +15,8 @@ import {
   type ShotOdds,
   type Unit,
 } from './battle';
-import type { Point } from './grid';
+import { reachable, type Point } from './grid';
+import { isWalkable } from './map';
 import { rngStep } from './rng';
 import { ACTION_POINTS, AI, UNITS } from '../config/tuning';
 
@@ -84,7 +85,10 @@ export function scoreTile(
   } else if (inReach.length > 0) {
     score = AI.setupValue;
   } else {
-    const nearest = Math.min(...marines.map((m) => dist(p, m)));
+    // Closing in is measured on foot: a pocket behind trees isn't close, however near
+    // it looks in a straight line.
+    const walk = walkingDistance(state, marines, p);
+    const nearest = Number.isFinite(walk) ? walk : Math.min(...marines.map((m) => dist(p, m)));
     score = -AI.approachCost * Math.max(0, nearest - range);
   }
   return (
@@ -181,6 +185,25 @@ function nudge(state: BattleState, alien: Unit, p: Point): number {
   for (const ch of alien.id) h = Math.imul(h ^ ch.charCodeAt(0), 0x01000193);
   h ^= Math.imul(p.y * state.map.cols + p.x + 1, 0x9e3779b1);
   return rngStep(h >>> 0).value;
+}
+
+/** Steps on foot from each tile to the nearest marine, worked out once per list of marines. */
+const walkCache = new WeakMap<readonly Unit[], Map<number, number>>();
+
+/** Steps on foot from `p` to the nearest marine (around props, ignoring units). */
+function walkingDistance(state: BattleState, marines: readonly Unit[], p: Point): number {
+  let steps = walkCache.get(marines);
+  if (!steps) {
+    const found = new Map<number, number>();
+    const { cols, rows } = state.map;
+    for (const m of marines) {
+      const from = reachable(cols, rows, (x, y) => isWalkable(state.map, x, y), m);
+      for (const [key, d] of from) found.set(key, Math.min(d, found.get(key) ?? Infinity));
+    }
+    walkCache.set(marines, found);
+    steps = found;
+  }
+  return steps.get(p.y * state.map.cols + p.x) ?? Infinity;
 }
 
 function dist(a: Point, b: Point): number {

@@ -146,6 +146,13 @@ export const LIZARD_TONGUE_SHEET: CharacterSheet = {
   anims: { shoot: { start: 0, count: 2, fps: 10 } },
 };
 
+export const LIZARD_HURT_SHEET: CharacterSheet = {
+  ...LIZARD_SHEET,
+  key: 'lizard-hurt',
+  url: 'assets/lizard/lizard-hurt.png',
+  anims: { hurt: { start: 0, count: 3, fps: 10 } },
+};
+
 export const SNAKE_SHEET: CharacterSheet = {
   key: 'snake',
   url: 'assets/snake/snake-idle.png',
@@ -178,18 +185,37 @@ export const SNAKE_SHOOT_SHEET: CharacterSheet = {
   anims: { shoot: { start: 0, count: 4, fps: 12 } },
 };
 
+export const SNAKE_HURT_SHEET: CharacterSheet = {
+  ...SNAKE_SHEET,
+  key: 'snake-hurt',
+  url: 'assets/snake/snake-hurt.png',
+  frameWidth: 24,
+  originX: 11 / 24,
+  anims: { hurt: { start: 0, count: 3, fps: 10 } },
+};
+
 /** The snake's venom blob: two 7 x 5 frames. */
 export const SPIT = { key: 'fx-spit', url: 'assets/snake/snake-spit.png', size: [7, 5] } as const;
 
-export type AnimName = 'idle' | 'run' | 'die' | 'shoot';
+export type AnimName = 'idle' | 'run' | 'die' | 'shoot' | 'hurt';
 
 /** Which sheet holds each unit kind's animations. A missing one means the kind has none. */
 export const UNIT_ANIMS: Readonly<Record<UnitKind, Partial<Record<AnimName, CharacterSheet>>>> = {
   marine: { idle: MARINE_SHEET, run: MARINE_SHEET, die: MARINE_SHEET, shoot: MARINE_SHEET },
   walker: { idle: WALKER_SHEET, run: WALKER_WALK_SHEET },
   flyer: { idle: FLYER_SHEET, run: FLYER_SHEET },
-  lizard: { idle: LIZARD_SHEET, run: LIZARD_WALK_SHEET, shoot: LIZARD_TONGUE_SHEET },
-  snake: { idle: SNAKE_SHEET, run: SNAKE_WALK_SHEET, shoot: SNAKE_SHOOT_SHEET },
+  lizard: {
+    idle: LIZARD_SHEET,
+    run: LIZARD_WALK_SHEET,
+    shoot: LIZARD_TONGUE_SHEET,
+    hurt: LIZARD_HURT_SHEET,
+  },
+  snake: {
+    idle: SNAKE_SHEET,
+    run: SNAKE_WALK_SHEET,
+    shoot: SNAKE_SHOOT_SHEET,
+    hurt: SNAKE_HURT_SHEET,
+  },
 };
 
 /** The sheet that sets each kind's size: its height and muzzle. */
@@ -211,7 +237,7 @@ export function addAnims(anims: Phaser.Animations.AnimationManager, sheet: Chara
       frames: anims.generateFrameNumbers(sheet.key, { start: a.start, end: a.start + a.count - 1 }),
       frameRate: a.fps,
       // One-off moves hold their last frame; crouch is a stand-to-crouch transition.
-      repeat: name === 'die' || name === 'shoot' || name === 'crouch' ? 0 : -1,
+      repeat: ['die', 'shoot', 'crouch', 'hurt'].includes(name) ? 0 : -1,
     });
   }
 }
@@ -241,6 +267,33 @@ export const EFFECTS = {
     frameHeight: 32,
     count: 3,
     fps: 16,
+  },
+  /** An alien's shot landing: a star burst, tinted green by the scene. */
+  sparkle: {
+    key: 'fx-sparkle',
+    url: 'assets/fx/hit-sparkle.png',
+    frameWidth: 32,
+    frameHeight: 32,
+    count: 7,
+    fps: 20,
+  },
+  /** A walker's claws. */
+  slash: {
+    key: 'fx-slash',
+    url: 'assets/fx/slash.png',
+    frameWidth: 65,
+    frameHeight: 40,
+    count: 5,
+    fps: 18,
+  },
+  /** A small creature (lizard, snake) dying: a puff. */
+  smallDeath: {
+    key: 'fx-small-death',
+    url: 'assets/fx/small-death.png',
+    frameWidth: 64,
+    frameHeight: 64,
+    count: 7,
+    fps: 14,
   },
 } as const;
 

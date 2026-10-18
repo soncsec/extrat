@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FOREST, MAP_COLS, MAP_ROWS } from '../../src/config/tuning';
+import { chunkCell, FOREST_CHUNKS, type Chunk } from '../../src/logic/chunks';
 import {
   generateForest,
   isWalkable,
@@ -19,6 +20,20 @@ describe('generateForest', () => {
 
   it('gives different maps for different seeds', () => {
     expect(gen(1).tiles).not.toEqual(gen(2).tiles);
+  });
+
+  it('gives the squad cover and the sides a fair walk apart on 1,000 maps', () => {
+    for (let seed = 1; seed <= 1000; seed++) {
+      const map = gen(seed);
+      const [w0, w1] = spawnZone(MAP_COLS, 'west');
+      let covered = 0;
+      for (let y = 0; y < MAP_ROWS; y++) {
+        for (let x = w0; x <= w1; x++) {
+          if (isWalkable(map, x, y) && tileAt(map, x + 1, y)?.prop) covered++;
+        }
+      }
+      expect(covered, `seed ${seed}`).toBeGreaterThanOrEqual(FOREST.minSquadCover);
+    }
   });
 
   it('makes a valid map for 1,000 seeds', () => {
@@ -85,7 +100,8 @@ describe('validateMap', () => {
     tiles: Array.from({ length: cols * rows }, () => ({ prop: null, anchor: false })),
     decals: [],
   });
-  const opts = { ...FOREST, spawnCols: 2, minSpawnTiles: 5 };
+  // Small maps for the older checks; the squad-cover and distance checks have their own tests.
+  const opts = { ...FOREST, spawnCols: 2, minSpawnTiles: 5, minSquadCover: 0, minSpawnSteps: 0 };
 
   it('accepts an open map', () => {
     expect(validateMap(empty(8, 4), opts)).toEqual([]);
@@ -125,6 +141,34 @@ describe('validateMap', () => {
     ]);
   });
 
+  it('reports a squad spawn zone without enough cover facing the enemy', () => {
+    // 8 x 4, west zone columns 1-2: a bush east of (2,0) covers that tile only.
+    const map = empty(8, 4);
+    map.tiles[0 * 8 + 3] = { prop: 'bush', anchor: true };
+    const strict = { ...opts, minSquadCover: 2 };
+    expect(validateMap(map, strict)).toEqual([
+      'only 1 squad spawn tiles have cover facing the enemy',
+    ]);
+    map.tiles[1 * 8 + 3] = { prop: 'rocks', anchor: true };
+    expect(validateMap(map, strict)).toEqual([]);
+  });
+
+  it('reports spawn zones too few steps apart, counting the walk around props', () => {
+    // 10 x 4: the west zone is columns 1-2, the east zone 7-8: 5 steps in a straight line.
+    const map = empty(10, 4);
+    expect(validateMap(map, { ...opts, minSpawnSteps: 6 })).toEqual([
+      'spawn zones are only 5 steps apart',
+    ]);
+    // Walls in columns 4 (gap at the top) and 6 (gap at the bottom) make it a zig-zag:
+    // (2,0) east to (5,0), down to (5,3), east to (7,3) is 8 steps.
+    for (const y of [1, 2, 3]) map.tiles[y * 10 + 4] = { prop: 'oak', anchor: true };
+    for (const y of [0, 1, 2]) map.tiles[y * 10 + 6] = { prop: 'oak', anchor: true };
+    expect(validateMap(map, { ...opts, minSpawnSteps: 8 })).toEqual([]);
+    expect(validateMap(map, { ...opts, minSpawnSteps: 9 })).toEqual([
+      'spawn zones are only 8 steps apart',
+    ]);
+  });
+
   it('reports a map with nothing walkable', () => {
     const map = empty(2, 1);
     map.tiles = map.tiles.map(() => ({ prop: 'oak' as const, anchor: true }));
@@ -136,5 +180,89 @@ describe('validateMap', () => {
     expect(isWalkable(map, -1, 0)).toBe(false);
     expect(isWalkable(map, 0, 2)).toBe(false);
     expect(isWalkable(map, 1, 1)).toBe(true);
+  });
+});
+
+describe('map chunks (ADR-E3)', () => {
+  const all = [...FOREST_CHUNKS.spawn, ...FOREST_CHUNKS.field];
+
+  it('are all the chunk size, in the legend, with whole boulders', () => {
+    for (const c of all) {
+      expect(c.rows, c.name).toHaveLength(FOREST.chunk.height);
+      for (const row of c.rows) {
+        expect(row, c.name).toHaveLength(FOREST.chunk.width);
+        for (const ch of row) expect(() => chunkCell(ch), `${c.name}: '${ch}'`).not.toThrow();
+        // A boulder is 'B-': two tiles, so every 'B' has a '-' after it and nothing else does.
+        expect(row.replace(/B-/g, ''), c.name).not.toMatch(/[B-]/);
+      }
+    }
+  });
+
+  it('keep trees out of the spawn chunks', () => {
+    for (const c of FOREST_CHUNKS.spawn) expect(c.rows.join(''), c.name).not.toMatch(/[po#B]/);
+  });
+
+  /** The fixed props of a chunk, as (dx, dy, kind), mirrored as asked. */
+  function fixed(c: Chunk, flipX: boolean, flipY: boolean): string[] {
+    const w = FOREST.chunk.width;
+    const h = FOREST.chunk.height;
+    const out: string[] = [];
+    c.rows.forEach((row, j) =>
+      [...row].forEach((ch, i) => {
+        const cell = chunkCell(ch);
+        if (cell.kind !== 'prop') return;
+        const x = cell.prop === 'boulder' && flipX ? w - 2 - i : flipX ? w - 1 - i : i;
+        out.push(`${x},${flipY ? h - 1 - j : j},${cell.prop}`);
+      }),
+    );
+    return out;
+  }
+
+  it('builds every slot of the field from a chunk, mirrored or not', () => {
+    const { width: w, height: h } = FOREST.chunk;
+    for (let seed = 1; seed <= 100; seed++) {
+      const map = gen(seed);
+      for (let cy = 0; FOREST.treeLineRows + (cy + 1) * h <= MAP_ROWS; cy++) {
+        for (let cx = 0; (cx + 1) * w <= MAP_COLS; cx++) {
+          const x0 = cx * w;
+          const y0 = FOREST.treeLineRows + cy * h;
+          const anchorAt = (dx: number, dy: number): string | null => {
+            const t = tileAt(map, x0 + dx, y0 + dy);
+            return t?.prop && t.anchor ? t.prop : null;
+          };
+          // Some chunk, in some mirroring, has all its fixed props in this slot.
+          const fits = all.some((c) =>
+            [false, true].some((fx) =>
+              [false, true].some((fy) =>
+                fixed(c, fx, fy).every((f) => {
+                  const [dx, dy, kind] = f.split(',');
+                  return anchorAt(Number(dx), Number(dy)) === kind;
+                }),
+              ),
+            ),
+          );
+          expect(fits, `seed ${map.seed} slot ${cx},${cy}`).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('keeps every boulder whole on 200 maps, mirrored or not', () => {
+    for (let seed = 1; seed <= 200; seed++) {
+      const map = gen(seed);
+      map.tiles.forEach((t, i) => {
+        if (t.prop !== 'boulder' || !t.anchor) return;
+        expect(tileAt(map, (i % map.cols) + 1, Math.floor(i / map.cols))).toEqual({
+          prop: 'boulder',
+          anchor: false,
+        });
+      });
+      const anchors = map.tiles.filter((t) => t.prop === 'boulder' && t.anchor).length;
+      expect(map.tiles.filter((t) => t.prop === 'boulder').length).toBe(anchors * 2);
+    }
+  });
+
+  it('rejects a typo in a chunk picture', () => {
+    expect(() => chunkCell('x')).toThrow(/unknown chunk character/);
   });
 });
