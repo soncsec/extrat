@@ -92,6 +92,7 @@ describe('createBattle', () => {
     }
   });
 
+  // 1,000 maps: over a second on a desktop and several times that on CI runners.
   it('puts every alien pod within walking reach of the squad on 1,000 maps', () => {
     for (let seed = 1; seed <= 1000; seed++) {
       const s = battle(seed);
@@ -101,7 +102,7 @@ describe('createBattle', () => {
         expect(steps.has(a.y * s.map.cols + a.x), `seed ${seed}: ${a.id}`).toBe(true);
       }
     }
-  });
+  }, 30_000);
 
   it('deploys the squad in the west and the alien pods in the east, hidden and dormant', () => {
     for (let seed = 1; seed <= 100; seed++) {
