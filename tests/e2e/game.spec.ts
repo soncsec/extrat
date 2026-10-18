@@ -345,6 +345,33 @@ test('O puts a marine on overwatch, and it fires when an alien moves into sight'
   expect(fired.length).toBeGreaterThan(0);
 });
 
+test('effect sprites are reused, not made new for every shot and hit', async ({ page }) => {
+  // Two full rounds of fighting on map 23: shots, hits, misses and alien attacks.
+  await openGame(page, SHOT_SEED);
+  const { alien } = await moveEastForAShot(page);
+  await clickTile(page, alien.x, alien.y);
+  await page.keyboard.press('Enter');
+  for (const round of [2, 3]) {
+    await expect.poll(async () => (await snapshot(page)).busy, { timeout: 20_000 }).toBe(false);
+    await page.keyboard.press('e');
+    await expect
+      .poll(
+        async () => {
+          const s = await snapshot(page);
+          return s.turn === 'marine' && !s.busy ? s.round : 0;
+        },
+        { timeout: 60_000 },
+      )
+      .toBe(round);
+  }
+  const s = await snapshot(page);
+  expect(s.lastShot).not.toBeNull();
+  // Every effect after the first few reused a sprite: a handful are ever on screen at once.
+  expect(s.fxSprites).toBeGreaterThan(0);
+  expect(s.fxSprites).toBeLessThanOrEqual(6);
+  expect(s.fxUses).toBeGreaterThan(s.fxSprites);
+});
+
 test('G enters grenade mode and Esc leaves it', async ({ page }) => {
   await openGame(page, '?seed=42');
   const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');

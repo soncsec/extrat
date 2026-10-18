@@ -22,3 +22,8 @@ List every file copied into `public/assets/` here, one per line, as its path fro
 - `assets/snake/snake-walk.png`: Warped, Grotto Escape 2 snake (walk)
 - `assets/snake/snake-shoot.png`: Warped, Grotto Escape 2 snake (shoot)
 - `assets/snake/snake-spit.png`: Warped, Grotto Escape 2 snake (spit)
+- `assets/fx/hit-sparkle.png`: Explosions and Magic, Warped shooting fx (hits 2)
+- `assets/fx/slash.png`: Explosions and Magic, Grotto Escape 2 FX (slash horizontal)
+- `assets/fx/small-death.png`: Explosions and Magic, Grotto Escape 2 FX (enemy death)
+- `assets/lizard/lizard-hurt.png`: Warped, Grotto Escape 2 lizard (hurt)
+- `assets/snake/snake-hurt.png`: Warped, Grotto Escape 2 snake (hurt)

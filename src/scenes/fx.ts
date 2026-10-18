@@ -36,18 +36,78 @@ export function flash(scene: Phaser.Scene, sprite: Phaser.GameObjects.Sprite): v
 }
 
 /** Plays a registered one-shot animation at a point, then removes it. */
-export function playOnce(
-  scene: Phaser.Scene,
-  key: string,
-  x: number,
-  y: number,
-  depth: number,
-  scale = 1,
-): Phaser.GameObjects.Sprite {
-  const s = scene.add.sprite(x, y, key).setDepth(depth).setScale(scale);
-  s.play(key);
-  s.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => s.destroy());
-  return s;
+/** How a pooled effect is drawn. */
+export interface FxStyle {
+  scale?: number;
+  flipX?: boolean;
+  /** Multiplied into the colours (white parts take this colour). */
+  tint?: number;
+  /** A frame of a still image, for projectiles. */
+  frame?: string | number;
+}
+
+/**
+ * Effect sprites (hits, deaths, blasts, projectiles) are reused rather than made and
+ * destroyed each time: a finished one goes back on the free list.
+ */
+export class FxPool {
+  private readonly free: Phaser.GameObjects.Sprite[] = [];
+  private made = 0;
+  private taken = 0;
+
+  constructor(private readonly scene: Phaser.Scene) {}
+
+  /** A sprite showing `texture`, ready to place. Give it back when done. */
+  take(
+    texture: string,
+    x: number,
+    y: number,
+    depth: number,
+    style: FxStyle = {},
+  ): Phaser.GameObjects.Sprite {
+    this.taken++;
+    let s = this.free.pop();
+    if (!s) {
+      s = this.scene.add.sprite(0, 0, texture);
+      this.made++;
+    }
+    s.setTexture(texture, style.frame)
+      .setPosition(x, y)
+      .setDepth(depth)
+      .setScale(style.scale ?? 1)
+      .setFlipX(style.flipX ?? false)
+      .setRotation(0)
+      .setAlpha(1)
+      .setOrigin(0.5)
+      .setActive(true)
+      .setVisible(true);
+    if (style.tint === undefined) s.clearTint();
+    else s.setTint(style.tint);
+    return s;
+  }
+
+  give(s: Phaser.GameObjects.Sprite): void {
+    s.stop();
+    s.setActive(false).setVisible(false);
+    this.free.push(s);
+  }
+
+  /** Plays an effect animation (named like its texture) once, then returns the sprite. */
+  play(key: string, x: number, y: number, depth: number, style: FxStyle = {}): void {
+    const s = this.take(key, x, y, depth, style);
+    s.play(key);
+    s.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => this.give(s));
+  }
+
+  /** Sprites made so far (for tests: it stops growing once the pool is warm). */
+  get size(): number {
+    return this.made;
+  }
+
+  /** Effects shown so far, each needing a sprite (for tests: more than were made). */
+  get uses(): number {
+    return this.taken;
+  }
 }
 
 /** Health pips over a unit's head: one per hit point, filled for the ones it has left. */
