@@ -33,6 +33,10 @@ export const FOREST = {
   dirtPatches: 3,
   /** Each spawn zone needs at least this many free tiles. */
   minSpawnTiles: 12,
+  /** Free tiles in the squad's spawn zone with cover facing the enemy: one per marine. */
+  minSquadCover: 4,
+  /** The two spawn zones must be at least this many steps apart on foot. */
+  minSpawnSteps: 14,
   /** Seeds tried before giving up on a valid map. */
   maxAttempts: 50,
 } as const;
