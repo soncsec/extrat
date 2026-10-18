@@ -282,6 +282,43 @@ test('R reloads an empty clip for one action point, and does nothing when full',
     .toBe('3,1');
 });
 
+test('O puts a marine on overwatch, and it fires when an alien moves into sight', async ({
+  page,
+}) => {
+  await openGame(page, '?seed=42');
+  const marines = (await snapshot(page)).units.filter((u) => u.side === 'marine');
+  // Every marine watches, so whichever way the aliens come, someone sees them.
+  for (const m of marines) {
+    await clickTile(page, m.x, m.y);
+    await page.keyboard.press('o');
+    await expect
+      .poll(async () => (await snapshot(page)).units.find((u) => u.id === m.id)?.overwatch)
+      .toBe(true);
+    // Ready for the next order, or (after the last marine) the alien turn has begun.
+    await expect
+      .poll(async () => {
+        const s = await snapshot(page);
+        return !s.busy || s.turn === 'alien';
+      })
+      .toBe(true);
+  }
+  // With every marine out of points the turn ends by itself; wait for round 2.
+  await expect
+    .poll(
+      async () => {
+        const s = await snapshot(page);
+        return s.turn === 'marine' && !s.busy ? s.round : 0;
+      },
+      { timeout: 30_000 },
+    )
+    .toBe(2);
+  const after = await snapshot(page);
+  // Overwatch has ended for everyone, and at least one marine fired a reaction shot.
+  expect(after.units.filter((u) => u.side === 'marine').every((u) => !u.overwatch)).toBe(true);
+  const fired = after.units.filter((u) => u.side === 'marine' && (u.ammo ?? 3) < 3);
+  expect(fired.length).toBeGreaterThan(0);
+});
+
 test('E ends the turn; the aliens advance, then round 2 begins', async ({ page }) => {
   await openGame(page, '?seed=42');
   const before = await snapshot(page);
@@ -310,8 +347,8 @@ test('the End Turn button ends the turn', async ({ page }) => {
   const box = await page.locator('#game canvas').boundingBox();
   if (!box) throw new Error('no canvas');
   const zoom = box.width / GAME_WIDTH;
-  // The button sits at the right end of the info bar's first line.
-  await page.mouse.click(box.x + (GAME_WIDTH - 25) * zoom, box.y + (MAP_ROWS * TILE + 9) * zoom);
+  // The button sits at the right end of the info bar's second line.
+  await page.mouse.click(box.x + (GAME_WIDTH - 25) * zoom, box.y + (MAP_ROWS * TILE + 21) * zoom);
   await expect.poll(async () => (await snapshot(page)).turn).toBe('alien');
 });
 

@@ -1,4 +1,4 @@
-import { ACTION_POINTS, SHOOTING, SKIRMISH, UNITS } from '../config/tuning';
+import { ACTION_POINTS, OVERWATCH, SHOOTING, SKIRMISH, UNITS } from '../config/tuning';
 import { findPath, hasLineOfSight, reachable, type Point } from './grid';
 import {
   blocksSight,
@@ -34,6 +34,8 @@ export interface Unit extends Point {
   move: number;
   /** Shots left in the clip, or null for a weapon that never needs reloading. */
   ammo: number | null;
+  /** Watching for enemies who move into sight; cleared when this unit's turn comes round. */
+  overwatch: boolean;
 }
 
 export interface BattleState {
@@ -49,6 +51,16 @@ export interface BattleState {
   rng: number;
   /** What the most recent shot did, for the scene to animate. */
   lastShot: ShotResult | null;
+  /** What the most recent move did, including reaction shots along the way. */
+  lastMove: MoveResult | null;
+}
+
+export interface MoveResult {
+  unitId: string;
+  /** The tiles actually walked, which stop early if a reaction shot kills the mover. */
+  path: Point[];
+  /** Reaction shots, each fired when the mover reached path[step]. */
+  reactions: { step: number; shot: ShotResult }[];
 }
 
 export interface ShotResult {
@@ -60,7 +72,11 @@ export interface ShotResult {
   /** A critical hit: extra damage, more likely when flanking. */
   crit: boolean;
   damage: number;
+  /** The target's health after this shot. */
+  hpAfter: number;
   killed: boolean;
+  /** An overwatch reaction shot rather than an aimed one. */
+  reaction: boolean;
 }
 
 export type Action =
@@ -69,6 +85,7 @@ export type Action =
   | { type: 'move'; unitId: string; to: Point }
   | { type: 'shoot'; unitId: string; targetId: string }
   | { type: 'reload'; unitId: string }
+  | { type: 'overwatch'; unitId: string }
   | { type: 'endTurn' };
 
 const MARINE_NAMES = ['Vasquez', 'Okafor', 'Lindqvist', 'Moreau', 'Tanaka', 'Reyes'];
@@ -89,6 +106,7 @@ export function createBattle(map: BattleMap, seed: number): BattleState {
     ap: ACTION_POINTS,
     move: UNITS.marine.move,
     ammo: UNITS.marine.ammo,
+    overwatch: false,
   }));
   const aliens = deploy(map, rng, 'east', SKIRMISH.aliens).map((p, i): Unit => ({
     ...p,
@@ -102,6 +120,7 @@ export function createBattle(map: BattleMap, seed: number): BattleState {
     ap: ACTION_POINTS,
     move: UNITS.walker.move,
     ammo: UNITS.walker.ammo,
+    overwatch: false,
   }));
   return {
     map,
@@ -111,6 +130,7 @@ export function createBattle(map: BattleMap, seed: number): BattleState {
     selected: null,
     rng: (seed ^ 0x9e3779b9) >>> 0,
     lastShot: null,
+    lastMove: null,
   };
 }
 
@@ -125,21 +145,12 @@ export function apply(state: BattleState, action: Action): BattleState {
     }
     case 'deselect':
       return state.selected === null ? state : { ...state, selected: null };
-    case 'move': {
+    case 'move':
+      return move(state, action.unitId, action.to);
+    case 'overwatch': {
       const unit = unitById(state, action.unitId);
-      if (!unit || unit.side !== state.turn) return state;
-      const path = pathFor(state, unit.id, action.to);
-      if (!path) return state;
-      // Face the way the last sideways step went; straight up or down keeps the old facing.
-      let facing = unit.facing;
-      let prev: Point = unit;
-      for (const p of path) {
-        if (p.x !== prev.x) facing = p.x > prev.x ? 1 : -1;
-        prev = p;
-      }
-      const { x, y } = action.to;
-      const ap = unit.ap - moveCost(unit, path.length);
-      return replaceUnit(state, { ...unit, x, y, facing, ap });
+      if (!unit || !canOverwatch(state, unit.id)) return state;
+      return replaceUnit(state, { ...unit, overwatch: true, ap: 0 });
     }
     case 'shoot':
       return shoot(state, action.unitId, action.targetId);
@@ -151,8 +162,9 @@ export function apply(state: BattleState, action: Action): BattleState {
     case 'endTurn': {
       // The other side's living units get their action points back.
       const turn: Side = state.turn === 'marine' ? 'alien' : 'marine';
+      // Their overwatch ends: it only lasts through the other side's turn.
       const units = state.units.map((u) =>
-        u.side === turn && u.hp > 0 ? { ...u, ap: ACTION_POINTS } : u,
+        u.side === turn && u.hp > 0 ? { ...u, ap: ACTION_POINTS, overwatch: false } : u,
       );
       const round = turn === 'marine' ? state.round + 1 : state.round;
       return { ...state, units, turn, round, selected: null };
@@ -227,6 +239,8 @@ export interface ShotOdds {
   coverPenalty: number;
   /** No cover facing the shooter: the shot gets the flanking crit bonus. */
   flanked: boolean;
+  /** Taken off for an overwatch reaction shot (zero for aimed shots). */
+  reactionPenalty: number;
   /** Final chances in percent. */
   hit: number;
   crit: number;
@@ -235,20 +249,55 @@ export interface ShotOdds {
 /** The odds of a shot now, or null if it isn't allowed (see shotBlock). */
 export function shotOdds(state: BattleState, shooterId: string, targetId: string): ShotOdds | null {
   if (shotBlock(state, shooterId, targetId) !== null) return null;
-  const shooter = unitById(state, shooterId) as Unit;
-  const target = unitById(state, targetId) as Unit;
+  return oddsBetween(
+    state,
+    unitById(state, shooterId) as Unit,
+    unitById(state, targetId) as Unit,
+    false,
+  );
+}
+
+/**
+ * The odds of an overwatch reaction shot by `shooterId` at `targetId` where it stands
+ * now, or null if the shooter isn't on overwatch or can't make the shot.
+ */
+export function reactionOdds(
+  state: BattleState,
+  shooterId: string,
+  targetId: string,
+): ShotOdds | null {
+  const shooter = unitById(state, shooterId);
+  const target = unitById(state, targetId);
+  if (!shooter?.overwatch || !target || shooter.hp <= 0 || target.hp <= 0) return null;
+  if (shooter.side === target.side || shooter.ammo === 0) return null;
+  if (Math.hypot(target.x - shooter.x, target.y - shooter.y) > UNITS[shooter.kind].range)
+    return null;
+  if (!canSee(state.map, shooter, target)) return null;
+  return oddsBetween(state, shooter, target, true);
+}
+
+function oddsBetween(state: BattleState, shooter: Unit, target: Unit, reaction: boolean): ShotOdds {
   const stats = UNITS[shooter.kind];
   const dist = Math.hypot(target.x - shooter.x, target.y - shooter.y);
   const range = -Math.max(0, Math.floor(dist) - SHOOTING.closeRange) * SHOOTING.penaltyPerTile;
   const cover = coverAgainst(state.map, target, shooter);
   const coverPenalty = cover ? SHOOTING.cover[cover] : 0;
   const flanked = cover === null;
+  const reactionPenalty = reaction ? OVERWATCH.aimPenalty : 0;
   const hit = Math.min(
     SHOOTING.maxChance,
-    Math.max(SHOOTING.minChance, stats.aim + range - coverPenalty),
+    Math.max(SHOOTING.minChance, stats.aim + range - coverPenalty - reactionPenalty),
   );
-  const crit = Math.min(100, stats.crit + (flanked ? SHOOTING.flankCrit : 0));
-  return { aim: stats.aim, range, cover, coverPenalty, flanked, hit, crit };
+  const critBase = stats.crit + (flanked ? SHOOTING.flankCrit : 0);
+  const crit = reaction && !OVERWATCH.canCrit ? 0 : Math.min(100, critBase);
+  return { aim: stats.aim, range, cover, coverPenalty, flanked, reactionPenalty, hit, crit };
+}
+
+/** True if the unit can go on overwatch now: its turn, an action point, and ammo. */
+export function canOverwatch(state: BattleState, unitId: string): boolean {
+  const unit = unitById(state, unitId);
+  if (!unit || unit.hp <= 0 || unit.ap <= 0 || unit.side !== state.turn) return false;
+  return unit.ammo !== 0 && !unit.overwatch;
 }
 
 function shoot(state: BattleState, shooterId: string, targetId: string): BattleState {
@@ -256,9 +305,25 @@ function shoot(state: BattleState, shooterId: string, targetId: string): BattleS
   const target = unitById(state, targetId);
   const odds = shotOdds(state, shooterId, targetId);
   if (!shooter || !target || odds === null || shooter.side !== state.turn) return state;
-  const chance = odds.hit;
+  const fired = rollShot(state, shooter, target, odds, false);
+  // An aimed shot uses all remaining action points, as in XCOM.
+  const next = replaceUnit(fired.state, { ...(unitById(fired.state, shooterId) as Unit), ap: 0 });
+  return { ...next, lastShot: fired.shot };
+}
+
+/**
+ * Rolls a shot: hit, then damage, then crit, from the battle's random state. Spends a
+ * round of ammo, turns the shooter toward the target and applies the damage.
+ */
+function rollShot(
+  state: BattleState,
+  shooter: Unit,
+  target: Unit,
+  odds: ShotOdds,
+  reaction: boolean,
+): { state: BattleState; shot: ShotResult } {
   const roll = rngStep(state.rng);
-  const hit = roll.value * 100 < chance;
+  const hit = roll.value * 100 < odds.hit;
   let rng = roll.state;
   let damage = 0;
   let crit = false;
@@ -272,12 +337,59 @@ function shoot(state: BattleState, shooterId: string, targetId: string): BattleS
   }
   const hp = Math.max(0, target.hp - damage);
   const facing = target.x === shooter.x ? shooter.facing : target.x > shooter.x ? 1 : -1;
-  // A shot uses all remaining action points, as in XCOM.
   const ammo = shooter.ammo === null ? null : shooter.ammo - 1;
-  let next = replaceUnit(state, { ...shooter, facing, ap: 0, ammo });
+  let next = replaceUnit(state, { ...shooter, facing, ammo });
   next = replaceUnit(next, { ...target, hp });
-  const lastShot = { shooterId, targetId, chance, hit, crit, damage, killed: hp === 0 };
-  return { ...next, rng, lastShot };
+  const shot: ShotResult = {
+    shooterId: shooter.id,
+    targetId: target.id,
+    chance: odds.hit,
+    hit,
+    crit,
+    damage,
+    hpAfter: hp,
+    killed: hp === 0,
+    reaction,
+  };
+  return { state: { ...next, rng }, shot };
+}
+
+/**
+ * Moves a unit along its path. At each tile, every enemy on overwatch that can now
+ * see it takes one reaction shot (in unit order). A kill stops the move there.
+ */
+function move(state: BattleState, unitId: string, to: Point): BattleState {
+  const unit = unitById(state, unitId);
+  if (!unit || unit.side !== state.turn) return state;
+  const path = pathFor(state, unit.id, to);
+  if (!path) return state;
+  const ap = unit.ap - moveCost(unit, path.length);
+
+  let next = state;
+  let facing = unit.facing;
+  let prev: Point = unit;
+  const walked: Point[] = [];
+  const reactions: MoveResult['reactions'] = [];
+  for (const [step, p] of path.entries()) {
+    // Face the way the last sideways step went; straight up or down keeps the old facing.
+    if (p.x !== prev.x) facing = p.x > prev.x ? 1 : -1;
+    prev = p;
+    walked.push(p);
+    next = replaceUnit(next, { ...(unitById(next, unitId) as Unit), x: p.x, y: p.y, facing, ap });
+    for (const watcher of next.units) {
+      const odds = reactionOdds(next, watcher.id, unitId);
+      if (!odds) continue;
+      const fired = rollShot(next, watcher, unitById(next, unitId) as Unit, odds, true);
+      next = replaceUnit(fired.state, {
+        ...(unitById(fired.state, watcher.id) as Unit),
+        overwatch: false,
+      });
+      reactions.push({ step, shot: fired.shot });
+      if (fired.shot.killed) break;
+    }
+    if ((unitById(next, unitId) as Unit).hp <= 0) break;
+  }
+  return { ...next, lastMove: { unitId, path: walked, reactions } };
 }
 
 /** Tiles a unit could move to with one move action, keyed by `y * cols + x`, with step counts. */

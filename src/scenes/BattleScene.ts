@@ -13,6 +13,7 @@ import type { Point } from '../logic/grid';
 import {
   apply,
   canAct,
+  canOverwatch,
   canReload,
   clipSize,
   createBattle,
@@ -28,6 +29,7 @@ import {
   unitById,
   type Action,
   type BattleState,
+  type MoveResult,
   type ShotBlock,
   type ShotOdds,
   type ShotResult,
@@ -49,7 +51,7 @@ import {
   type AnimName,
   type CharacterSheet,
 } from './art';
-import { drawPips, drawReticle, drawShield, flash, floatText, playOnce } from './fx';
+import { drawEye, drawPips, drawReticle, drawShield, flash, floatText, playOnce } from './fx';
 import type { BattleResult } from './ResultScene';
 import { initialSeed } from './seed';
 
@@ -72,6 +74,7 @@ export interface GameSnapshot {
     hp: number;
     ap: number;
     ammo: number | null;
+    overwatch: boolean;
     hidden: boolean;
   }[];
   selected: string | null;
@@ -122,6 +125,8 @@ interface UnitView {
   shownHp: number;
   /** True while the unit runs along a path (its cover isn't settled yet). */
   moving: boolean;
+  /** Overwatch as drawn: it ends when the reaction shot is shown, not when it's rolled. */
+  watching: boolean;
 }
 
 export class BattleScene extends Phaser.Scene {
@@ -149,6 +154,7 @@ export class BattleScene extends Phaser.Scene {
   private unitText!: Phaser.GameObjects.Text;
   private endTurnButton!: Phaser.GameObjects.Text;
   private reloadButton!: Phaser.GameObjects.Text;
+  private overwatchButton!: Phaser.GameObjects.Text;
   /** Set when one side has been wiped out; only a new map can follow. */
   private over = false;
 
@@ -206,6 +212,7 @@ export class BattleScene extends Phaser.Scene {
     });
     this.input.keyboard?.on('keydown-E', () => void this.endTurn());
     this.input.keyboard?.on('keydown-R', () => this.reload());
+    this.input.keyboard?.on('keydown-O', () => this.overwatch());
     this.input.keyboard?.on('keydown-N', () => {
       // Not in the middle of an animation, the alien turn, or the result screen.
       if (!this.busy) this.startBattle(this.seeds.int(1, 999_999));
@@ -230,6 +237,10 @@ export class BattleScene extends Phaser.Scene {
       const top = v.sprite.y - SHEETS[u.kind].height - 5;
       const color = u.side === 'marine' ? 0x8bf06a : 0xff6a5a;
       drawPips(this.pips, v.sprite.x, top, v.shownHp, u.maxHp, color);
+      if (v.watching) {
+        const width = u.maxHp * 4 - 1;
+        drawEye(this.pips, Math.round(v.sprite.x - width / 2) - 10, top - 2);
+      }
       if (u.side === 'marine' && !v.moving) {
         // Cover against the nearest alien, shown next to the pips.
         const enemy = livingUnits(this.state, 'alien').reduce<Unit | null>(
@@ -261,6 +272,7 @@ export class BattleScene extends Phaser.Scene {
         hp: u.hp,
         ap: u.ap,
         ammo: u.ammo,
+        overwatch: u.overwatch,
         hidden: this.views.get(u.id)?.hidden ?? false,
       })),
       selected,
@@ -390,11 +402,11 @@ export class BattleScene extends Phaser.Scene {
 
   /** Player move: apply it, then run the sprite along the path. */
   private moveUnit(unitId: string, to: Point): void {
-    const path = pathFor(this.state, unitId, to);
     const next = apply(this.state, { type: 'move', unitId, to });
-    if (!path || next === this.state) return;
+    const moved = next.lastMove;
+    if (next === this.state || !moved) return;
     this.state = next;
-    void this.run(() => this.playMove(unitId, path));
+    void this.run(() => this.playMove(moved));
   }
 
   /** Player shot at the aimed target. */
@@ -408,6 +420,40 @@ export class BattleScene extends Phaser.Scene {
     this.aimTarget = null;
     this.drawAim(null);
     void this.run(() => this.playShot(shot));
+  }
+
+  /** Puts the selected marine on overwatch: uses its remaining action points. */
+  private overwatch(): void {
+    const id = this.state.selected;
+    if (!id || this.busy) return;
+    const next = apply(this.state, { type: 'overwatch', unitId: id });
+    if (next === this.state) return;
+    this.state = next;
+    this.aimTarget = null;
+    this.drawAim(null);
+    void this.run(() => this.playOverwatch(id));
+  }
+
+  /** A side's turn has begun, so its overwatch is over: markers go, crouching marines stand. */
+  private endWatch(side: Side): void {
+    for (const u of livingUnits(this.state, side)) {
+      const v = this.views.get(u.id);
+      if (!v?.watching) continue;
+      v.watching = false;
+      if (u.kind === 'marine') this.playAnim(v, u.kind, 'idle', u.facing);
+    }
+  }
+
+  /** "OVERWATCH" over the unit; marines crouch while they watch. */
+  private playOverwatch(unitId: string): Promise<void> {
+    const unit = unitById(this.state, unitId);
+    const view = this.views.get(unitId);
+    if (!unit || !view) return Promise.resolve();
+    view.watching = true;
+    if (unit.kind === 'marine') view.sprite.play(`${MARINE_SHEET.key}-crouch`);
+    const headY = view.sprite.y - SHEETS[unit.kind].height;
+    floatText(this, view.sprite.x, headY - 6, 'OVERWATCH', '#ffd23a', DEPTH.fx);
+    return new Promise((resolve) => this.time.delayedCall(500, resolve));
   }
 
   /** Reloads the selected marine: costs one action point. */
@@ -463,6 +509,7 @@ export class BattleScene extends Phaser.Scene {
     this.pathLayer.clear();
     this.coverLayer.clear();
     this.drawSelection();
+    this.endWatch('alien');
     await this.banner('ALIEN ACTIVITY', '#ff6a5a');
 
     for (const alien of livingUnits(this.state, 'alien')) {
@@ -474,11 +521,12 @@ export class BattleScene extends Phaser.Scene {
         const next = apply(before, action);
         if (next === before) break;
         this.state = next;
-        if (action.type === 'move') {
-          const path = pathFor(before, alien.id, action.to);
-          if (path) await this.playMove(alien.id, path);
+        if (action.type === 'move' && next.lastMove) {
+          await this.playMove(next.lastMove);
         } else if (action.type === 'shoot' && next.lastShot) {
           await this.playShot(next.lastShot);
+        } else if (action.type === 'overwatch') {
+          await this.playOverwatch(alien.id);
         }
         this.updateHidden();
       }
@@ -486,6 +534,7 @@ export class BattleScene extends Phaser.Scene {
 
     if (this.checkEnd()) return;
     this.state = apply(this.state, { type: 'endTurn' });
+    this.endWatch('marine');
     await this.banner(`TURN ${this.state.round}`, '#f2a33a');
     this.busy = false;
     this.updateHidden();
@@ -573,36 +622,52 @@ export class BattleScene extends Phaser.Scene {
   }
 
   /** Runs a unit's sprite along a path. The state must already hold the move. */
-  private playMove(unitId: string, path: Point[]): Promise<void> {
-    const unit = unitById(this.state, unitId);
-    const view = this.views.get(unitId);
-    if (!unit || !view) return Promise.resolve();
+  /**
+   * Runs a unit's sprite along a move the state already holds, pausing for each
+   * overwatch reaction shot where it happened. A killed mover stops there.
+   */
+  private async playMove(moved: MoveResult): Promise<void> {
+    const unit = unitById(this.state, moved.unitId);
+    const view = this.views.get(moved.unitId);
+    if (!unit || !view) return;
     view.ghost.setVisible(false);
     view.moving = true;
-    this.playAnim(view, unit.kind, 'run', view.sprite.flipX ? -1 : 1);
+    let facing: 1 | -1 = view.sprite.flipX ? -1 : 1;
+    this.playAnim(view, unit.kind, 'run', facing);
     const stepMs = 1000 / ANIMATION.runSpeed;
-    return new Promise((resolve) => {
-      const step = (i: number, from: Point): void => {
-        const p = path[i];
-        if (!p) {
-          view.moving = false;
-          this.playAnim(view, unit.kind, 'idle', unit.facing);
-          view.ghost.setPosition(view.sprite.x, view.sprite.y);
-          resolve();
-          return;
-        }
-        if (p.x !== from.x) this.face(view, p.x > from.x ? 1 : -1);
+    let from: Point = {
+      x: Math.floor(view.sprite.x / TILE),
+      y: Math.round(view.sprite.y / TILE) - 1,
+    };
+    for (const [i, p] of moved.path.entries()) {
+      if (p.x !== from.x) {
+        facing = p.x > from.x ? 1 : -1;
+        this.face(view, facing);
+      }
+      await new Promise<void>((resolve) =>
         this.tweens.add({
           targets: view.sprite,
           x: p.x * TILE + TILE / 2,
           y: (p.y + 1) * TILE,
           duration: stepMs,
           onUpdate: () => view.sprite.setDepth(DEPTH.standing + view.sprite.y + 0.5),
-          onComplete: () => step(i + 1, p),
-        });
-      };
-      step(0, { x: Math.floor(view.sprite.x / TILE), y: Math.round(view.sprite.y / TILE) - 1 });
-    });
+          onComplete: () => resolve(),
+        }),
+      );
+      from = p;
+      const reactions = moved.reactions.filter((r) => r.step === i);
+      if (reactions.length === 0) continue;
+      this.playAnim(view, unit.kind, 'idle', facing);
+      for (const r of reactions) await this.playShot(r.shot);
+      if (reactions.some((r) => r.shot.killed)) {
+        view.moving = false;
+        return;
+      }
+      this.playAnim(view, unit.kind, 'run', facing);
+    }
+    view.moving = false;
+    this.playAnim(view, unit.kind, 'idle', unit.facing);
+    view.ghost.setPosition(view.sprite.x, view.sprite.y);
   }
 
   /** Plays a shot that the state already holds: turn, muzzle, bullet, then hit or miss. */
@@ -613,6 +678,7 @@ export class BattleScene extends Phaser.Scene {
     const tv = this.views.get(shot.targetId);
     if (!shooter || !target || !sv || !tv) return Promise.resolve();
     const sheet = SHEETS[shooter.kind];
+    if (shot.reaction) sv.watching = false;
     this.playAnim(sv, shooter.kind, 'shoot', shooter.facing);
     this.face(sv, shooter.facing);
 
@@ -652,7 +718,7 @@ export class BattleScene extends Phaser.Scene {
 
   private showImpact(shot: ShotResult, tv: UnitView, target: Unit): void {
     const headY = tv.sprite.y - SHEETS[target.kind].height;
-    tv.shownHp = target.hp;
+    tv.shownHp = shot.hpAfter;
     if (!shot.hit) {
       floatText(this, tv.sprite.x, headY - 6, 'MISS', '#dfe4ec', DEPTH.fx);
     } else {
@@ -803,7 +869,15 @@ export class BattleScene extends Phaser.Scene {
       .setTint(GHOST_COLOR[u.side])
       .setTintMode(Phaser.TintModes.FILL)
       .setAlpha(0.45);
-    return { sprite, ghost, sheet, hidden: false, shownHp: u.hp, moving: false };
+    return {
+      sprite,
+      ghost,
+      sheet,
+      hidden: false,
+      shownHp: u.hp,
+      moving: false,
+      watching: u.overwatch,
+    };
   }
 
   /** Shows a ghost for every unit that a standing object in front of it mostly covers. */
@@ -838,6 +912,8 @@ export class BattleScene extends Phaser.Scene {
     this.endTurnButton.setAlpha(playerTurn ? 1 : 0.35);
     const sel = this.state.selected;
     this.reloadButton.setVisible(playerTurn && sel !== null && canReload(this.state, sel));
+    this.overwatchButton.setVisible(playerTurn && sel !== null && canOverwatch(this.state, sel));
+    this.layoutButtons();
     const g = this.marker.clear();
     this.rangeLayer.clear();
     const unit = this.state.selected ? unitById(this.state, this.state.selected) : undefined;
@@ -904,37 +980,33 @@ export class BattleScene extends Phaser.Scene {
       .text(6, y + 18, '', style)
       .setDepth(DEPTH.hud)
       .setResolution(4);
-    this.add
-      .text(GAME_WIDTH - 6, y + 18, 'R reload  E end turn  Esc cancel  N new map', style)
-      .setOrigin(1, 0)
-      .setDepth(DEPTH.hud)
-      .setResolution(4);
-    this.endTurnButton = this.add
-      .text(GAME_WIDTH - 6, y + 4, 'END TURN', {
-        ...style,
-        fontStyle: 'bold',
-        color: '#11141b',
-        backgroundColor: '#f2a33a',
-        padding: { x: 4, y: 1 },
-      })
-      .setOrigin(1, 0)
-      .setDepth(DEPTH.hud)
-      .setResolution(4)
-      .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => void this.endTurn());
-    this.reloadButton = this.add
-      .text(this.endTurnButton.x - this.endTurnButton.width - 4, y + 4, 'RELOAD', {
-        ...style,
-        fontStyle: 'bold',
-        color: '#dfe4ec',
-        backgroundColor: '#2b3242',
-        padding: { x: 4, y: 1 },
-      })
-      .setOrigin(1, 0)
-      .setDepth(DEPTH.hud)
-      .setResolution(4)
-      .setVisible(false)
-      .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this.reload());
+    const hudButton = (label: string, primary: boolean, onClick: () => void) =>
+      this.add
+        .text(0, y + 16, label, {
+          ...style,
+          fontStyle: 'bold',
+          color: primary ? '#11141b' : '#dfe4ec',
+          backgroundColor: primary ? '#f2a33a' : '#2b3242',
+          padding: { x: 4, y: 1 },
+        })
+        .setOrigin(1, 0)
+        .setDepth(DEPTH.hud)
+        .setResolution(4)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', onClick);
+    this.endTurnButton = hudButton('END TURN [E]', true, () => void this.endTurn());
+    this.reloadButton = hudButton('RELOAD [R]', false, () => this.reload());
+    this.overwatchButton = hudButton('OVERWATCH [O]', false, () => this.overwatch());
+    this.layoutButtons();
+  }
+
+  /** Lines up the visible buttons from the right edge of the info bar. */
+  private layoutButtons(): void {
+    let right = GAME_WIDTH - 6;
+    for (const b of [this.endTurnButton, this.reloadButton, this.overwatchButton]) {
+      if (!b.visible) continue;
+      b.setX(right);
+      right -= b.width + 4;
+    }
   }
 }

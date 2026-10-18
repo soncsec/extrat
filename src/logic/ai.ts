@@ -1,4 +1,5 @@
 import {
+  canOverwatch,
   canSee,
   coverAgainst,
   hitChance,
@@ -9,7 +10,7 @@ import {
   type BattleState,
 } from './battle';
 import type { Point } from './grid';
-import { UNITS } from '../config/tuning';
+import { ACTION_POINTS, UNITS } from '../config/tuning';
 
 /**
  * The aliens' choices for the skirmish: shoot if possible, otherwise move toward
@@ -66,5 +67,9 @@ export function planAlienAction(state: BattleState, alienId: string): Action | n
       to = p;
     }
   }
-  return to ? { type: 'move', unitId: alien.id, to } : null;
+  // With one point left and no shot, or nowhere better to go, watch instead.
+  const watch: Action = { type: 'overwatch', unitId: alien.id };
+  if (alien.ap < ACTION_POINTS && canOverwatch(state, alien.id)) return watch;
+  if (to) return { type: 'move', unitId: alien.id, to };
+  return canOverwatch(state, alien.id) ? watch : null;
 }

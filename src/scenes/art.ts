@@ -115,7 +115,8 @@ export function addAnims(anims: Phaser.Animations.AnimationManager, sheet: Chara
       key,
       frames: anims.generateFrameNumbers(sheet.key, { start: a.start, end: a.start + a.count - 1 }),
       frameRate: a.fps,
-      repeat: name === 'die' || name === 'shoot' ? 0 : -1,
+      // One-off moves hold their last frame; crouch is a stand-to-crouch transition.
+      repeat: name === 'die' || name === 'shoot' || name === 'crouch' ? 0 : -1,
     });
   }
 }

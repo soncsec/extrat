@@ -109,12 +109,26 @@ describe('planAlienAction', () => {
     expect(planAlienAction(tired, 'a')).toBeNull();
     const won = { ...s, units: s.units.map((u) => (u.id === 'm0' ? { ...u, hp: 0 } : u)) };
     expect(planAlienAction(won, 'a')).toBeNull();
-    // Boxed in by trees: no move gets closer.
+  });
+
+  it('goes on overwatch when boxed in with nowhere better to go', () => {
+    // Boxed in by trees: no move gets closer, so it watches instead of idling.
     const boxed = scene(['###.........', '#.#.........', '###.........'], [{ x: 11, y: 1 }], {
       x: 1,
       y: 1,
     });
-    expect(planAlienAction(boxed, 'a')).toBeNull();
+    expect(planAlienAction(boxed, 'a')).toEqual({ type: 'overwatch', unitId: 'a' });
+  });
+
+  it('spends a last point on overwatch when it has no shot', () => {
+    const s = scene(open, [{ x: 1, y: 2 }], { x: 20, y: 2, ap: 1 });
+    expect(planAlienAction(s, 'a')).toEqual({ type: 'overwatch', unitId: 'a' });
+    // Already watching: nothing more to do.
+    const watching = {
+      ...s,
+      units: s.units.map((u) => (u.id === 'a' ? { ...u, overwatch: true } : u)),
+    };
+    expect(planAlienAction(watching, 'a')).toMatchObject({ type: 'move' });
   });
 });
 

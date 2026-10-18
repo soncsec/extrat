@@ -130,3 +130,15 @@ export function drawShield(
     });
   });
 }
+
+/** A small yellow eye (9 x 5) with its top-left at (x, y): the unit is on overwatch. */
+export function drawEye(g: Phaser.GameObjects.Graphics, x: number, y: number): void {
+  const rows = ['..#####..', '.#.....#.', '#...#...#', '.#.....#.', '..#####..'];
+  rows.forEach((row, j) => {
+    [...row].forEach((c, i) => {
+      if (c === '#') g.fillStyle(0xffd23a, 1).fillRect(x + i, y + j, 1, 1);
+    });
+  });
+  g.fillStyle(0x11141b, 1).fillRect(x + 3, y + 1, 3, 3);
+  g.fillStyle(0xffd23a, 1).fillRect(x + 4, y + 2, 1, 1);
+}

@@ -70,6 +70,14 @@ export const SHOOTING = {
   critDamage: 2,
 } as const;
 
+/** Reaction shots from overwatch, taken when an enemy moves into sight. */
+export const OVERWATCH = {
+  /** Percent taken off the hit chance: snap shots at a moving target. */
+  aimPenalty: 15,
+  /** Reaction shots never crit. */
+  canCrit: false,
+} as const;
+
 /** Action points each unit gets at the start of its side's turn. A move costs 1. */
 export const ACTION_POINTS = 2;
 
