@@ -76,7 +76,10 @@ run activate extrat "$B" >/dev/null
 if [[ "$(live)" == "$B" ]]; then ok "switch to release B"; else bad "live is $(live)"; fi
 expect_ok "rollback" run rollback extrat
 if [[ "$(live)" == "$A" ]]; then ok "rollback returns to release A"; else bad "live is $(live)"; fi
-if run status extrat | grep -q "^\* $A (live)"; then ok "status marks the live release"; else bad "status: $(run status extrat)"; fi
+# Capture first: with pipefail, `| grep -q` can fail when grep exits before status finishes
+# writing (status then gets SIGPIPE), even though the line matched.
+status_out="$(run status extrat)"
+if grep -q "^\* $A (live)" <<<"$status_out"; then ok "status marks the live release"; else bad "status: $status_out"; fi
 if compgen -G "$T/web/.*switch*" >/dev/null; then bad "leftover temporary link"; else ok "no temporary links left behind"; fi
 teardown
 
