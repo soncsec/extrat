@@ -22,8 +22,9 @@ __MACOSX/
 .idea/
 *.swp
 
-# Local deployment settings (server address, SSH user)
+# Local deployment settings (server address, SSH user), and the last dry run's commit
 deploy/server.env
+deploy/dry-run.*
 
 # Built docs page (published as an artifact, not committed)
 tools/docs-page/out/

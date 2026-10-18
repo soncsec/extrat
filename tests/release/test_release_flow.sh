@@ -104,9 +104,22 @@ out="$(release deploy)"
 if [[ $? -ne 0 && "$out" == *"working tree has changes"* ]]; then ok "refuses uncommitted changes"; else bad "dirty tree: $out"; fi
 rm untracked.txt
 
-out="$(release deploy --dry-run)"
-if [[ $? -eq 0 && "$out" == *"Dry run"* && "$(count)" == 0 ]]; then ok "dry run uploads nothing"; else bad "dry run: $out"; fi
+rm -f deploy/dry-run.extrat
+out="$(release deploy)"
+if [[ $? -ne 0 && "$out" == *"no dry run recorded"* && "$(count)" == 0 ]]; then ok "refuses to deploy without a dry run"; else bad "no dry run: $out"; fi
 
+out="$(release deploy --dry-run)"
+if [[ $? -eq 0 && "$out" == *"Dry run passed"* && "$(count)" == 0 && "$(cat deploy/dry-run.extrat)" == "$(git rev-parse HEAD)" ]]; then ok "dry run uploads nothing and records its commit"; else bad "dry run: $out"; fi
+
+touch -d '2 hours ago' deploy/dry-run.extrat
+out="$(release deploy)"
+if [[ $? -ne 0 && "$out" == *"minutes old"* && "$(count)" == 0 ]]; then ok "refuses to deploy on a dry run older than an hour"; else bad "stale dry run: $out"; fi
+
+echo 0000000000000000000000000000000000000000 >deploy/dry-run.extrat
+out="$(release deploy)"
+if [[ $? -ne 0 && "$out" == *"another commit"* && "$(count)" == 0 ]]; then ok "refuses to deploy on a dry run of another commit"; else bad "other commit: $out"; fi
+
+release deploy --dry-run >/dev/null
 out="$(release deploy)"; first="$(live)"
 if [[ $? -eq 0 && -n "$first" && "$out" == *"smoke test: passed"* ]]; then ok "first release goes live and passes the smoke test"; else bad "first release: $out"; fi
 

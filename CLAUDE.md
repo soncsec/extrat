@@ -83,7 +83,7 @@ Read `PROJECT.md` (scope), `ARCHITECTURE.md` (decisions), and `ROADMAP.md` (curr
 
 1. Wait for CI on the new `main` commit to pass, including the ZAP scan of staging.
 2. Report the security checks: gitleaks, `npm audit`, CodeQL, ZAP.
-3. `scripts/release.sh deploy --dry-run`, then `scripts/release.sh deploy` (see README). It refuses unless HEAD is `origin/main`, the tree is clean and CI passed on that commit.
+3. `scripts/release.sh deploy --dry-run`, check that it passed, then `scripts/release.sh deploy` (see README). It refuses unless HEAD is `origin/main`, the tree is clean, CI passed on that commit, and a dry run of that commit passed in the last hour. Never chain the two in one command.
 4. Check the game on the live site, and tell the owner what was released (`scripts/release.sh rollback` undoes it).
 
 The standing approval covers this game's releases only: not portal releases, server or Apache changes, or anything else on the server.
