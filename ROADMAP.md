@@ -67,7 +67,7 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 - [x] M3.1 Fog of war from the squad's sight; hidden tiles darkened, aliens there not drawn
 - [x] M3.2 Alien groups dormant until spotted, then scamper to cover (the ambush)
 - [x] M3.3 Utility AI: scores tiles for cover, flanking and hit chance (ADR-E4)
-- [ ] M3.4 Alien types with their own stats and one ability each: walker (melee), flyer (ignores cover from below), lizard (tongue pull), snake (poison)
+- [x] M3.4 Alien types with their own stats and one ability each: walker (melee), flyer (ignores cover from below), lizard (tongue pull), snake (poison)
 - [ ] M3.5 Hurt, death and hit effects from the pack
 
 **Acceptance criteria:** ambushes happen in play-tests; AI decisions have unit tests on fixed boards; the owner finds the fights fair but threatening.

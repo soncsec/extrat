@@ -10,6 +10,7 @@ import {
   hitChance,
   type BattleState,
   type Unit,
+  type UnitKind,
 } from '../../src/logic/battle';
 import { generateForest, type BattleMap } from '../../src/logic/map';
 
@@ -29,7 +30,10 @@ function mapOf(rows: string[]): BattleMap {
   };
 }
 
-/** The alien's turn with the given marines and one alien, on a map. */
+/**
+ * The alien's turn with the given marines and one alien, on a map. The alien is a snake
+ * unless the test says otherwise: a plain ranged attacker (aim 60, range 6, move 4).
+ */
 function scene(rows: string[], marines: Partial<Unit>[], alien: Partial<Unit>): BattleState {
   const base = createBattle(mapOf(Array(6).fill('.'.repeat(24))), 1);
   const m = base.units.find((u) => u.side === 'marine') as Unit;
@@ -41,9 +45,15 @@ function scene(rows: string[], marines: Partial<Unit>[], alien: Partial<Unit>): 
     // These tests are about an alien that has been spotted (awake), unless they say otherwise.
     units: [
       ...marines.map((p, i) => ({ ...m, id: `m${i}`, ...p })),
-      { ...a, id: 'a', dormant: false, ...alien },
+      { ...a, ...kindStats('snake'), id: 'a', dormant: false, ...alien },
     ],
   };
+}
+
+/** The fields that come from a unit's kind. */
+function kindStats(kind: UnitKind): Partial<Unit> {
+  const k = UNITS[kind];
+  return { kind, hp: k.hp, maxHp: k.hp, move: k.move, ammo: k.ammo };
 }
 
 const open = Array(6).fill('.'.repeat(24));
@@ -81,7 +91,7 @@ describe('planAlienAction', () => {
     const plan = planAlienAction(s, 'a');
     if (plan?.type !== 'move') throw new Error(`expected a move, got ${JSON.stringify(plan)}`);
     const after = apply(s, plan);
-    expect(Math.hypot(plan.to.x - 1, plan.to.y - 2)).toBeLessThanOrEqual(UNITS.walker.range);
+    expect(Math.hypot(plan.to.x - 1, plan.to.y - 2)).toBeLessThanOrEqual(UNITS.snake.range);
     expect(after.units.find((u) => u.id === 'a')?.ap).toBe(0); // the dash used both points
     expect(hitChance(after, 'a', 'm0')).toBeNull(); // so no shot until next turn
   });
@@ -103,7 +113,7 @@ describe('planAlienAction', () => {
     const s = scene(rows, [{ x: 3, y: 2 }], { x: 12, y: 2 });
     const plan = planAlienAction(s, 'a');
     expect(plan).toEqual({ type: 'move', unitId: 'a', to: { x: 9, y: 2 } });
-    expect(Math.hypot(9 - 3, 0)).toBeLessThanOrEqual(UNITS.walker.range);
+    expect(Math.hypot(9 - 3, 0)).toBeLessThanOrEqual(UNITS.snake.range);
   });
 
   it('does nothing when it cannot act or nothing helps', () => {

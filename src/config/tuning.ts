@@ -61,12 +61,78 @@ export const SKIRMISH = {
 export const UNITS = {
   /**
    * move: tiles per move action. aim: base hit chance in percent.
-   * damage: inclusive range per hit. range: farthest shot in tiles.
+   * damage: inclusive range per hit. range: farthest attack in tiles.
    * crit: base chance in percent that a hit is critical.
    * ammo: shots per clip, or null for weapons that never need reloading.
+   * ability: what makes the kind different (see ABILITIES).
    */
-  marine: { hp: 4, move: 5, aim: 70, damage: { min: 2, max: 3 }, range: 16, crit: 10, ammo: 3 },
-  walker: { hp: 3, move: 4, aim: 60, damage: { min: 1, max: 2 }, range: 6, crit: 0, ammo: null },
+  marine: {
+    hp: 4,
+    move: 5,
+    aim: 70,
+    damage: { min: 2, max: 3 },
+    range: 16,
+    crit: 10,
+    ammo: 3,
+    ability: null,
+  },
+  /** Charges in and claws: reaches the 8 tiles around it, ignores cover, can't watch. */
+  walker: {
+    hp: 4,
+    move: 5,
+    aim: 80,
+    damage: { min: 2, max: 3 },
+    range: 1.5,
+    crit: 10,
+    ammo: null,
+    ability: 'melee',
+  },
+  /** Shoots from above: the target's cover counts one step less. */
+  flyer: {
+    hp: 3,
+    move: 6,
+    aim: 60,
+    damage: { min: 1, max: 2 },
+    range: 7,
+    crit: 0,
+    ammo: null,
+    ability: 'fromAbove',
+  },
+  /** Its tongue drags a marine it hits next to it, out of cover. */
+  lizard: {
+    hp: 3,
+    move: 4,
+    aim: 65,
+    damage: { min: 1, max: 1 },
+    range: 5,
+    crit: 0,
+    ammo: null,
+    ability: 'pull',
+  },
+  /** Spits venom: a marine it hits is poisoned for a few turns. */
+  snake: {
+    hp: 3,
+    move: 4,
+    aim: 60,
+    damage: { min: 1, max: 1 },
+    range: 6,
+    crit: 0,
+    ammo: null,
+    ability: 'poison',
+  },
+} as const;
+
+/** The alien kinds a pod member can be, drawn at random for each one. */
+export const ALIEN_KINDS = ['walker', 'flyer', 'lizard', 'snake'] as const;
+
+/** Numbers for the alien abilities. Only aimed attacks use them, not overwatch reactions. */
+export const ABILITIES = {
+  poison: {
+    /** Turns of poison after a hit; a new hit starts the count again. */
+    turns: 2,
+    /** Health lost at the start of each of the victim's turns. Poison never kills: it stops at 1. */
+    damage: 1,
+  },
 } as const;
 
 /** Hit chance rules (M1; cover and flanking come in M2). */
@@ -120,6 +186,10 @@ export const AI = {
   killValue: 40,
   /** ...plus this times the crit chance (flanking a marine makes crits likely). */
   critValue: 40,
+  /** Extra for a lizard's hit that would drag a marine (worth it unless already adjacent). */
+  pullValue: 25,
+  /** Extra for a snake's hit on a marine who isn't poisoned yet. */
+  poisonValue: 20,
   /** For ending a dash within range of a marine: a shot next turn. */
   setupValue: 10,
   /** Lost per tile the nearest marine is out of range. */

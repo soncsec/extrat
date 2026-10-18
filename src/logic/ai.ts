@@ -108,12 +108,18 @@ function bestShotNow(state: BattleState, alien: Unit, marines: readonly Unit[]):
   return best?.id ?? null;
 }
 
-/** What a shot is worth: likelier hits, possible kills and likely crits score higher. */
+/**
+ * What an attack is worth: likelier hits, possible kills and likely crits score
+ * higher, and so does a hit whose ability would do something (each kind's preference).
+ */
 function shotValue(odds: ShotOdds, shooter: Unit, target: Unit): number {
-  const kills = target.hp <= UNITS[shooter.kind].damage.max;
-  return (
-    (odds.hit / 100) * (AI.hitValue + (kills ? AI.killValue : 0) + (odds.crit / 100) * AI.critValue)
-  );
+  const stats = UNITS[shooter.kind];
+  const adjacent = Math.hypot(target.x - shooter.x, target.y - shooter.y) <= 1.5;
+  let extra = 0;
+  if (target.hp <= stats.damage.max) extra = AI.killValue;
+  else if (stats.ability === 'pull' && !adjacent) extra = AI.pullValue;
+  else if (stats.ability === 'poison' && target.poison === 0) extra = AI.poisonValue;
+  return (odds.hit / 100) * (AI.hitValue + extra + (odds.crit / 100) * AI.critValue);
 }
 
 /**
