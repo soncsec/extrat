@@ -13,6 +13,8 @@ export interface TestHook {
   scenes(): string[];
   /** Sets a unit's health in the battle, to reach the win and loss screens quickly. */
   setHp(unitId: string, hp: number): void;
+  /** Sets a unit's ammo, to test reloading. */
+  setAmmo(unitId: string, ammo: number): void;
   snapshot(): GameSnapshot | null;
 }
 
@@ -27,6 +29,8 @@ export function installTestHook(game: Phaser.Game): void {
     scene: () => game.scene.getScenes(true)[0]?.scene.key ?? null,
     scenes: () => game.scene.getScenes(true).map((s) => s.scene.key),
     setHp: (unitId, hp) => (game.scene.getScene('Battle') as BattleScene).debugSetHp(unitId, hp),
+    setAmmo: (unitId, ammo) =>
+      (game.scene.getScene('Battle') as BattleScene).debugSetAmmo(unitId, ammo),
     snapshot: () => {
       const s = game.scene.getScene('Battle') as BattleScene | null;
       return s && game.scene.isActive('Battle') ? s.snapshot() : null;

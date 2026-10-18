@@ -13,6 +13,8 @@ import type { Point } from '../logic/grid';
 import {
   apply,
   canAct,
+  canReload,
+  clipSize,
   createBattle,
   coverAgainst,
   hitChance,
@@ -26,6 +28,7 @@ import {
   unitById,
   type Action,
   type BattleState,
+  type ShotBlock,
   type ShotOdds,
   type ShotResult,
   type Side,
@@ -68,6 +71,7 @@ export interface GameSnapshot {
     y: number;
     hp: number;
     ap: number;
+    ammo: number | null;
     hidden: boolean;
   }[];
   selected: string | null;
@@ -144,6 +148,7 @@ export class BattleScene extends Phaser.Scene {
   private mapText!: Phaser.GameObjects.Text;
   private unitText!: Phaser.GameObjects.Text;
   private endTurnButton!: Phaser.GameObjects.Text;
+  private reloadButton!: Phaser.GameObjects.Text;
   /** Set when one side has been wiped out; only a new map can follow. */
   private over = false;
 
@@ -200,6 +205,7 @@ export class BattleScene extends Phaser.Scene {
       if (this.aimTarget && !this.busy) this.fire(this.aimTarget);
     });
     this.input.keyboard?.on('keydown-E', () => void this.endTurn());
+    this.input.keyboard?.on('keydown-R', () => this.reload());
     this.input.keyboard?.on('keydown-N', () => {
       // Not in the middle of an animation, the alien turn, or the result screen.
       if (!this.busy) this.startBattle(this.seeds.int(1, 999_999));
@@ -254,6 +260,7 @@ export class BattleScene extends Phaser.Scene {
         y: u.y,
         hp: u.hp,
         ap: u.ap,
+        ammo: u.ammo,
         hidden: this.views.get(u.id)?.hidden ?? false,
       })),
       selected,
@@ -403,6 +410,34 @@ export class BattleScene extends Phaser.Scene {
     void this.run(() => this.playShot(shot));
   }
 
+  /** Reloads the selected marine: costs one action point. */
+  private reload(): void {
+    const id = this.state.selected;
+    if (!id || this.busy) return;
+    const next = apply(this.state, { type: 'reload', unitId: id });
+    if (next === this.state) return;
+    this.state = next;
+    this.aimTarget = null;
+    this.drawAim(null);
+    void this.run(() => this.playReload(id));
+  }
+
+  /** A short crouch and a "RELOADED" note; the marine pack has no reload animation. */
+  private playReload(unitId: string): Promise<void> {
+    const unit = unitById(this.state, unitId);
+    const view = this.views.get(unitId);
+    if (!unit || !view) return Promise.resolve();
+    view.sprite.play(`${MARINE_SHEET.key}-crouch`);
+    const headY = view.sprite.y - SHEETS[unit.kind].height;
+    floatText(this, view.sprite.x, headY - 6, 'RELOADED', '#dfe4ec', DEPTH.fx);
+    return new Promise((resolve) => {
+      this.time.delayedCall(500, () => {
+        this.playAnim(view, unit.kind, 'idle', unit.facing);
+        resolve();
+      });
+    });
+  }
+
   /** Plays an animation with input locked, then hands control back (or ends the turn). */
   private async run(animation: () => Promise<void>): Promise<void> {
     this.busy = true;
@@ -479,6 +514,15 @@ export class BattleScene extends Phaser.Scene {
     // Let the last death animation play first.
     this.time.delayedCall(700, () => this.scene.launch('Result', result));
     return true;
+  }
+
+  /** Test hook only (ADR-006): sets a unit's ammo, to test reloading without long setups. */
+  debugSetAmmo(unitId: string, ammo: number): void {
+    this.state = {
+      ...this.state,
+      units: this.state.units.map((u) => (u.id === unitId ? { ...u, ammo } : u)),
+    };
+    this.drawSelection();
   }
 
   /**
@@ -659,7 +703,12 @@ export class BattleScene extends Phaser.Scene {
     const height = SHEETS[target.kind].height;
     const odds = shotOdds(this.state, shooter, target.id);
     const block = shotBlock(this.state, shooter, target.id);
-    const why = block === 'sight' ? 'NO LINE OF SIGHT' : block === 'range' ? 'OUT OF RANGE' : null;
+    const WHY: Partial<Record<ShotBlock, string>> = {
+      sight: 'NO LINE OF SIGHT',
+      range: 'OUT OF RANGE',
+      ammo: 'NO AMMO: R TO RELOAD',
+    };
+    const why = block ? (WHY[block] ?? null) : null;
     if (odds === null && why === null) return;
     if (odds) {
       drawReticle(this.aimLayer, view.sprite.x, view.sprite.y, height);
@@ -787,6 +836,8 @@ export class BattleScene extends Phaser.Scene {
   private drawSelection(): void {
     const playerTurn = this.state.turn === 'marine' && !this.busy && !this.over;
     this.endTurnButton.setAlpha(playerTurn ? 1 : 0.35);
+    const sel = this.state.selected;
+    this.reloadButton.setVisible(playerTurn && sel !== null && canReload(this.state, sel));
     const g = this.marker.clear();
     this.rangeLayer.clear();
     const unit = this.state.selected ? unitById(this.state, this.state.selected) : undefined;
@@ -833,8 +884,10 @@ export class BattleScene extends Phaser.Scene {
     const ap = unit.ap > 0 ? `AP ${unit.ap}/${ACTION_POINTS}` : 'NO ACTIONS LEFT';
     const aimed = this.aimTarget ? hitChance(this.state, unit.id, this.aimTarget) : null;
     const status = aimed === null ? ap : `SHOOT ${aimed}%  Enter: fire`;
+    const clip = clipSize(unit);
+    const ammo = clip === null || unit.ammo === null ? '' : `  AMMO ${unit.ammo}/${clip}`;
     this.unitText.setText(
-      `PVT ${unit.name.toUpperCase()}   HP ${unit.hp}/${unit.maxHp}   ${status}`,
+      `PVT ${unit.name.toUpperCase()}  HP ${unit.hp}/${unit.maxHp}  ${status}${ammo}`,
     );
   }
 
@@ -852,7 +905,7 @@ export class BattleScene extends Phaser.Scene {
       .setDepth(DEPTH.hud)
       .setResolution(4);
     this.add
-      .text(GAME_WIDTH - 6, y + 18, 'E: end turn   Esc: cancel   N: new map', style)
+      .text(GAME_WIDTH - 6, y + 18, 'R reload  E end turn  Esc cancel  N new map', style)
       .setOrigin(1, 0)
       .setDepth(DEPTH.hud)
       .setResolution(4);
@@ -869,5 +922,19 @@ export class BattleScene extends Phaser.Scene {
       .setResolution(4)
       .setInteractive({ useHandCursor: true })
       .on('pointerdown', () => void this.endTurn());
+    this.reloadButton = this.add
+      .text(this.endTurnButton.x - this.endTurnButton.width - 4, y + 4, 'RELOAD', {
+        ...style,
+        fontStyle: 'bold',
+        color: '#dfe4ec',
+        backgroundColor: '#2b3242',
+        padding: { x: 4, y: 1 },
+      })
+      .setOrigin(1, 0)
+      .setDepth(DEPTH.hud)
+      .setResolution(4)
+      .setVisible(false)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => this.reload());
   }
 }

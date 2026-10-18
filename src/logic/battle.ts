@@ -32,6 +32,8 @@ export interface Unit extends Point {
   ap: number;
   /** Tiles per move action. */
   move: number;
+  /** Shots left in the clip, or null for a weapon that never needs reloading. */
+  ammo: number | null;
 }
 
 export interface BattleState {
@@ -66,6 +68,7 @@ export type Action =
   | { type: 'deselect' }
   | { type: 'move'; unitId: string; to: Point }
   | { type: 'shoot'; unitId: string; targetId: string }
+  | { type: 'reload'; unitId: string }
   | { type: 'endTurn' };
 
 const MARINE_NAMES = ['Vasquez', 'Okafor', 'Lindqvist', 'Moreau', 'Tanaka', 'Reyes'];
@@ -85,6 +88,7 @@ export function createBattle(map: BattleMap, seed: number): BattleState {
     facing: 1,
     ap: ACTION_POINTS,
     move: UNITS.marine.move,
+    ammo: UNITS.marine.ammo,
   }));
   const aliens = deploy(map, rng, 'east', SKIRMISH.aliens).map((p, i): Unit => ({
     ...p,
@@ -97,6 +101,7 @@ export function createBattle(map: BattleMap, seed: number): BattleState {
     facing: -1,
     ap: ACTION_POINTS,
     move: UNITS.walker.move,
+    ammo: UNITS.walker.ammo,
   }));
   return {
     map,
@@ -138,6 +143,11 @@ export function apply(state: BattleState, action: Action): BattleState {
     }
     case 'shoot':
       return shoot(state, action.unitId, action.targetId);
+    case 'reload': {
+      const unit = unitById(state, action.unitId);
+      if (!unit || !canReload(state, unit.id)) return state;
+      return replaceUnit(state, { ...unit, ammo: clipSize(unit), ap: unit.ap - 1 });
+    }
     case 'endTurn': {
       // The other side's living units get their action points back.
       const turn: Side = state.turn === 'marine' ? 'alien' : 'marine';
@@ -179,7 +189,7 @@ export function canSee(map: BattleMap, a: Point, b: Point): boolean {
 }
 
 /** Why a shot isn't possible right now, or null if it is. */
-export type ShotBlock = 'range' | 'sight' | 'other';
+export type ShotBlock = 'range' | 'sight' | 'ammo' | 'other';
 
 export function shotBlock(
   state: BattleState,
@@ -190,6 +200,7 @@ export function shotBlock(
   const target = unitById(state, targetId);
   if (!shooter || !target || shooter.hp <= 0 || target.hp <= 0) return 'other';
   if (shooter.side === target.side || shooter.ap <= 0) return 'other';
+  if (shooter.ammo === 0) return 'ammo';
   const dist = Math.hypot(target.x - shooter.x, target.y - shooter.y);
   if (dist > UNITS[shooter.kind].range) return 'range';
   if (!canSee(state.map, shooter, target)) return 'sight';
@@ -262,7 +273,8 @@ function shoot(state: BattleState, shooterId: string, targetId: string): BattleS
   const hp = Math.max(0, target.hp - damage);
   const facing = target.x === shooter.x ? shooter.facing : target.x > shooter.x ? 1 : -1;
   // A shot uses all remaining action points, as in XCOM.
-  let next = replaceUnit(state, { ...shooter, facing, ap: 0 });
+  const ammo = shooter.ammo === null ? null : shooter.ammo - 1;
+  let next = replaceUnit(state, { ...shooter, facing, ap: 0, ammo });
   next = replaceUnit(next, { ...target, hp });
   const lastShot = { shooterId, targetId, chance, hit, crit, damage, killed: hp === 0 };
   return { ...next, rng, lastShot };
@@ -306,6 +318,19 @@ function passableFor(state: BattleState): (x: number, y: number) => boolean {
 
 function replaceUnit(state: BattleState, unit: Unit): BattleState {
   return { ...state, units: state.units.map((u) => (u.id === unit.id ? unit : u)) };
+}
+
+/** A full clip for this unit's weapon (null: it never needs reloading). */
+export function clipSize(unit: Unit): number | null {
+  return UNITS[unit.kind].ammo;
+}
+
+/** True if the unit can reload now: its turn, an action point, and a clip that isn't full. */
+export function canReload(state: BattleState, unitId: string): boolean {
+  const unit = unitById(state, unitId);
+  if (!unit || unit.hp <= 0 || unit.ap <= 0 || unit.side !== state.turn) return false;
+  const clip = clipSize(unit);
+  return clip !== null && unit.ammo !== null && unit.ammo < clip;
 }
 
 /** Living units on one side. */
