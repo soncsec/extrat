@@ -145,7 +145,7 @@ export type Action =
   | { type: 'throw'; unitId: string; at: Point }
   | { type: 'endTurn' };
 
-const MARINE_NAMES = ['Vasquez', 'Okafor', 'Lindqvist', 'Moreau', 'Tanaka', 'Reyes'];
+export const MARINE_NAMES = ['Vasquez', 'Okafor', 'Lindqvist', 'Moreau', 'Tanaka', 'Reyes'];
 const ALIEN_NAMES: Record<AlienKind, string> = {
   walker: 'Walker',
   flyer: 'Flyer',
@@ -153,10 +153,19 @@ const ALIEN_NAMES: Record<AlienKind, string> = {
   snake: 'Snake',
 };
 
-/** A new skirmish: marines deploy in the west spawn zone, aliens in the east. */
-export function createBattle(map: BattleMap, seed: number): BattleState {
+/** Who fights: the campaign's squad names and the mission's alien groups. */
+export interface BattleSetup {
+  /** Marine names in squad order; missing ones are drawn at random. */
+  names?: readonly string[];
+  /** Alien groups for this mission (default: PODS). */
+  pods?: { count: number; size: number };
+}
+
+/** A new battle: marines deploy in the west spawn zone, aliens in the east. */
+export function createBattle(map: BattleMap, seed: number, setup: BattleSetup = {}): BattleState {
   const rng = createRng(seed);
-  const names = shuffled(rng, MARINE_NAMES);
+  const drawn = shuffled(rng, MARINE_NAMES);
+  const names = drawn.map((n, i) => setup.names?.[i] ?? n);
   const marines = deploy(map, rng, 'west', SKIRMISH.marines).map((p, i): Unit => ({
     ...p,
     id: `m${i + 1}`,
@@ -178,7 +187,7 @@ export function createBattle(map: BattleMap, seed: number): BattleState {
   }));
   // Kinds come from their own generator, so the draw doesn't move where anyone stands.
   const kindRng = createRng((seed ^ 0x5bd1e995) >>> 0);
-  const aliens = deployPods(map, rng, marines).map(({ pod, ...p }, i): Unit => {
+  const aliens = deployPods(map, rng, marines, setup.pods ?? PODS).map(({ pod, ...p }, i): Unit => {
     const kind = kindRng.pick(ALIEN_KINDS);
     return {
       ...p,
@@ -899,6 +908,7 @@ function deployPods(
   map: BattleMap,
   rng: Rng,
   marines: readonly Point[],
+  pods: { count: number; size: number },
 ): (Point & { pod: number })[] {
   const [eastStart, eastEdge] = spawnZone(map.cols, 'east');
   // On small maps (tests) the east spawn zone may start west of westmostColumn.
@@ -914,7 +924,7 @@ function deployPods(
   const taken = (p: Point): boolean => placed.some((q) => q.x === p.x && q.y === p.y);
   for (const hideOnly of [true, false]) {
     for (const apart of [PODS.minApart, 1]) {
-      for (let pod = placed.length / PODS.size; pod < PODS.count; pod++) {
+      for (let pod = placed.length / pods.size; pod < pods.count; pod++) {
         const leader = order.find(
           ({ p }) =>
             !taken(p) &&
@@ -924,16 +934,16 @@ function deployPods(
         if (!leader) break;
         const members = [leader.p];
         for (const { p } of order) {
-          if (members.length === PODS.size) break;
+          if (members.length === pods.size) break;
           if (taken(p) || members.some((m) => m.x === p.x && m.y === p.y)) continue;
           if (dist(p, leader.p) > PODS.spread) continue;
           if (hideOnly && seen.has(p.y * map.cols + p.x)) continue;
           members.push(p);
         }
-        if (members.length < PODS.size) break;
+        if (members.length < pods.size) break;
         placed.push(...members.map((m) => ({ ...m, pod })));
       }
-      if (placed.length === PODS.count * PODS.size) return placed;
+      if (placed.length === pods.count * pods.size) return placed;
     }
   }
   throw new Error(`only ${placed.length} alien spawn tiles`);
