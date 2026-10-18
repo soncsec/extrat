@@ -23,7 +23,7 @@ Read `PROJECT.md` (scope), `ARCHITECTURE.md` (decisions), and `ROADMAP.md` (curr
 - Changing the architecture or any ADR, or adding a dependency not listed in ARCHITECTURE.md
 - Changing scope (adding or dropping features)
 - Destructive operations: deleting files or branches, force-pushing, rewriting history, deleting repos
-- Any production deployment, or any change on the production server or its Apache configuration
+- Any change on the production server or its Apache configuration, and any production deployment other than the standing release approval below
 - Security decisions: CSP and header policy, HTTP vs HTTPS, SSH keys, secrets handling, permissions, CI tokens
 - Adding new third-party assets (art, audio, fonts)
 
@@ -79,4 +79,11 @@ Read `PROJECT.md` (scope), `ARCHITECTURE.md` (decisions), and `ROADMAP.md` (curr
 
 ## Releasing
 
-Only with the owner's approval for each release: `scripts/release.sh deploy` (see README). It refuses unless HEAD is `origin/main`, the tree is clean and CI (including the ZAP scan of staging) passed on that commit.
+**Standing approval (owner, 2026-10-18):** release to games.soncrant.com after each merge to `main`, without asking each time. For each release:
+
+1. Wait for CI on the new `main` commit to pass, including the ZAP scan of staging.
+2. Report the security checks: gitleaks, `npm audit`, CodeQL, ZAP.
+3. `scripts/release.sh deploy --dry-run`, then `scripts/release.sh deploy` (see README). It refuses unless HEAD is `origin/main`, the tree is clean and CI passed on that commit.
+4. Check the game on the live site, and tell the owner what was released (`scripts/release.sh rollback` undoes it).
+
+The standing approval covers this game's releases only: not portal releases, server or Apache changes, or anything else on the server.
