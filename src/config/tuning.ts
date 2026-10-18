@@ -109,6 +109,38 @@ export const GRENADE = {
   damage: 2,
 } as const;
 
+/**
+ * How aliens weigh their choices (ADR-E4). Each tile an alien could move to gets a
+ * score in points; it goes to the best one, or stays to shoot or watch.
+ */
+export const AI = {
+  /** A shot is worth its hit chance times this... */
+  hitValue: 100,
+  /** ...plus this when a hit could kill... */
+  killValue: 40,
+  /** ...plus this times the crit chance (flanking a marine makes crits likely). */
+  critValue: 40,
+  /** For ending a dash within range of a marine: a shot next turn. */
+  setupValue: 10,
+  /** Lost per tile the nearest marine is out of range. */
+  approachCost: 8,
+  /** Lost per percent chance that each marine who would see the tile hits the alien there. */
+  threatCost: 0.15,
+  /** Lost per percent chance of an overwatch reaction shot on the way. */
+  overwatchCost: 0.35,
+  /** Pod mates try to stay within this many tiles of each other... */
+  groupRange: 5,
+  /** ...and lose this much per tile beyond it. */
+  groupCost: 2,
+  /** Lost per step walked, so a shorter move wins a tie. */
+  stepCost: 1,
+  /**
+   * The most a seeded random nudge adds to a tile, so aliens aren't predictable.
+   * Less than stepCost: it only breaks near-ties.
+   */
+  noise: 0.9,
+} as const;
+
 /** Action points each unit gets at the start of its side's turn. A move costs 1. */
 export const ACTION_POINTS = 2;
 

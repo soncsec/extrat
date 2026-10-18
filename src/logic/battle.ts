@@ -365,7 +365,16 @@ export function reactionOdds(
   return oddsBetween(state, shooter, target, true);
 }
 
-function oddsBetween(state: BattleState, shooter: Unit, target: Unit, reaction: boolean): ShotOdds {
+/**
+ * The odds of a shot from `shooter` at `target` as they stand, without checking that
+ * the shot is allowed. The AI uses it to weigh shots from tiles it could move to.
+ */
+export function oddsBetween(
+  state: BattleState,
+  shooter: Unit,
+  target: Unit,
+  reaction: boolean,
+): ShotOdds {
   const stats = UNITS[shooter.kind];
   const dist = Math.hypot(target.x - shooter.x, target.y - shooter.y);
   const range = -Math.max(0, Math.floor(dist) - SHOOTING.closeRange) * SHOOTING.penaltyPerTile;
