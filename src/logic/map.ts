@@ -51,6 +51,8 @@ export interface ForestOptions {
   scatter: { bushes: number; rocks: number };
   dirtPatches: number;
   minSpawnTiles: number;
+  minSquadCover: number;
+  minSpawnSteps: number;
   maxAttempts: number;
 }
 
@@ -118,7 +120,59 @@ export function validateMap(map: BattleMap, opts: ForestOptions = FOREST): strin
   const east = free.filter((p) => inZone(p, spawnZone(map.cols, 'east', opts))).length;
   if (west < opts.minSpawnTiles) problems.push(`west spawn zone has only ${west} free tiles`);
   if (east < opts.minSpawnTiles) problems.push(`east spawn zone has only ${east} free tiles`);
+
+  // The squad deploys in the west facing east: it needs cover on the east side of
+  // enough tiles to start behind something.
+  const westZone = spawnZone(map.cols, 'west', opts);
+  const covered = free.filter(
+    (p) => inZone(p, westZone) && tileAt(map, p.x + 1, p.y)?.prop != null,
+  ).length;
+  if (covered < opts.minSquadCover) {
+    problems.push(`only ${covered} squad spawn tiles have cover facing the enemy`);
+  }
+
+  // The sides must start a fair walk apart.
+  const steps = stepsBetween(map, free, westZone, spawnZone(map.cols, 'east', opts));
+  if (steps < opts.minSpawnSteps) problems.push(`spawn zones are only ${steps} steps apart`);
   return problems;
+}
+
+/**
+ * The fewest steps on foot from a free tile in columns `from` to one in columns `to`
+ * (Infinity if none connects).
+ */
+function stepsBetween(
+  map: BattleMap,
+  free: readonly Point[],
+  from: [number, number],
+  to: [number, number],
+): number {
+  // One search from all the starting tiles at once.
+  const dist = new Map<number, number>();
+  const queue: Point[] = [];
+  for (const p of free) {
+    if (p.x < from[0] || p.x > from[1]) continue;
+    dist.set(p.y * map.cols + p.x, 0);
+    queue.push(p);
+  }
+  for (let head = 0; head < queue.length; head++) {
+    const p = queue[head] as Point;
+    const d = dist.get(p.y * map.cols + p.x) as number;
+    if (p.x >= to[0] && p.x <= to[1]) return d;
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      const q = { x: p.x + dx, y: p.y + dy };
+      const key = q.y * map.cols + q.x;
+      if (dist.has(key) || !isWalkable(map, q.x, q.y)) continue;
+      dist.set(key, d + 1);
+      queue.push(q);
+    }
+  }
+  return Infinity;
 }
 
 function buildForest(seed: number, cols: number, rows: number, opts: ForestOptions): BattleMap {

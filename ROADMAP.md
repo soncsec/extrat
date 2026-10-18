@@ -75,7 +75,7 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 ## M4 — Maps and landscapes
 
 - [x] M4.1 Chunk-based generator with seeded scatter (ADR-E3)
-- [ ] M4.2 Validators: reachability, spawn distance, cover density; 1,000-seed test
+- [x] M4.2 Validators: reachability, spawn distance, cover density; 1,000-seed test
 - [ ] M4.3 Landscapes: forest, town, coast, rocky hills, crash site, alien ship; missing tiles drawn by Claude to match
 - [ ] M4.4 Map seed shown in the debrief so a map can be replayed for bug reports
 

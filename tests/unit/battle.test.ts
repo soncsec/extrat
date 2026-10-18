@@ -41,7 +41,7 @@ import {
   type BattleState,
   type Unit,
 } from '../../src/logic/battle';
-import type { Point } from '../../src/logic/grid';
+import { reachable, type Point } from '../../src/logic/grid';
 import { generateForest, isWalkable, spawnZone, type BattleMap } from '../../src/logic/map';
 
 function must<T>(value: T | undefined): T {
@@ -70,6 +70,17 @@ function openMap(rows: string[]): BattleMap {
 }
 
 describe('createBattle', () => {
+  it('puts every alien pod within walking reach of the squad on 1,000 maps', () => {
+    for (let seed = 1; seed <= 1000; seed++) {
+      const s = battle(seed);
+      const marine = must(s.units.find((u) => u.side === 'marine'));
+      const steps = reachable(s.map.cols, s.map.rows, (x, y) => isWalkable(s.map, x, y), marine);
+      for (const a of s.units.filter((u) => u.side === 'alien')) {
+        expect(steps.has(a.y * s.map.cols + a.x), `seed ${seed}: ${a.id}`).toBe(true);
+      }
+    }
+  });
+
   it('deploys the squad in the west and the alien pods in the east, hidden and dormant', () => {
     for (let seed = 1; seed <= 100; seed++) {
       const s = battle(seed);

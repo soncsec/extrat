@@ -22,6 +22,20 @@ describe('generateForest', () => {
     expect(gen(1).tiles).not.toEqual(gen(2).tiles);
   });
 
+  it('gives the squad cover and the sides a fair walk apart on 1,000 maps', () => {
+    for (let seed = 1; seed <= 1000; seed++) {
+      const map = gen(seed);
+      const [w0, w1] = spawnZone(MAP_COLS, 'west');
+      let covered = 0;
+      for (let y = 0; y < MAP_ROWS; y++) {
+        for (let x = w0; x <= w1; x++) {
+          if (isWalkable(map, x, y) && tileAt(map, x + 1, y)?.prop) covered++;
+        }
+      }
+      expect(covered, `seed ${seed}`).toBeGreaterThanOrEqual(FOREST.minSquadCover);
+    }
+  });
+
   it('makes a valid map for 1,000 seeds', () => {
     for (let seed = 1; seed <= 1000; seed++) {
       const map = gen(seed);
@@ -86,7 +100,8 @@ describe('validateMap', () => {
     tiles: Array.from({ length: cols * rows }, () => ({ prop: null, anchor: false })),
     decals: [],
   });
-  const opts = { ...FOREST, spawnCols: 2, minSpawnTiles: 5 };
+  // Small maps for the older checks; the squad-cover and distance checks have their own tests.
+  const opts = { ...FOREST, spawnCols: 2, minSpawnTiles: 5, minSquadCover: 0, minSpawnSteps: 0 };
 
   it('accepts an open map', () => {
     expect(validateMap(empty(8, 4), opts)).toEqual([]);
@@ -123,6 +138,34 @@ describe('validateMap', () => {
     expect(validateMap(map, opts)).toEqual([
       'west spawn zone has only 3 free tiles',
       'east spawn zone has only 4 free tiles',
+    ]);
+  });
+
+  it('reports a squad spawn zone without enough cover facing the enemy', () => {
+    // 8 x 4, west zone columns 1-2: a bush east of (2,0) covers that tile only.
+    const map = empty(8, 4);
+    map.tiles[0 * 8 + 3] = { prop: 'bush', anchor: true };
+    const strict = { ...opts, minSquadCover: 2 };
+    expect(validateMap(map, strict)).toEqual([
+      'only 1 squad spawn tiles have cover facing the enemy',
+    ]);
+    map.tiles[1 * 8 + 3] = { prop: 'rocks', anchor: true };
+    expect(validateMap(map, strict)).toEqual([]);
+  });
+
+  it('reports spawn zones too few steps apart, counting the walk around props', () => {
+    // 10 x 4: the west zone is columns 1-2, the east zone 7-8: 5 steps in a straight line.
+    const map = empty(10, 4);
+    expect(validateMap(map, { ...opts, minSpawnSteps: 6 })).toEqual([
+      'spawn zones are only 5 steps apart',
+    ]);
+    // Walls in columns 4 (gap at the top) and 6 (gap at the bottom) make it a zig-zag:
+    // (2,0) east to (5,0), down to (5,3), east to (7,3) is 8 steps.
+    for (const y of [1, 2, 3]) map.tiles[y * 10 + 4] = { prop: 'oak', anchor: true };
+    for (const y of [0, 1, 2]) map.tiles[y * 10 + 6] = { prop: 'oak', anchor: true };
+    expect(validateMap(map, { ...opts, minSpawnSteps: 8 })).toEqual([]);
+    expect(validateMap(map, { ...opts, minSpawnSteps: 9 })).toEqual([
+      'spawn zones are only 8 steps apart',
     ]);
   });
 
