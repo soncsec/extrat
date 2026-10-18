@@ -1,8 +1,7 @@
 import Phaser from 'phaser';
-import { GAME_HEIGHT, GAME_WIDTH, MAP_COLS, MAP_ROWS, TILE } from '../config/tuning';
+import { GAME_HEIGHT, GAME_WIDTH, TILE } from '../config/tuning';
 import { FOREST_SHEET, MARINE_SHEET, WALKER_SHEET } from './art';
 import { newCampaign } from '../logic/campaign';
-import { generateForest } from '../logic/map';
 import { restoreBattle, type Save } from '../logic/save';
 import { clearSave, readSave } from './storage';
 import { randomSeed, urlNumber } from './seed';
@@ -106,9 +105,7 @@ export class TitleScene extends Phaser.Scene {
       this.scene.start('Briefing', { campaign: save.campaign });
       return;
     }
-    const resume = restoreBattle(save.campaign, save.battle, (mapSeed) =>
-      generateForest(mapSeed, MAP_COLS, MAP_ROWS),
-    );
+    const resume = restoreBattle(save.campaign, save.battle);
     if (!resume) {
       // It passed the shape checks but doesn't fit its map: not ours. Clear it and say so.
       clearSave();

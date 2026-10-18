@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH, MISSIONS, TILE } from '../config/tuning';
 import { currentMission, isComplete, type Campaign } from '../logic/campaign';
+import { LANDSCAPES } from '../logic/landscapes';
 import { FOREST_SHEET } from './art';
 import { pixelButton, pixelText } from './pixelFont';
 import { clearSave, writeSave } from './storage';
@@ -49,7 +50,7 @@ export class BriefingScene extends Phaser.Scene {
     const mission = currentMission(campaign);
     const { count, size } = mission.pods;
     pixelText(this, cx, 40, `MISSION ${campaign.mission + 1} OF ${MISSIONS.length}`, 0xf2a33a, 2);
-    pixelText(this, cx, 62, mission.landscape.toUpperCase(), 0xdfe4ec);
+    pixelText(this, cx, 62, LANDSCAPES[mission.landscape].name.toUpperCase(), 0xdfe4ec);
     const retry = campaign.attempt > 0 ? [`Try ${campaign.attempt + 1}: a new map.`, ''] : [];
     pixelText(
       this,

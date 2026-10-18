@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MAP_COLS, MAP_ROWS, MISSIONS } from '../../src/config/tuning';
 import { apply, createBattle, type BattleState } from '../../src/logic/battle';
 import { afterBattle, currentMission, newCampaign, type Campaign } from '../../src/logic/campaign';
-import { generateForest, isWalkable, type BattleMap } from '../../src/logic/map';
+import { generateForest, generateMap, isWalkable, type BattleMap } from '../../src/logic/map';
 import {
   decodeSave,
   encodeSave,
@@ -11,13 +11,15 @@ import {
   type Save,
 } from '../../src/logic/save';
 
-const buildMap = (mapSeed: number): BattleMap => generateForest(mapSeed, MAP_COLS, MAP_ROWS);
+/** The map a campaign's current mission is fought on. */
+const buildMap = (c: Campaign): BattleMap =>
+  generateMap(c.mapSeed, MAP_COLS, MAP_ROWS, currentMission(c).landscape);
 
 /** Mission `n` of campaign 11, and its battle as it starts. */
 function setup(n = 0): { campaign: Campaign; battle: BattleState } {
   let campaign = newCampaign(11);
   for (let i = 0; i < n; i++) campaign = afterBattle(campaign, true, 'next');
-  const map = buildMap(campaign.mapSeed);
+  const map = buildMap(campaign);
   const battle = createBattle(map, map.seed, {
     names: campaign.squad,
     pods: currentMission(campaign).pods,
@@ -48,7 +50,7 @@ describe('save round trip', () => {
     s = apply(apply(s, { type: 'endTurn' }), { type: 'endTurn' });
     const loaded = decodeSave(encodeSave(campaign, s));
     if (!loaded.ok || !loaded.save.battle) throw new Error('did not load');
-    const back = restoreBattle(loaded.save.campaign, loaded.save.battle, buildMap);
+    const back = restoreBattle(loaded.save.campaign, loaded.save.battle);
     expect(back).toEqual({ ...s, selected: null, lastMove: null, lastShot: null, lastThrow: null });
   });
 
@@ -57,7 +59,7 @@ describe('save round trip', () => {
       const { campaign, battle } = setup(n);
       const loaded = decodeSave(encodeSave(campaign, battle));
       if (!loaded.ok || !loaded.save.battle) throw new Error(`mission ${n} did not load`);
-      expect(restoreBattle(campaign, loaded.save.battle, buildMap), `mission ${n}`).not.toBeNull();
+      expect(restoreBattle(campaign, loaded.save.battle), `mission ${n}`).not.toBeNull();
     }
   });
 });
@@ -137,9 +139,9 @@ describe('restoreBattle checks the units against the map', () => {
   const good = raw(campaign, battle);
   const b = good.battle;
   if (!b) throw new Error('no battle');
-  const map = buildMap(campaign.mapSeed);
+  const map = buildMap(campaign);
   const restore = (units: typeof b.units): BattleState | null =>
-    restoreBattle(campaign, { ...b, units }, buildMap);
+    restoreBattle(campaign, { ...b, units });
   const marine = b.units.find((u) => u.id.startsWith('m'));
   if (!marine) throw new Error('no marine');
   const swap = (u: typeof marine): typeof b.units => b.units.map((v) => (v.id === u.id ? u : v));
@@ -179,5 +181,31 @@ describe('restoreBattle checks the units against the map', () => {
   it('rejects a battle that is already over', () => {
     const allDead = b.units.map((u) => (u.id.startsWith('a') ? { ...u, hp: 0 } : u));
     expect(restore(allDead)).toBeNull();
+  });
+});
+
+describe('restoreBattle uses the mission`s own landscape', () => {
+  it('checks a town mission against the town map, not a forest one', () => {
+    const townMission = MISSIONS.findIndex((m) => m.landscape === 'town');
+    expect(townMission).toBeGreaterThanOrEqual(0);
+    const { campaign, battle } = setup(townMission);
+    const b = raw(campaign, battle).battle;
+    if (!b) throw new Error('no battle');
+    const town = buildMap(campaign);
+    const forest = generateForest(campaign.mapSeed, MAP_COLS, MAP_ROWS);
+    expect(town.landscape).toBe('town');
+    // A free tile in the forest of the same seed that a town building blocks.
+    let spot: { x: number; y: number } | null = null;
+    for (let i = 0; i < town.tiles.length && !spot; i++) {
+      const x = i % town.cols;
+      const y = Math.floor(i / town.cols);
+      if (isWalkable(forest, x, y) && !isWalkable(town, x, y)) spot = { x, y };
+    }
+    if (!spot) throw new Error('no tile that differs');
+    const marine = b.units.find((u) => u.id.startsWith('m'));
+    if (!marine) throw new Error('no marine');
+    const units = b.units.map((u) => (u.id === marine.id ? { ...u, ...spot } : u));
+    expect(restoreBattle(campaign, { ...b, units })).toBeNull();
+    expect(restoreBattle(campaign, b)?.map).toEqual(town);
   });
 });

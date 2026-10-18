@@ -18,6 +18,7 @@ import {
   SNAKE_SHOOT_SHEET,
   SNAKE_WALK_SHEET,
   SPIT,
+  TOWN_SHEET,
   WALKER_SHEET,
   WALKER_WALK_SHEET,
 } from './art';
@@ -51,6 +52,7 @@ export class PreloadScene extends Phaser.Scene {
     this.load.on('progress', (p: number) => bar.setSize(120 * p, 4));
 
     this.load.image(FOREST_SHEET.key, FOREST_SHEET.url);
+    this.load.image(TOWN_SHEET.key, TOWN_SHEET.url);
     for (const s of CHARACTER_SHEETS) {
       this.load.spritesheet(s.key, s.url, { frameWidth: s.frameWidth, frameHeight: s.frameHeight });
     }
@@ -64,6 +66,7 @@ export class PreloadScene extends Phaser.Scene {
 
   create(): void {
     addFrames(this.textures, FOREST_SHEET.key, FOREST_SHEET.frames);
+    addFrames(this.textures, TOWN_SHEET.key, TOWN_SHEET.frames);
     for (const s of CHARACTER_SHEETS) addAnims(this.anims, s);
     for (const e of Object.values(EFFECTS)) {
       const frames = this.anims.generateFrameNumbers(e.key, { start: 0, end: e.count - 1 });

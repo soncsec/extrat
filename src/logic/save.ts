@@ -1,4 +1,4 @@
-import { ABILITIES, ACTION_POINTS, MISSIONS, SKIRMISH } from '../config/tuning';
+import { ABILITIES, ACTION_POINTS, MAP_COLS, MAP_ROWS, MISSIONS, SKIRMISH } from '../config/tuning';
 import {
   clipSize,
   createBattle,
@@ -8,7 +8,7 @@ import {
   type Unit,
 } from './battle';
 import { currentMission, mapSeedFor, type Campaign } from './campaign';
-import { isWalkable, type BattleMap } from './map';
+import { generateMap, isWalkable } from './map';
 
 /**
  * The campaign save (M5.5, ADR-E6): one versioned JSON record in the browser.
@@ -116,16 +116,16 @@ export function decodeSave(text: string): LoadResult {
  * The battle a save resumes: built fresh from the campaign's mission and map (the same
  * units, kinds and names every time), with each unit's changeable fields from the save
  * after checking them against the map. Null if anything doesn't fit.
+ *
+ * The map is built here from the mission's own landscape, never passed in, so the
+ * units are always checked against the map the battle is fought on.
  */
-export function restoreBattle(
-  campaign: Campaign,
-  saved: SavedBattle,
-  buildMap: (mapSeed: number) => BattleMap,
-): BattleState | null {
-  const map = buildMap(campaign.mapSeed);
+export function restoreBattle(campaign: Campaign, saved: SavedBattle): BattleState | null {
+  const mission = currentMission(campaign);
+  const map = generateMap(campaign.mapSeed, MAP_COLS, MAP_ROWS, mission.landscape);
   const fresh = createBattle(map, map.seed, {
     names: campaign.squad,
-    pods: currentMission(campaign).pods,
+    pods: mission.pods,
   });
   if (saved.units.length !== fresh.units.length) return null;
   const byId = new Map(saved.units.map((u) => [u.id, u]));

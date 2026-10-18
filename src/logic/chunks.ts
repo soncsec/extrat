@@ -6,15 +6,22 @@ import type { PropKind } from './map';
  *   .  open ground          p  pine        o  oak
  *   b  bush (half cover)    r  rocks (half cover)
  *   B  boulder: two tiles wide, with '-' on its right-hand tile
- *   *  maybe half cover: a bush, rocks or nothing, picked by the seed
- *   #  maybe a tree: a pine, an oak or nothing, picked by the seed
+ *   *  maybe half cover (forest: a bush or rocks; town: a shrub or a stone) or nothing
+ *   #  maybe a tree (forest: a pine or an oak; town: an autumn tree or a cypress) or nothing
+ *
+ * Town (M4.3):
+ *   H  house: its bottom-left tile, with '=' on the rest of its 5 x 3 footprint
+ *   a  autumn tree    c  cypress    s  shrub (half)    n  stone (half)
+ *   l  low earth wall (half)        t  stump: two tiles wide, 't-' (half)
  *
  * All chunks of a landscape are the same size (CHUNK in tuning.ts). The generator may
- * mirror each one left to right and top to bottom.
+ * mirror each one left to right, and top to bottom unless it's `upright` (a house).
  */
 export interface Chunk {
   name: string;
   rows: readonly string[];
+  /** Never mirrored top to bottom: a house's roof stays above its walls. */
+  upright?: boolean;
 }
 
 /** The chunks a landscape is built from. */
@@ -29,7 +36,7 @@ export interface ChunkSet {
 export type ChunkCell =
   | { kind: 'open' }
   | { kind: 'prop'; prop: PropKind }
-  | { kind: 'boulderRest' }
+  | { kind: 'rest' }
   | { kind: 'maybeCover' }
   | { kind: 'maybeTree' };
 
@@ -40,7 +47,15 @@ const LEGEND: Readonly<Record<string, ChunkCell>> = {
   b: { kind: 'prop', prop: 'bush' },
   r: { kind: 'prop', prop: 'rocks' },
   B: { kind: 'prop', prop: 'boulder' },
-  '-': { kind: 'boulderRest' },
+  '-': { kind: 'rest' },
+  H: { kind: 'prop', prop: 'house' },
+  '=': { kind: 'rest' },
+  a: { kind: 'prop', prop: 'autumn' },
+  c: { kind: 'prop', prop: 'cypress' },
+  s: { kind: 'prop', prop: 'shrub' },
+  n: { kind: 'prop', prop: 'stone' },
+  l: { kind: 'prop', prop: 'ledge' },
+  t: { kind: 'prop', prop: 'stump' },
   '*': { kind: 'maybeCover' },
   '#': { kind: 'maybeTree' },
 };
@@ -69,5 +84,27 @@ export const FOREST_CHUNKS: ChunkSet = {
     { name: 'thicket', rows: ['.o..#.', 'p#..pp', '......', '.b..*.'] },
     { name: 'lone oak', rows: ['......', '..o*..', '.*....', '....r.'] },
     { name: 'twin stands', rows: ['p...#.', 'o...pp', '.*....', '...b..'] },
+  ],
+};
+
+/**
+ * Town: houses (full cover, and they block sight like a wall), garden walls, shrubs,
+ * stumps and autumn trees. Spawn chunks stay light, as in the forest.
+ */
+export const TOWN_CHUNKS: ChunkSet = {
+  spawn: [
+    { name: 'village green', rows: ['......', '.s....', '....*.', '......'] },
+    { name: 'garden wall', rows: ['......', '.ll...', '....*.', '.s....'] },
+    { name: 'stump and shrubs', rows: ['..t-..', '......', '.*..s.', '......'] },
+    { name: 'stones', rows: ['....n.', '......', '.*....', '...s..'] },
+  ],
+  field: [
+    { name: 'cottage', rows: ['=====.', '=====.', 'H====.', '.s..l.'], upright: true },
+    { name: 'cottage by the trees', rows: ['.=====', '.=====', '.H====', 'a..*..'], upright: true },
+    { name: 'walled garden', rows: ['llll..', '...*..', '.s..#.', '..lll.'] },
+    { name: 'orchard', rows: ['a..a..', '..*...', '.a..c.', '....s.'] },
+    { name: 'square', rows: ['..n...', '......', '..t-..', '.*..s.'] },
+    { name: 'hedges', rows: ['.ss...', '...*..', '..#.ss', '......'] },
+    { name: 'cypress row', rows: ['c.c.c.', '......', '.*..l.', '..s...'] },
   ],
 };
