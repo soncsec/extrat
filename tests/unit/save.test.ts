@@ -24,6 +24,7 @@ function setup(n = 0): { campaign: Campaign; battle: BattleState } {
   const battle = createBattle(map, map.seed, {
     names: campaign.squad,
     pods: currentMission(campaign).pods,
+    kinds: currentMission(campaign).kinds,
   });
   return { campaign, battle };
 }

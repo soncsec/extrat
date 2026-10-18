@@ -91,7 +91,7 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 - [x] M5.4 Squad wiped out: retry the mission on a new map
 - [x] M5.5 Autosave every turn; resume from the title screen; versioned save with validation (ADR-E6)
 - [ ] M5.6 Final mission on the alien ship with the mech boss. *A one-page boss design (phases, a tell before its big attack, a weak point that rewards flanking) goes to the owner for approval before any code.*
-- [ ] M5.8 Alien ramp and balance pass (owner lost on mission 3, 2026-10-18): mission 1 walkers only, one new kind per mission, snakes no earlier than mission 4; retune alien aim and pod sizes so a casual player clears the campaign
+- [x] M5.8 Alien ramp and balance pass (owner lost on mission 3, 2026-10-18): mission 1 walkers only, one new kind per mission, snakes no earlier than mission 4; the briefing names the kinds and warns about the new one; walker aim 80 to 70. *More tuning after the owner's next play-test.*
 - [ ] M5.9 XP per hit as well as per kill; one tangible perk per promotion (for example a second grenade, more ammo) alongside the aim and health bonuses
 - [ ] M5.10 Resupply between missions: the owner ran out of grenades mid-mission. *Design to confirm with the owner: a SUPPLY pick in the debrief (recommended) versus pickups dropped by aliens.*
 - [ ] M5.11 Alien turn fast-forward (tap or key) so late missions with nine aliens don't drag

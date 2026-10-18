@@ -650,6 +650,10 @@ test('a campaign runs mission after mission with the same squad', async ({ page 
   const first = await snapshot(page);
   expect(first.campaign).toMatchObject({ mission: 0, attempt: 0 });
   const squad = first.units.filter((u) => u.side === 'marine').map((u) => u.name);
+  // Mission 1 fields walkers only (M5.8).
+  expect(first.units.filter((u) => u.side === 'alien').every((u) => u.kind === 'walker')).toBe(
+    true,
+  );
   // Mission 1 won: Enter goes to the next briefing, then the next mission.
   await wipeOut(page, 'alien');
   await page.keyboard.press('Enter');
