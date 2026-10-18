@@ -38,18 +38,22 @@ export class ResultScene extends Phaser.Scene {
       ].join('\n'),
       0xdfe4ec,
     );
-    pixelText(this, cx, cy + 18, `Map ${result.mapSeed}`, 0xa3adbd);
-    pixelButton(this, cx - 50, cy + 44, 'PLAY AGAIN', () => this.playAgain());
-    pixelButton(this, cx + 50, cy + 44, 'TITLE', () => this.toTitle(), false);
-    pixelText(this, cx, cy + 62, 'Enter: play again   Esc: title', 0xa3adbd);
+    // The seed rebuilds this exact map: quote it in a bug report, or open the link.
+    pixelText(this, cx, cy + 18, `Map ${result.mapSeed}   Link: ?seed=${result.mapSeed}`, 0xa3adbd);
+    pixelButton(this, cx - 52, cy + 44, 'PLAY AGAIN', () => this.leave('play-again'));
+    pixelButton(this, cx + 15, cy + 44, 'REPLAY', () => this.leave('replay'), false);
+    pixelButton(this, cx + 67, cy + 44, 'TITLE', () => this.toTitle(), false);
+    pixelText(this, cx, cy + 62, 'Enter: again  R: replay  Esc: title', 0xa3adbd);
 
-    this.input.keyboard?.once('keydown-ENTER', () => this.playAgain());
+    this.input.keyboard?.once('keydown-ENTER', () => this.leave('play-again'));
+    this.input.keyboard?.once('keydown-R', () => this.leave('replay'));
     this.input.keyboard?.once('keydown-ESC', () => this.toTitle());
   }
 
-  private playAgain(): void {
+  /** Back to the battle: a new map ('play-again') or the same one ('replay'). */
+  private leave(event: 'play-again' | 'replay'): void {
     this.scene.stop();
-    this.scene.get('Battle').events.emit('play-again');
+    this.scene.get('Battle').events.emit(event);
   }
 
   private toTitle(): void {

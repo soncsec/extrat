@@ -7,6 +7,11 @@ describe('initialSeed', () => {
     expect(initialSeed('?foo=1&seed=7')).toBe(7);
   });
 
+  it('reads the link as the debrief shows it, in capitals', () => {
+    expect(initialSeed('?SEED=7961')).toBe(7961);
+    expect(initialSeed('?Seed=5')).toBe(5);
+  });
+
   it('picks a random seed below one million otherwise', () => {
     const seeds = new Set<number>();
     for (let i = 0; i < 20; i++) {

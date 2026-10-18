@@ -18,6 +18,13 @@ describe('generateForest', () => {
     expect(gen(1234)).toEqual(gen(1234));
   });
 
+  it('rebuilds a map exactly from its own seed, for 1,000 seeds (M4.4 replay)', () => {
+    for (let seed = 1; seed <= 1000; seed++) {
+      const map = gen(seed);
+      expect(gen(map.seed), `seed ${seed} gave map ${map.seed}`).toEqual(map);
+    }
+  });
+
   it('gives different maps for different seeds', () => {
     expect(gen(1).tiles).not.toEqual(gen(2).tiles);
   });

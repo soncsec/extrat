@@ -296,8 +296,13 @@ export class BattleScene extends Phaser.Scene {
       if (!this.busy) this.startBattle(this.seeds.int(1, 999_999));
     });
     this.events.on('play-again', () => this.startBattle(this.seeds.int(1, 999_999)));
+    // The same map again (M4.4): its seed rebuilds it exactly, units and all.
+    this.events.on('replay', () => this.startBattle(this.state.map.seed));
     // The scene object is reused when the player comes back from the title.
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.events.off('play-again'));
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.events.off('play-again');
+      this.events.off('replay');
+    });
 
     this.startBattle(this.seed);
   }
