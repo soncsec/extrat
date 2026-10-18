@@ -89,6 +89,7 @@ import type { BattleResult } from './ResultScene';
 import { CELL_W, PixelButton, PixelText } from './pixelFont';
 import { initialSeed, urlWord } from './seed';
 import { clearSave, writeSave } from './storage';
+import { isTouchDevice } from './touch';
 
 /** A tile a unit can move to, and the action points that costs (2 means a dash). */
 export interface MoveTile extends Point {
@@ -103,6 +104,8 @@ export interface GameSnapshot {
   campaign: { mission: number; attempt: number; xp: number[] } | null;
   /** This battle was started with REPLAY (it earns no XP). */
   replaying: boolean;
+  /** The text of the unit line in the HUD, e.g. the prompt to pick a marine. */
+  prompt: string;
   /** Touch: the tile tapped once, whose preview shows until it is tapped again. */
   pending: Point | null;
   /** One character per tile, row by row: '.' free, or the first letter of the prop. */
@@ -456,6 +459,7 @@ export class BattleScene extends Phaser.Scene {
           }
         : null,
       replaying: this.replaying,
+      prompt: this.unitText.text,
       pending: this.pending,
       mapSeed: map.seed,
       layout: map.tiles.map((t) => (t.prop ? t.prop[0] : '.')).join(''),
@@ -1665,7 +1669,7 @@ export class BattleScene extends Phaser.Scene {
         this.unitText.setText(unit ? marineLabel(unit) : '');
         return;
       }
-      this.unitText.setText('Click a marine to select it');
+      this.unitText.setText(`${isTouchDevice() ? 'Tap' : 'Click'} a marine to select it`);
       return;
     }
     const x = unit.x * TILE;
