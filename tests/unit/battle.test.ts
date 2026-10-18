@@ -22,6 +22,7 @@ import {
   clipSize,
   coverAgainst,
   createBattle,
+  hasActions,
   hitChance,
   inThrowRange,
   isVisibleTo,
@@ -1107,6 +1108,80 @@ describe('pods: spotting and the scramble to cover', () => {
     const end = must(next.lastMove?.path.at(-1));
     expect(end.x === 6 && end.y === 0).toBe(false);
     expect(next.lastMove?.spotted).toEqual(['a']);
+  });
+
+  describe('a move cut short keeps its unused squares as a free move', () => {
+    /** The pod moved east, so a dash spots it after 6 squares (from x=7). */
+    function farField(): BattleState {
+      const s = field();
+      return {
+        ...s,
+        units: s.units.map((u) =>
+          u.id === 'a1' ? { ...u, x: 19 } : u.id === 'a2' ? { ...u, x: 19, y: 4 } : u,
+        ),
+      };
+    }
+
+    it('keeps the squares of a normal move not walked, and the other point', () => {
+      // A 5-square move, stopped after 2 by the sighting: 3 squares left, free.
+      const next = apply(field(), { type: 'move', unitId: 'm', to: { x: 6, y: 3 } });
+      const m = must(unitById(next, 'm'));
+      expect(m).toMatchObject({
+        x: 3,
+        y: 3,
+        ap: ACTION_POINTS - 1,
+        freeSteps: UNITS.marine.move - 2,
+      });
+      expect(moveCost(m, 3)).toBe(0);
+      expect(moveCost(m, 4)).toBe(1);
+    });
+
+    it('walks the free squares without spending a point, once', () => {
+      const stopped = apply(field(), { type: 'move', unitId: 'm', to: { x: 6, y: 3 } });
+      // Back toward cover, within the 3 free squares.
+      const free = apply(stopped, { type: 'move', unitId: 'm', to: { x: 3, y: 1 } });
+      expect(unitById(free, 'm')).toMatchObject({
+        x: 3,
+        y: 1,
+        ap: ACTION_POINTS - 1,
+        freeSteps: 0,
+      });
+      // Walking only part of them still uses them up.
+      const part = apply(stopped, { type: 'move', unitId: 'm', to: { x: 3, y: 2 } });
+      expect(unitById(part, 'm')).toMatchObject({ ap: ACTION_POINTS - 1, freeSteps: 0 });
+    });
+
+    it('keeps the rest of a dash, even with no points left', () => {
+      // A 10-square dash stopped after 6: both points spent, 4 squares free.
+      const next = apply(farField(), { type: 'move', unitId: 'm', to: { x: 11, y: 3 } });
+      expect(next.lastMove?.spotted.length).toBeGreaterThan(0);
+      const m = must(unitById(next, 'm'));
+      expect(m).toMatchObject({ x: 7, ap: 0, freeSteps: UNITS.marine.move * 2 - 6 });
+      expect(hasActions(m)).toBe(true);
+      expect(canAct(next, 'marine')).toBe(true);
+      expect(nextReadyMarine(next, null)).toBe('m');
+      const range = moveRange(next, 'm');
+      expect(Math.max(...range.values())).toBe(4);
+      const after = apply(next, { type: 'move', unitId: 'm', to: { x: 7, y: 0 } });
+      expect(unitById(after, 'm')).toMatchObject({ y: 0, ap: 0, freeSteps: 0 });
+      expect(canAct(after, 'marine')).toBe(false);
+    });
+
+    it('are lost to any other action, and at the end of the turn', () => {
+      const stopped = apply(field(), { type: 'move', unitId: 'm', to: { x: 6, y: 3 } });
+      expect(unitById(stopped, 'm')?.freeSteps).toBeGreaterThan(0);
+      const watching = apply(stopped, { type: 'overwatch', unitId: 'm' });
+      expect(unitById(watching, 'm')?.freeSteps).toBe(0);
+      const ended = apply(stopped, { type: 'endTurn' });
+      expect(unitById(ended, 'm')?.freeSteps).toBe(0);
+    });
+
+    it('are not given for a move that went all the way', () => {
+      const s = field();
+      const calm = { ...s, units: s.units.filter((u) => u.side === 'marine') };
+      const next = apply(calm, { type: 'move', unitId: 'm', to: { x: 3, y: 3 } });
+      expect(unitById(next, 'm')).toMatchObject({ x: 3, ap: ACTION_POINTS - 1, freeSteps: 0 });
+    });
   });
 
   it('wakes a pod caught in a grenade blast', () => {

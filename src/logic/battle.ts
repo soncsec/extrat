@@ -58,6 +58,12 @@ export interface Unit extends Point {
   dormant: boolean;
   /** Turns of poison left: it loses health at the start of each of its side's turns. */
   poison: number;
+  /**
+   * Squares left over from a move cut short (by spotting aliens, or a hidden one in the
+   * way): the unit may still walk this far for free. Any other action, or the end of
+   * the turn, uses them up.
+   */
+  freeSteps: number;
 }
 
 /** Health lost to poison at the start of a side's turn. */
@@ -184,6 +190,7 @@ export function createBattle(map: BattleMap, seed: number, setup: BattleSetup = 
     pod: null,
     dormant: false,
     poison: 0,
+    freeSteps: 0,
   }));
   // Kinds come from their own generator, so the draw doesn't move where anyone stands.
   const kindRng = createRng((seed ^ 0x5bd1e995) >>> 0);
@@ -207,6 +214,7 @@ export function createBattle(map: BattleMap, seed: number, setup: BattleSetup = 
       pod,
       dormant: true,
       poison: 0,
+      freeSteps: 0,
     };
   });
   return {
@@ -239,7 +247,7 @@ export function apply(state: BattleState, action: Action): BattleState {
     case 'overwatch': {
       const unit = unitById(state, action.unitId);
       if (!unit || !canOverwatch(state, unit.id)) return state;
-      return replaceUnit(state, { ...unit, overwatch: true, ap: 0 });
+      return replaceUnit(state, { ...unit, overwatch: true, ap: 0, freeSteps: 0 });
     }
     case 'shoot':
       return shoot(state, action.unitId, action.targetId);
@@ -248,7 +256,7 @@ export function apply(state: BattleState, action: Action): BattleState {
     case 'reload': {
       const unit = unitById(state, action.unitId);
       if (!unit || !canReload(state, unit.id)) return state;
-      return replaceUnit(state, { ...unit, ammo: clipSize(unit), ap: unit.ap - 1 });
+      return replaceUnit(state, { ...unit, ammo: clipSize(unit), ap: unit.ap - 1, freeSteps: 0 });
     }
     case 'endTurn': {
       // The other side's living units get their action points back.
@@ -257,9 +265,9 @@ export function apply(state: BattleState, action: Action): BattleState {
       // side's exposure ends too: it lasted until this side's turn came round again.
       const lastPoison: PoisonTick[] = [];
       const units = state.units.map((u) => {
-        if (u.side !== turn) return u.exposed ? { ...u, exposed: false } : u;
+        if (u.side !== turn) return { ...u, exposed: false, freeSteps: 0 };
         if (u.hp <= 0) return u;
-        const fresh = { ...u, ap: ACTION_POINTS, overwatch: false };
+        const fresh = { ...u, ap: ACTION_POINTS, overwatch: false, freeSteps: 0 };
         if (u.poison <= 0) return fresh;
         // Poison bites as the turn begins, but never takes the last point of health.
         const hp = Math.max(Math.min(u.hp, 1), u.hp - ABILITIES.poison.damage);
@@ -496,7 +504,13 @@ function throwGrenade(state: BattleState, unitId: string, at: Point): BattleStat
   const facing = at.x === thrower.x ? thrower.facing : at.x > thrower.x ? 1 : -1;
   // Throwing uses all remaining action points, like a shot.
   const after = unitById(next, unitId) as Unit;
-  next = replaceUnit(next, { ...after, grenades: after.grenades - 1, ap: 0, facing });
+  next = replaceUnit(next, {
+    ...after,
+    grenades: after.grenades - 1,
+    ap: 0,
+    facing,
+    freeSteps: 0,
+  });
   // A blast in the fog wakes the pod it lands on.
   const pods = [
     ...new Set(
@@ -528,7 +542,11 @@ function shoot(state: BattleState, shooterId: string, targetId: string): BattleS
   if (!shooter || !target || odds === null || shooter.side !== state.turn) return state;
   const fired = rollShot(state, shooter, target, odds, false);
   // An aimed shot uses all remaining action points, as in XCOM.
-  const next = replaceUnit(fired.state, { ...(unitById(fired.state, shooterId) as Unit), ap: 0 });
+  const next = replaceUnit(fired.state, {
+    ...(unitById(fired.state, shooterId) as Unit),
+    ap: 0,
+    freeSteps: 0,
+  });
   return { ...next, lastShot: fired.shot };
 }
 
@@ -677,10 +695,17 @@ function move(state: BattleState, unitId: string, to: Point): BattleState {
       }
     }
   }
-  // The move costs what was actually walked: a dash cut short by a sighting may cost one.
+  // The move costs what was actually walked: a dash cut short by a sighting may cost one,
+  // and a walk within the free squares left from an earlier stop costs nothing.
   const after = unitById(next, unitId) as Unit;
-  const ap = walked.length === 0 ? after.ap : unit.ap - moveCost(unit, walked.length);
-  next = replaceUnit(next, { ...after, ap });
+  const cost = walked.length === 0 ? 0 : moveCost(unit, walked.length);
+  // Stopped short (not by choice): the squares paid for but not walked are kept as a
+  // free move. A stop where nothing was walked keeps what the unit had.
+  const paidFor = cost === 0 ? unit.freeSteps : cost * unit.move;
+  const stoppedShort = walked.length < path.length && after.hp > 0;
+  const freeSteps =
+    walked.length === 0 ? unit.freeSteps : stoppedShort ? Math.max(0, paidFor - walked.length) : 0;
+  next = replaceUnit(next, { ...after, ap: unit.ap - cost, freeSteps });
   return { ...next, lastMove: { unitId, path: walked, reactions, spotted, scampers } };
 }
 
@@ -749,7 +774,7 @@ function wakePods(state: BattleState, pods: number[]): { state: BattleState; sca
 /** Tiles a unit could move to with one move action, keyed by `y * cols + x`, with step counts. */
 export function moveRange(state: BattleState, unitId: string): Map<number, number> {
   const unit = unitById(state, unitId);
-  if (!unit || unit.hp <= 0 || unit.ap <= 0) return new Map();
+  if (!unit || maxSteps(unit) <= 0) return new Map();
   const steps = maxSteps(unit);
   const range = reachable(
     state.map.cols,
@@ -763,22 +788,31 @@ export function moveRange(state: BattleState, unitId: string): Map<number, numbe
 }
 
 /**
- * Action points a move of `steps` tiles costs: 1 within the unit's move range,
- * 2 for a dash (up to twice as far), which needs both points.
+ * Action points a move of `steps` tiles costs: none within the free squares left
+ * from a move cut short, 1 within the unit's move range, 2 for a dash (up to twice as
+ * far), which needs both points.
  */
 export function moveCost(unit: Unit, steps: number): number {
+  if (steps <= unit.freeSteps) return 0;
   return steps <= unit.move ? 1 : 2;
 }
 
-/** The farthest a unit can move now: a dash if it has both action points. */
+/** The farthest a unit can move now: its free squares, or a dash if it has both points. */
 function maxSteps(unit: Unit): number {
-  return unit.ap >= ACTION_POINTS ? unit.move * 2 : unit.move;
+  if (unit.hp <= 0) return 0;
+  const paid = unit.ap >= ACTION_POINTS ? unit.move * 2 : unit.ap > 0 ? unit.move : 0;
+  return Math.max(unit.freeSteps, paid);
+}
+
+/** True if the unit can still do something this turn: action points or free squares. */
+export function hasActions(unit: Unit): boolean {
+  return unit.hp > 0 && (unit.ap > 0 || unit.freeSteps > 0);
 }
 
 /** The path a unit would run to reach `to` with one move, or null if it can't. */
 export function pathFor(state: BattleState, unitId: string, to: Point): Point[] | null {
   const unit = unitById(state, unitId);
-  if (!unit || unit.hp <= 0 || unit.ap <= 0) return null;
+  if (!unit || maxSteps(unit) <= 0) return null;
   const { cols, rows } = state.map;
   return findPath(cols, rows, passableFor(state, unit.side), unit, to, maxSteps(unit));
 }
@@ -834,7 +868,7 @@ export function nextReadyMarine(
     // With no current marine, start just before the first (or after the last, going back).
     const from = start === -1 ? (step === 1 ? -1 : n) : start;
     const u = squad[(((from + i * step) % n) + n) % n] as Unit;
-    if (u.hp > 0 && u.ap > 0) return u.id;
+    if (hasActions(u)) return u.id;
   }
   return null;
 }
@@ -853,9 +887,9 @@ export function livingUnits(state: BattleState, side: Side): Unit[] {
   return state.units.filter((u) => u.side === side && u.hp > 0);
 }
 
-/** True if any living unit on the side still has action points. */
+/** True if any living unit on the side can still act (action points or free squares). */
 export function canAct(state: BattleState, side: Side): boolean {
-  return livingUnits(state, side).some((u) => u.ap > 0);
+  return livingUnits(state, side).some(hasActions);
 }
 
 export function unitById(state: BattleState, id: string): Unit | undefined {
