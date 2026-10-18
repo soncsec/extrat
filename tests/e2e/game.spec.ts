@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { GAME_WIDTH, MAP_ROWS, TILE } from '../../src/config/tuning';
+import { GAME_WIDTH, MAP_COLS, MAP_ROWS, TILE } from '../../src/config/tuning';
 import type { GameSnapshot } from '../../src/scenes/BattleScene';
 
 /** Records console errors, uncaught exceptions and requests to other hosts. */
@@ -592,7 +592,8 @@ test('without ?seed= each new game gets a different map', async ({ page }) => {
   const first = (await snapshot(page)).mapSeed;
   await page.reload();
   await waitForScene(page, 'Title');
-  await page.keyboard.press('Enter');
+  // The first campaign is saved now, so the title offers to continue it: N starts anew.
+  await page.keyboard.press('n');
   await waitForScene(page, 'Briefing');
   await page.keyboard.press('Enter');
   await waitForScene(page, 'Battle');
@@ -773,4 +774,118 @@ test('a fixed-seed turn plays out exactly the same every time', async ({ page })
 test('?seed= in the URL sets the random seed', async ({ page }) => {
   await openGame(page, '?seed=42');
   expect((await snapshot(page)).seed).toBe(42);
+});
+
+/** What a resumed battle must match: where everyone is and what they have left. */
+function unitState(s: GameSnapshot): unknown[] {
+  return s.units.map(({ id, x, y, hp, ap, ammo, overwatch, grenades, dormant, poison }) => ({
+    id,
+    x,
+    y,
+    hp,
+    ap,
+    ammo,
+    overwatch,
+    grenades,
+    dormant,
+    poison,
+  }));
+}
+
+const SAVE_KEY = 'extrat.campaign';
+
+test('closing the browser mid-mission resumes the same turn (M5.5)', async ({ page }) => {
+  test.setTimeout(90_000);
+  await openGame(page);
+  // Play a turn: a marine moves, the turn ends, the aliens act.
+  const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
+  if (!marine) throw new Error('no marine');
+  await clickTile(page, marine.x, marine.y);
+  const dest = (await snapshot(page)).reachable.find((t) => t.cost === 1);
+  if (!dest) throw new Error('nowhere to move');
+  await clickTile(page, dest.x, dest.y);
+  await expect.poll(async () => (await snapshot(page)).busy, { timeout: 20_000 }).toBe(false);
+  await page.keyboard.press('e');
+  await expect
+    .poll(
+      async () => {
+        const s = await snapshot(page);
+        return s.turn === 'marine' && !s.busy ? s.round : 0;
+      },
+      { timeout: 60_000 },
+    )
+    .toBe(2);
+  const before = await snapshot(page);
+  // "Close the browser": reload the page, then continue from the title.
+  await page.reload();
+  await waitForScene(page, 'Title');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Battle');
+  const after = await snapshot(page);
+  expect(after.round).toBe(2);
+  expect(after.turn).toBe('marine');
+  expect(after.mapSeed).toBe(before.mapSeed);
+  expect(after.layout).toBe(before.layout);
+  expect(after.campaign).toEqual(before.campaign);
+  expect(unitState(after)).toEqual(unitState(before));
+});
+
+test('a campaign saved between missions resumes at the next briefing', async ({ page }) => {
+  await openGame(page);
+  await wipeOut(page, 'alien');
+  await page.reload();
+  await waitForScene(page, 'Title');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Briefing');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Battle');
+  expect((await snapshot(page)).campaign).toEqual({ mission: 1, attempt: 0 });
+});
+
+test('a damaged save is cleared with a message, never loaded', async ({ page }) => {
+  await page.goto('./');
+  await waitForScene(page, 'Title');
+  for (const junk of ['{not json', JSON.stringify({ v: 1, campaign: { admin: true } })]) {
+    await page.evaluate(
+      ([k, v]) => window.localStorage.setItem(k as string, v as string),
+      [SAVE_KEY, junk],
+    );
+    await page.reload();
+    await waitForScene(page, 'Title');
+    // The title shows a new campaign (no CONTINUE), and the bad save is gone.
+    expect(await page.evaluate((k) => window.localStorage.getItem(k), SAVE_KEY)).toBeNull();
+  }
+});
+
+test('a save that passes the shape checks but not the map is cleared on continue', async ({
+  page,
+}) => {
+  await openGame(page);
+  // Move a living marine into a blocked tile in the saved copy.
+  const s = await snapshot(page);
+  const blocked = [...s.layout].findIndex((c) => c !== '.');
+  await page.evaluate(
+    ([k, i, cols]) => {
+      const save = JSON.parse(window.localStorage.getItem(k as string) ?? '{}');
+      const m = save.battle.units.find((u: { id: string }) => u.id.startsWith('m'));
+      m.x = (i as number) % (cols as number);
+      m.y = Math.floor((i as number) / (cols as number));
+      window.localStorage.setItem(k as string, JSON.stringify(save));
+    },
+    [SAVE_KEY, blocked, MAP_COLS],
+  );
+  await page.reload();
+  await waitForScene(page, 'Title');
+  await page.keyboard.press('Enter'); // CONTINUE
+  await waitForScene(page, 'Title'); // back on the title, with the message
+  await expect
+    .poll(() => page.evaluate((k) => window.localStorage.getItem(k), SAVE_KEY))
+    .toBeNull();
+  expect(await activeScenes(page)).toEqual(['Title']);
+});
+
+test('a skirmish (?seed=) never touches the campaign save', async ({ page }) => {
+  await openGame(page, '?seed=42');
+  await wipeOut(page, 'alien');
+  expect(await page.evaluate((k) => window.localStorage.getItem(k), SAVE_KEY)).toBeNull();
 });

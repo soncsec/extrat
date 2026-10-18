@@ -89,7 +89,7 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 - [ ] M5.2 XP, ranks and stat increases
 - [ ] M5.3 Fallen marines return next mission; Wall of Shame (nicknames, death counts, debrief jokes)
 - [x] M5.4 Squad wiped out: retry the mission on a new map
-- [ ] M5.5 Autosave every turn; resume from the title screen; versioned save with validation (ADR-E6)
+- [x] M5.5 Autosave every turn; resume from the title screen; versioned save with validation (ADR-E6)
 - [ ] M5.6 Final mission on the alien ship with the mech boss
 
 **Acceptance criteria:** the owner plays the campaign from start to finish on staging; closing the browser mid-mission resumes the same turn; save loading rejects corrupt data in tests.

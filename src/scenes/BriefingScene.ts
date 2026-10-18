@@ -4,6 +4,7 @@ import { currentMission, isComplete, type Campaign } from '../logic/campaign';
 import { LANDSCAPES } from '../logic/landscapes';
 import { FOREST_SHEET } from './art';
 import { pixelButton, pixelText } from './pixelFont';
+import { clearSave, writeSave } from './storage';
 
 /**
  * Before each campaign mission: which mission, where, what to expect and who's going.
@@ -19,6 +20,10 @@ export class BriefingScene extends Phaser.Scene {
     this.drawBackground();
     const cx = GAME_WIDTH / 2;
     this.add.rectangle(cx, 118, 300, 196, 0x0b0e15, 0.94).setStrokeStyle(1, 0x3d4760);
+
+    // Saved here between missions (ADR-E6); a finished campaign leaves no save behind.
+    if (isComplete(campaign)) clearSave();
+    else writeSave(campaign, null);
 
     if (isComplete(campaign)) {
       pixelText(this, cx, 52, 'CAMPAIGN COMPLETE', 0x8bf06a, 2);
