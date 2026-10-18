@@ -8,6 +8,7 @@ import {
   HUD_HEIGHT,
   MAP_COLS,
   MAP_ROWS,
+  MISSIONS,
   TILE,
   UNITS,
 } from '../config/tuning';
@@ -48,6 +49,7 @@ import {
   type UnitKind,
 } from '../logic/battle';
 import { planAlienAction } from '../logic/ai';
+import { currentMission, type Campaign } from '../logic/campaign';
 import { landscapeId, LANDSCAPES, type LandscapeId } from '../logic/landscapes';
 import { generateMap, PROPS, tileAt } from '../logic/map';
 import { createRng, type Rng } from '../logic/rng';
@@ -86,6 +88,8 @@ export interface MoveTile extends Point {
 export interface GameSnapshot {
   seed: number;
   mapSeed: number;
+  /** The campaign mission (0-based) and try, or null in a skirmish. */
+  campaign: { mission: number; attempt: number } | null;
   /** One character per tile, row by row: '.' free, or the first letter of the prop. */
   layout: string;
   units: {
@@ -100,6 +104,7 @@ export interface GameSnapshot {
     grenades: number;
     exposed: boolean;
     kind: UnitKind;
+    name: string;
     /** Turns of poison left. */
     poison: number;
     /** The squad can see this unit now (aliens in the fog are false). */
@@ -225,16 +230,21 @@ export class BattleScene extends Phaser.Scene {
   private over = false;
   /** The landscape the battles here are fought in. */
   private landscape: LandscapeId = 'forest';
+  /** The campaign this battle is a mission of, or null for a one-off skirmish (?seed=). */
+  private campaign: Campaign | null = null;
 
   constructor() {
     super('Battle');
   }
 
-  create(data: { seed?: number }): void {
+  create(data: { seed?: number; campaign?: Campaign }): void {
     this.fx = new FxPool(this);
-    // ?landscape=town picks the landscape of a skirmish; anything unknown means forest.
-    this.landscape = landscapeId(urlWord('landscape')) ?? 'forest';
-    this.seed = data.seed ?? initialSeed();
+    this.campaign = data.campaign ?? null;
+    this.seed = this.campaign?.mapSeed ?? data.seed ?? initialSeed();
+    // A campaign mission's landscape, or ?landscape=town for a skirmish (unknown: forest).
+    this.landscape = this.campaign
+      ? currentMission(this.campaign).landscape
+      : (landscapeId(urlWord('landscape')) ?? 'forest');
     this.seeds = createRng(this.seed);
     this.createHud();
     this.marker = this.add.graphics().setDepth(DEPTH.marker);
@@ -266,21 +276,30 @@ export class BattleScene extends Phaser.Scene {
 
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => this.onClick(p.worldX, p.worldY));
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.onHover(p.worldX, p.worldY));
-    this.input.keyboard?.on('keydown-ESC', () => this.onEscape());
     this.input.keyboard?.on('keydown-ENTER', () => {
       if (this.aimTarget && !this.busy) this.fire(this.aimTarget);
     });
     this.input.keyboard?.on('keydown-E', () => void this.endTurn());
     this.input.keyboard?.on('keydown-R', () => this.reload());
     this.input.keyboard?.on('keydown-O', () => this.overwatch());
-    this.input.keyboard?.on('keydown-G', () => this.toggleGrenade());
     // Selection shortcuts: Tab / Shift+Tab cycle through marines that can still act,
     // 1-4 pick one directly, F aims at the best target and then the next. They use a
     // plain browser listener so they run in the order pressed: through Phaser's key
     // queue Firefox sometimes lost Shift, and mixing the two reordered quick presses.
+    // G and Esc are here too: they toggle and undo, so a press handled twice (seen once
+    // under heavy load) would cancel itself out or drop the selection.
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Tab') e.preventDefault(); // keep the browser's focus where it is
+      if (e.key === 'Escape') {
+        // Its own checks: it also works while the aliens move (it just does nothing).
+        if (this.scene.isActive()) this.onEscape();
+        return;
+      }
       if (this.busy || this.state.turn !== 'marine') return;
+      if (e.key === 'g' || e.key === 'G') {
+        if (!e.repeat) this.toggleGrenade(); // holding G doesn't flicker on and off
+        return;
+      }
       if (e.key === 'Tab') {
         const next = nextReadyMarine(this.state, this.state.selected, e.shiftKey ? -1 : 1);
         if (next) this.selectMarine(next);
@@ -296,8 +315,9 @@ export class BattleScene extends Phaser.Scene {
       window.removeEventListener('keydown', onKey),
     );
     this.input.keyboard?.on('keydown-N', () => {
-      // Not in the middle of an animation, the alien turn, or the result screen.
-      if (!this.busy) this.startBattle(this.seeds.int(1, 999_999));
+      // A new map: skirmish only (a campaign moves on through the debrief). Not in the
+      // middle of an animation, the alien turn, or the result screen.
+      if (!this.busy && !this.campaign) this.startBattle(this.seeds.int(1, 999_999));
     });
     this.events.on('play-again', () => this.startBattle(this.seeds.int(1, 999_999)));
     // The same map again (M4.4): its seed rebuilds it exactly, units and all.
@@ -358,6 +378,9 @@ export class BattleScene extends Phaser.Scene {
     const { map, units, selected } = this.state;
     return {
       seed: this.seed,
+      campaign: this.campaign
+        ? { mission: this.campaign.mission, attempt: this.campaign.attempt }
+        : null,
       mapSeed: map.seed,
       layout: map.tiles.map((t) => (t.prop ? t.prop[0] : '.')).join(''),
       units: units.map((u) => ({
@@ -372,6 +395,7 @@ export class BattleScene extends Phaser.Scene {
         grenades: u.grenades,
         exposed: u.exposed,
         kind: u.kind,
+        name: u.name,
         poison: u.poison,
         seen: this.isSeen(u),
         dormant: u.dormant,
@@ -865,6 +889,7 @@ export class BattleScene extends Phaser.Scene {
       marinesLost: dead('marine'),
       mapSeed: this.state.map.seed,
       landscape: this.landscape,
+      campaign: this.campaign,
     };
     // Let the last death animation play first.
     this.time.delayedCall(700, () => this.scene.launch('Result', result));
@@ -1352,7 +1377,13 @@ export class BattleScene extends Phaser.Scene {
     this.over = false;
 
     const map = generateMap(seed, MAP_COLS, MAP_ROWS, this.landscape);
-    this.state = createBattle(map, map.seed);
+    const c = this.campaign;
+    const mission = c ? currentMission(c) : null;
+    this.state = createBattle(
+      map,
+      map.seed,
+      c && mission ? { names: c.squad, pods: mission.pods } : {},
+    );
     this.drawMap();
     for (const u of this.state.units) this.views.set(u.id, this.drawUnit(u));
     this.updateHidden();
@@ -1360,7 +1391,12 @@ export class BattleScene extends Phaser.Scene {
     this.explored.clear();
     this.refreshVision();
     this.updateHidden();
-    this.mapText.setText(`${LANDSCAPES[this.landscape].name.toUpperCase()}  MAP ${map.seed}`);
+    const where = LANDSCAPES[this.landscape].name.toUpperCase();
+    this.mapText.setText(
+      c
+        ? `${where}  MISSION ${c.mission + 1}/${MISSIONS.length}  MAP ${map.seed}`
+        : `${where}  MAP ${map.seed}`,
+    );
   }
 
   private drawMap(): void {
