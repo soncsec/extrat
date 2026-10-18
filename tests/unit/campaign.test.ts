@@ -75,6 +75,8 @@ describe('missions', () => {
     expect(sizes[sizes.length - 1]).toBeGreaterThan(sizes[0] as number);
   });
 
+  // 1,200 battles: about 1.5 s on a desktop but over 5 s on CI runners, so this test
+  // gets a longer time limit than Vitest's default 5 s.
   it('fit every mission`s alien groups on 200 maps', () => {
     for (const m of MISSIONS) {
       for (let seed = 1; seed <= 200; seed++) {
@@ -91,7 +93,7 @@ describe('missions', () => {
         }
       }
     }
-  });
+  }, 30_000);
 
   it('include the town as mission 2', () => {
     expect(MISSIONS[1]?.landscape).toBe('town');
