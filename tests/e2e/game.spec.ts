@@ -553,6 +553,36 @@ test('wiping out the aliens shows the win screen; Enter plays again', async ({ p
   expect(after.units.every((u) => u.hp > 0)).toBe(true);
 });
 
+test('R on the result screen replays the same map from the start', async ({ page }) => {
+  await openGame(page, '?seed=42');
+  const before = await snapshot(page);
+  for (const a of before.units.filter((u) => u.side === 'alien')) {
+    await page.evaluate((id) => window.__game?.setHp(id, 0), a.id);
+  }
+  await expect.poll(() => activeScenes(page)).toContain('Result');
+  await page.keyboard.press('r');
+  await expect.poll(() => activeScenes(page)).not.toContain('Result');
+  const after = await snapshot(page);
+  expect(after.over).toBe(false);
+  expect(after.round).toBe(1);
+  // The same map and the same starting positions, everyone back to full health.
+  expect(after.mapSeed).toBe(before.mapSeed);
+  expect(after.layout).toBe(before.layout);
+  expect(after.units).toEqual(before.units);
+});
+
+test('the map seed in the URL rebuilds the same map', async ({ page }) => {
+  // ?seed=42 makes map 42 or, if that layout fails validation, a later one; either way
+  // ?seed=<map seed> must give exactly that map back.
+  await openGame(page, '?seed=42');
+  const first = await snapshot(page);
+  await openGame(page, `?seed=${first.mapSeed}`);
+  const again = await snapshot(page);
+  expect(again.mapSeed).toBe(first.mapSeed);
+  expect(again.layout).toBe(first.layout);
+  expect(again.units).toEqual(first.units);
+});
+
 test('losing the squad shows the loss screen; Esc goes to the title', async ({ page }) => {
   await openGame(page, '?seed=42');
   for (const m of (await snapshot(page)).units.filter((u) => u.side === 'marine')) {
