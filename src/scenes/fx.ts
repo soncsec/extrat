@@ -1,14 +1,7 @@
 import Phaser from 'phaser';
+import { PixelText } from './pixelFont';
 
 /** Small visual effects used by the battle scene. They don't touch game state. */
-
-const TEXT_STYLE = {
-  fontFamily: 'monospace',
-  fontSize: '10px',
-  fontStyle: 'bold',
-  stroke: '#11141b',
-  strokeThickness: 3,
-} as const;
 
 /** Text that rises and fades out, such as damage numbers or "MISS". */
 export function floatText(
@@ -19,11 +12,13 @@ export function floatText(
   color: string,
   depth: number,
 ): void {
-  const t = scene.add
-    .text(x, y, text, { ...TEXT_STYLE, color })
-    .setOrigin(0.5, 1)
-    .setDepth(depth)
-    .setResolution(4);
+  const t = new PixelText(scene, x, y, text, {
+    color: Phaser.Display.Color.HexStringToColor(color).color,
+    valign: 'bottom',
+    background: 0x11141b,
+    backgroundAlpha: 0.7,
+    padding: 1,
+  }).setDepth(depth);
   scene.tweens.add({
     targets: t,
     y: y - 12,
