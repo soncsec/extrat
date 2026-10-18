@@ -8,6 +8,7 @@ import {
   HUD_HEIGHT,
   MAP_COLS,
   MAP_ROWS,
+  MISSIONS,
   TILE,
   UNITS,
 } from '../config/tuning';
@@ -48,6 +49,7 @@ import {
   type UnitKind,
 } from '../logic/battle';
 import { planAlienAction } from '../logic/ai';
+import { currentMission, type Campaign } from '../logic/campaign';
 import { generateForest, PROPS, tileAt } from '../logic/map';
 import { createRng, type Rng } from '../logic/rng';
 import {
@@ -86,6 +88,8 @@ export interface MoveTile extends Point {
 export interface GameSnapshot {
   seed: number;
   mapSeed: number;
+  /** The campaign mission (0-based) and try, or null in a skirmish. */
+  campaign: { mission: number; attempt: number } | null;
   /** One character per tile, row by row: '.' free, or the first letter of the prop. */
   layout: string;
   units: {
@@ -100,6 +104,7 @@ export interface GameSnapshot {
     grenades: number;
     exposed: boolean;
     kind: UnitKind;
+    name: string;
     /** Turns of poison left. */
     poison: number;
     /** The squad can see this unit now (aliens in the fog are false). */
@@ -223,14 +228,17 @@ export class BattleScene extends Phaser.Scene {
   private mode: 'move' | 'grenade' = 'move';
   /** Set when one side has been wiped out; only a new map can follow. */
   private over = false;
+  /** The campaign this battle is a mission of, or null for a one-off skirmish (?seed=). */
+  private campaign: Campaign | null = null;
 
   constructor() {
     super('Battle');
   }
 
-  create(data: { seed?: number }): void {
+  create(data: { seed?: number; campaign?: Campaign }): void {
     this.fx = new FxPool(this);
-    this.seed = data.seed ?? initialSeed();
+    this.campaign = data.campaign ?? null;
+    this.seed = this.campaign?.mapSeed ?? data.seed ?? initialSeed();
     this.seeds = createRng(this.seed);
     this.createHud();
     this.marker = this.add.graphics().setDepth(DEPTH.marker);
@@ -292,8 +300,9 @@ export class BattleScene extends Phaser.Scene {
       window.removeEventListener('keydown', onKey),
     );
     this.input.keyboard?.on('keydown-N', () => {
-      // Not in the middle of an animation, the alien turn, or the result screen.
-      if (!this.busy) this.startBattle(this.seeds.int(1, 999_999));
+      // A new map: skirmish only (a campaign moves on through the debrief). Not in the
+      // middle of an animation, the alien turn, or the result screen.
+      if (!this.busy && !this.campaign) this.startBattle(this.seeds.int(1, 999_999));
     });
     this.events.on('play-again', () => this.startBattle(this.seeds.int(1, 999_999)));
     // The same map again (M4.4): its seed rebuilds it exactly, units and all.
@@ -354,6 +363,9 @@ export class BattleScene extends Phaser.Scene {
     const { map, units, selected } = this.state;
     return {
       seed: this.seed,
+      campaign: this.campaign
+        ? { mission: this.campaign.mission, attempt: this.campaign.attempt }
+        : null,
       mapSeed: map.seed,
       layout: map.tiles.map((t) => (t.prop ? t.prop[0] : '.')).join(''),
       units: units.map((u) => ({
@@ -368,6 +380,7 @@ export class BattleScene extends Phaser.Scene {
         grenades: u.grenades,
         exposed: u.exposed,
         kind: u.kind,
+        name: u.name,
         poison: u.poison,
         seen: this.isSeen(u),
         dormant: u.dormant,
@@ -860,6 +873,7 @@ export class BattleScene extends Phaser.Scene {
       aliensKilled: dead('alien'),
       marinesLost: dead('marine'),
       mapSeed: this.state.map.seed,
+      campaign: this.campaign,
     };
     // Let the last death animation play first.
     this.time.delayedCall(700, () => this.scene.launch('Result', result));
@@ -1347,7 +1361,13 @@ export class BattleScene extends Phaser.Scene {
     this.over = false;
 
     const map = generateForest(seed, MAP_COLS, MAP_ROWS);
-    this.state = createBattle(map, map.seed);
+    const c = this.campaign;
+    const mission = c ? currentMission(c) : null;
+    this.state = createBattle(
+      map,
+      map.seed,
+      c && mission ? { names: c.squad, pods: mission.pods } : {},
+    );
     this.drawMap();
     for (const u of this.state.units) this.views.set(u.id, this.drawUnit(u));
     this.updateHidden();
@@ -1355,7 +1375,11 @@ export class BattleScene extends Phaser.Scene {
     this.explored.clear();
     this.refreshVision();
     this.updateHidden();
-    this.mapText.setText(`FOREST  MAP ${map.seed}`);
+    this.mapText.setText(
+      c && mission
+        ? `${mission.landscape.toUpperCase()}  MISSION ${c.mission + 1}/${MISSIONS.length}  MAP ${map.seed}`
+        : `FOREST  MAP ${map.seed}`,
+    );
   }
 
   private drawMap(): void {

@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH, TILE } from '../config/tuning';
 import { FOREST_SHEET, MARINE_SHEET, WALKER_SHEET } from './art';
-import { initialSeed } from './seed';
+import { newCampaign } from '../logic/campaign';
+import { randomSeed, urlNumber } from './seed';
 import { pixelButton, pixelText } from './pixelFont';
 
 /** Where the games portal lives, relative to this game's folder (games.soncrant.com/extrat/). */
@@ -57,7 +58,9 @@ export class TitleScene extends Phaser.Scene {
       ].join('\n'),
       0xc8d0dc,
     );
-    pixelButton(this, cx, 172, 'START MISSION', () => this.start());
+    // ?seed=N plays that one map as a skirmish (bug reports, tests); otherwise a campaign.
+    const skirmish = urlNumber('seed') !== null;
+    pixelButton(this, cx, 172, skirmish ? 'START MISSION' : 'START CAMPAIGN', () => this.start());
     pixelButton(this, cx, 194, 'BACK TO GAMES', () => window.location.assign(PORTAL_URL), false);
     pixelText(this, cx, 214, 'Enter: start', 0xa3adbd);
 
@@ -65,6 +68,13 @@ export class TitleScene extends Phaser.Scene {
   }
 
   private start(): void {
-    this.scene.start('Battle', { seed: initialSeed() });
+    const seed = urlNumber('seed');
+    if (seed !== null) {
+      this.scene.start('Battle', { seed });
+      return;
+    }
+    // ?campaign=N replays a whole campaign (bug reports); otherwise a new one.
+    const campaign = newCampaign(urlNumber('campaign') ?? randomSeed());
+    this.scene.start('Briefing', { campaign });
   }
 }
