@@ -20,13 +20,16 @@ export const DEFAULT_SEED = 1;
 export const FOREST = {
   /** Rows of dense pine forest along the top edge. */
   treeLineRows: 2,
-  /** Columns at each side kept as spawn zones: no tree clusters there. */
+  /** Columns at each side kept as spawn zones: only light-cover chunks there. */
   spawnCols: 4,
-  clusters: { min: 3, max: 4 },
-  clusterSize: { min: 3, max: 5 },
-  boulders: 2,
-  bushes: 7,
-  rocks: 5,
+  /** Size of a map chunk (ADR-E3) in tiles. A 24 x 12 field is 4 x 3 chunks. */
+  chunk: { width: 6, height: 4 },
+  /** Chances for a chunk's '*' (maybe cover) tile: bush, rocks, else open. */
+  maybeCover: { bush: 0.35, rocks: 0.25 },
+  /** Chances for a chunk's '#' (maybe tree) tile: pine, oak, else open. */
+  maybeTree: { pine: 0.4, oak: 0.25 },
+  /** Extra half cover scattered anywhere below the tree line, on top of the chunks. */
+  scatter: { bushes: 3, rocks: 2 },
   dirtPatches: 3,
   /** Each spawn zone needs at least this many free tiles. */
   minSpawnTiles: 12,

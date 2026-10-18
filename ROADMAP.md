@@ -10,7 +10,7 @@ The order follows the risks: first prove the core fight is fun and readable with
 | M1 Walking skeleton | Built; owner: "looks great so far" (2026-10-17), full play-test notes pending |
 | M2 Tactical core | Built; waiting for the owner's play-test |
 | M3 Aliens and ambush | Built; waiting for the owner's play-test |
-| M4 Maps and landscapes | Not started |
+| M4 Maps and landscapes | In progress |
 | M5 Campaign | Not started |
 | M6 Polish and release | Not started |
 
@@ -74,7 +74,7 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 
 ## M4 — Maps and landscapes
 
-- [ ] M4.1 Chunk-based generator with seeded scatter (ADR-E3)
+- [x] M4.1 Chunk-based generator with seeded scatter (ADR-E3)
 - [ ] M4.2 Validators: reachability, spawn distance, cover density; 1,000-seed test
 - [ ] M4.3 Landscapes: forest, town, coast, rocky hills, crash site, alien ship; missing tiles drawn by Claude to match
 - [ ] M4.4 Map seed shown in the debrief so a map can be replayed for bug reports

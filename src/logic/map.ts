@@ -1,6 +1,7 @@
 import { FOREST } from '../config/tuning';
+import { chunkCell, FOREST_CHUNKS, type Chunk, type ChunkSet } from './chunks';
 import { reachable, type Point } from './grid';
-import { createRng } from './rng';
+import { createRng, type Rng } from './rng';
 
 /** Things that stand on a tile. */
 export type PropKind = 'pine' | 'oak' | 'boulder' | 'rocks' | 'bush';
@@ -44,11 +45,10 @@ export interface BattleMap {
 export interface ForestOptions {
   treeLineRows: number;
   spawnCols: number;
-  clusters: { min: number; max: number };
-  clusterSize: { min: number; max: number };
-  boulders: number;
-  bushes: number;
-  rocks: number;
+  chunk: { width: number; height: number };
+  maybeCover: { bush: number; rocks: number };
+  maybeTree: { pine: number; oak: number };
+  scatter: { bushes: number; rocks: number };
   dirtPatches: number;
   minSpawnTiles: number;
   maxAttempts: number;
@@ -148,24 +148,23 @@ function buildForest(seed: number, cols: number, rows: number, opts: ForestOptio
     }
   }
 
-  // Clumps of trees in the middle, away from the spawn zones.
-  const clusters = rng.int(opts.clusters.min, opts.clusters.max);
-  for (let c = 0; c < clusters; c++) {
-    const [, westEdge] = spawnZone(cols, 'west', opts);
-    const [eastEdge] = spawnZone(cols, 'east', opts);
-    let x = rng.int(westEdge + 2, eastEdge - 2);
-    let y = rng.int(top + 1, rows - 2);
-    const size = rng.int(opts.clusterSize.min, opts.clusterSize.max);
-    for (let i = 0; i < size; i++) {
-      place(x, y, rng.pick(['pine', 'oak'] as const));
-      x = clamp(x + rng.int(-1, 1), westEdge + 1, eastEdge - 1);
-      y = clamp(y + rng.int(-1, 1), top, rows - 1);
+  // The field below is a grid of chunks: light ones where the sides deploy, varied
+  // ones between. Leftover columns or rows (on maps that don't divide evenly) stay open.
+  const { width: w, height: h } = opts.chunk;
+  const [, westEdge] = spawnZone(cols, 'west', opts);
+  const [eastEdge] = spawnZone(cols, 'east', opts);
+  for (let cy = 0; top + (cy + 1) * h <= rows; cy++) {
+    for (let cx = 0; (cx + 1) * w <= cols; cx++) {
+      const x0 = cx * w;
+      const inSpawn = x0 <= westEdge || x0 + w - 1 >= eastEdge;
+      const set: ChunkSet = FOREST_CHUNKS;
+      const chunk = rng.pick(inSpawn ? set.spawn : set.field);
+      stamp(chunk, x0, top + cy * h, rng, opts, place);
     }
   }
 
-  scatter(opts.boulders, () => place(rng.int(1, cols - 3), rng.int(top, rows - 1), 'boulder'));
-  scatter(opts.bushes, () => place(rng.int(0, cols - 1), rng.int(top, rows - 1), 'bush'));
-  scatter(opts.rocks, () => place(rng.int(0, cols - 1), rng.int(top, rows - 1), 'rocks'));
+  scatter(opts.scatter.bushes, () => place(rng.int(0, cols - 1), rng.int(top, rows - 1), 'bush'));
+  scatter(opts.scatter.rocks, () => place(rng.int(0, cols - 1), rng.int(top, rows - 1), 'rocks'));
 
   for (let i = 0; i < opts.dirtPatches; i++) {
     map.decals.push({
@@ -177,12 +176,49 @@ function buildForest(seed: number, cols: number, rows: number, opts: ForestOptio
   return map;
 }
 
+/**
+ * Draws a chunk with its top-left at (x0, y0), mirrored at random, settling its
+ * maybe-tiles with the seed.
+ */
+function stamp(
+  chunk: Chunk,
+  x0: number,
+  y0: number,
+  rng: Rng,
+  opts: ForestOptions,
+  place: (x: number, y: number, kind: PropKind) => boolean,
+): void {
+  const flipX = rng.next() < 0.5;
+  const flipY = rng.next() < 0.5;
+  const w = chunk.rows[0]?.length ?? 0;
+  const h = chunk.rows.length;
+  const mx = (i: number): number => x0 + (flipX ? w - 1 - i : i);
+  const my = (j: number): number => y0 + (flipY ? h - 1 - j : j);
+  chunk.rows.forEach((row, j) => {
+    [...row].forEach((ch, i) => {
+      const cell = chunkCell(ch);
+      const y = my(j);
+      if (cell.kind === 'prop') {
+        // A boulder's anchor is its left tile, which mirroring moves to the other end.
+        const x = cell.prop === 'boulder' && flipX ? mx(i + 1) : mx(i);
+        place(x, y, cell.prop);
+      } else if (cell.kind === 'maybeCover') {
+        const r = rng.next();
+        const { bush, rocks } = opts.maybeCover;
+        if (r < bush) place(mx(i), y, 'bush');
+        else if (r < bush + rocks) place(mx(i), y, 'rocks');
+      } else if (cell.kind === 'maybeTree') {
+        const r = rng.next();
+        const { pine, oak } = opts.maybeTree;
+        if (r < pine) place(mx(i), y, 'pine');
+        else if (r < pine + oak) place(mx(i), y, 'oak');
+      }
+    });
+  });
+}
+
 /** Calls `tryPlace` until it succeeds `count` times, with a cap on attempts. */
 function scatter(count: number, tryPlace: () => boolean): void {
   let placed = 0;
   for (let tries = 0; placed < count && tries < count * 20; tries++) if (tryPlace()) placed++;
-}
-
-function clamp(v: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, v));
 }

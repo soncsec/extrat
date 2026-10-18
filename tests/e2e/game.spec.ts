@@ -111,7 +111,8 @@ test('clicking an alien does not select it', async ({ page }) => {
 });
 
 test('a selected marine runs to a clicked tile and spends an action point', async ({ page }) => {
-  await openGame(page, '?seed=42');
+  // Map 7: the run east spots no aliens (spotting a pod stops a move short).
+  await openGame(page, '?seed=7');
   const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
   if (!marine) throw new Error('no marine');
   await clickTile(page, marine.x, marine.y);
@@ -185,11 +186,11 @@ test('clicking a tile out of range does not move the marine', async ({ page }) =
 });
 
 /**
- * Map 23: once the first marine moves as far east as a normal move allows, one alien is
+ * Map 33: once the first marine moves as far east as a normal move allows, one alien is
  * in range and in sight, and the other is still hidden in the fog. Selects that marine,
  * moves it, and returns it with a target it can shoot.
  */
-const SHOT_SEED = '?seed=23';
+const SHOT_SEED = '?seed=33';
 
 async function moveEastForAShot(
   page: Page,
@@ -346,7 +347,7 @@ test('O puts a marine on overwatch, and it fires when an alien moves into sight'
 });
 
 test('effect sprites are reused, not made new for every shot and hit', async ({ page }) => {
-  // Two full rounds of fighting on map 23: shots, hits, misses and alien attacks.
+  // Two full rounds of fighting on map 33: shots, hits, misses and alien attacks.
   await openGame(page, SHOT_SEED);
   const { alien } = await moveEastForAShot(page);
   await clickTile(page, alien.x, alien.y);
