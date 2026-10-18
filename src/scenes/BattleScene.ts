@@ -37,6 +37,7 @@ import {
   type Action,
   type BattleState,
   type MoveResult,
+  type Scamper,
   type ShotBlock,
   type ShotOdds,
   type ShotResult,
@@ -70,6 +71,7 @@ import {
   playOnce,
 } from './fx';
 import type { BattleResult } from './ResultScene';
+import { PixelButton, PixelText } from './pixelFont';
 import { initialSeed } from './seed';
 
 /** A tile a unit can move to, and the action points that costs (2 means a dash). */
@@ -96,6 +98,8 @@ export interface GameSnapshot {
     exposed: boolean;
     /** The squad can see this unit now (aliens in the fog are false). */
     seen: boolean;
+    /** An alien whose pod hasn't been spotted yet. */
+    dormant: boolean;
     hidden: boolean;
   }[];
   selected: string | null;
@@ -171,17 +175,17 @@ export class BattleScene extends Phaser.Scene {
   private busy = false;
   private pips!: Phaser.GameObjects.Graphics;
   private aimLayer!: Phaser.GameObjects.Graphics;
-  private aimText!: Phaser.GameObjects.Text;
+  private aimText!: PixelText;
   /** The hit-chance breakdown shown while aiming. */
-  private oddsPanel!: Phaser.GameObjects.Text;
+  private oddsPanel!: PixelText;
   /** Locked target: the next click on it, or Enter, fires. */
   private aimTarget: string | null = null;
-  private mapText!: Phaser.GameObjects.Text;
-  private unitText!: Phaser.GameObjects.Text;
-  private endTurnButton!: Phaser.GameObjects.Text;
-  private reloadButton!: Phaser.GameObjects.Text;
-  private overwatchButton!: Phaser.GameObjects.Text;
-  private grenadeButton!: Phaser.GameObjects.Text;
+  private mapText!: PixelText;
+  private unitText!: PixelText;
+  private endTurnButton!: PixelButton;
+  private reloadButton!: PixelButton;
+  private overwatchButton!: PixelButton;
+  private grenadeButton!: PixelButton;
   private fogLayer!: Phaser.GameObjects.Graphics;
   /** Tiles the squad sees now, and every tile it has ever seen this battle. */
   private vision = new Set<number>();
@@ -207,33 +211,21 @@ export class BattleScene extends Phaser.Scene {
     this.chevron = this.add.graphics().setDepth(DEPTH.overlay + 1);
     this.pips = this.add.graphics().setDepth(DEPTH.overlay);
     this.aimLayer = this.add.graphics().setDepth(DEPTH.overlay + 2);
-    this.aimText = this.add
-      .text(0, 0, '', {
-        fontFamily: 'monospace',
-        fontSize: '10px',
-        fontStyle: 'bold',
-        color: '#f2a33a',
-        backgroundColor: '#11141b',
-        padding: { x: 2, y: 0 },
-      })
-      .setOrigin(0.5, 1)
+    this.aimText = new PixelText(this, 0, 0, '', {
+      color: 0xf2a33a,
+      valign: 'bottom',
+      background: 0x11141b,
+      padding: 2,
+    })
       .setDepth(DEPTH.overlay + 3)
-      .setResolution(4)
       .setVisible(false);
-    // Thin strokes like '-' can fall between the pixels sampled when small text is
-    // scaled down pixel-sharp; an outline in the text's own colour thickens them.
-    this.oddsPanel = this.add
-      .text(0, 0, '', {
-        fontFamily: 'monospace',
-        fontSize: '9px',
-        color: '#dfe4ec',
-        stroke: '#dfe4ec',
-        strokeThickness: 1,
-        backgroundColor: '#11141b',
-        padding: { x: 4, y: 3 },
-      })
+    this.oddsPanel = new PixelText(this, 0, 0, '', {
+      align: 'left',
+      valign: 'top',
+      background: 0x11141b,
+      padding: 4,
+    })
       .setDepth(DEPTH.hud)
-      .setResolution(4)
       .setVisible(false);
     this.tweens.add({ targets: this.chevron, y: -2, duration: 450, yoyo: true, repeat: -1 });
     this.tweens.add({ targets: this.marker, alpha: 0.45, duration: 450, yoyo: true, repeat: -1 });
@@ -336,6 +328,7 @@ export class BattleScene extends Phaser.Scene {
         grenades: u.grenades,
         exposed: u.exposed,
         seen: this.isSeen(u),
+        dormant: u.dormant,
         hidden: this.views.get(u.id)?.hidden ?? false,
       })),
       selected,
@@ -486,7 +479,10 @@ export class BattleScene extends Phaser.Scene {
     const moved = next.lastMove;
     if (next === this.state || !moved) return;
     this.state = next;
-    void this.run(() => this.playMove(moved));
+    void this.run(async () => {
+      await this.playMove(moved);
+      await this.playSighting(moved.spotted, moved.scampers);
+    });
   }
 
   /** Player shot at the aimed target. */
@@ -510,11 +506,19 @@ export class BattleScene extends Phaser.Scene {
     this.vision = eyes ? tilesSeenFrom(this.state.map, eyes) : visibleTiles(this.state, 'marine');
     for (const k of this.vision) this.explored.add(k);
     const { cols, rows } = this.state.map;
+    // A marine's sprite is about two tiles tall and its rifle reaches into the next
+    // tile: fogging those would darken the marine itself.
+    const bodyTiles = new Set<number>();
+    for (const m of livingUnits(this.state, 'marine')) {
+      for (let dy = -1; dy <= 0; dy++) {
+        for (let dx = -1; dx <= 1; dx++) bodyTiles.add((m.y + dy) * cols + (m.x + dx));
+      }
+    }
     const g = this.fogLayer.clear();
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         const k = y * cols + x;
-        if (this.vision.has(k)) continue;
+        if (this.vision.has(k) || bodyTiles.has(k)) continue;
         // Seen before: dimmed. Never seen: darker.
         g.fillStyle(0x05070f, this.explored.has(k) ? 0.45 : 0.72).fillRect(
           x * TILE,
@@ -655,6 +659,7 @@ export class BattleScene extends Phaser.Scene {
       view.exposed = !hit.killed;
     }
     await new Promise((resolve) => this.time.delayedCall(700, resolve));
+    await this.playSighting([], thrown.scampers);
   }
 
   /** Puts the selected marine on overwatch: uses its remaining action points. */
@@ -845,18 +850,14 @@ export class BattleScene extends Phaser.Scene {
 
   /** A large message across the middle of the map. */
   private banner(text: string, color: string): Promise<void> {
-    const t = this.add
-      .text(GAME_WIDTH / 2, (MAP_ROWS * TILE) / 2, text, {
-        fontFamily: 'monospace',
-        fontSize: '18px',
-        fontStyle: 'bold',
-        color,
-        backgroundColor: '#11141bcc',
-        padding: { x: 10, y: 4 },
-      })
-      .setOrigin(0.5)
+    const t = new PixelText(this, GAME_WIDTH / 2, (MAP_ROWS * TILE) / 2, text, {
+      color: Phaser.Display.Color.HexStringToColor(color).color,
+      scale: 2,
+      background: 0x11141b,
+      backgroundAlpha: 0.85,
+      padding: 6,
+    })
       .setDepth(DEPTH.hud)
-      .setResolution(4)
       .setAlpha(0);
     return new Promise((resolve) => {
       this.tweens.add({
@@ -874,6 +875,33 @@ export class BattleScene extends Phaser.Scene {
   }
 
   /** Runs a unit's sprite along a path. The state must already hold the move. */
+  /**
+   * A pod has been spotted: "ALIENS SPOTTED" and a "!" over each alien, then every
+   * woken alien's free scramble to cover.
+   */
+  private async playSighting(spotted: string[], scampers: Scamper[]): Promise<void> {
+    if (spotted.length > 0) {
+      this.refreshVision();
+      for (const id of spotted) {
+        const unit = unitById(this.state, id);
+        const view = this.views.get(id);
+        if (!unit || !view || !view.sprite.visible) continue;
+        const headY = view.sprite.y - SHEETS[unit.kind].height;
+        floatText(this, view.sprite.x, headY - 6, '!', '#ff5a4a', DEPTH.fx);
+      }
+      await this.banner('ALIENS SPOTTED', '#ff6a5a');
+    }
+    for (const sc of scampers) {
+      await this.playMove({
+        unitId: sc.unitId,
+        path: sc.path,
+        reactions: [],
+        spotted: [],
+        scampers: [],
+      });
+    }
+  }
+
   /**
    * Runs a unit's sprite along a move the state already holds, pausing for each
    * overwatch reaction shot where it happened. A killed mover stops there.
@@ -1055,9 +1083,9 @@ export class BattleScene extends Phaser.Scene {
     }
     this.aimText
       .setText(odds ? `${odds.hit}%${odds.flanked ? ' FLANKED' : ''}` : (why as string))
-      .setColor(odds ? (odds.flanked ? '#ffd23a' : '#f2a33a') : '#8d97a8');
+      .setColor(odds ? (odds.flanked ? 0xffd23a : 0xf2a33a) : 0xa3adbd);
     // Keep the label on screen for units near the edges.
-    const half = this.aimText.width / 2;
+    const half = this.aimText.textWidth / 2 + 3;
     const x = Math.min(Math.max(view.sprite.x, half + 2), GAME_WIDTH - half - 2);
     this.aimText.setPosition(x, view.sprite.y - height - 8).setVisible(true);
   }
@@ -1076,8 +1104,8 @@ export class BattleScene extends Phaser.Scene {
     lines.push(line(odds.flanked ? 'CRIT (FLANK)' : 'CRIT', `${odds.crit}%`));
     this.oddsPanel.setText(lines.join('\n'));
     const left = targetX > GAME_WIDTH / 2;
-    const x = left ? 4 : GAME_WIDTH - this.oddsPanel.width - 4;
-    this.oddsPanel.setPosition(x, 2 * TILE + 2).setVisible(true);
+    const x = left ? 8 : GAME_WIDTH - this.oddsPanel.textWidth - 8;
+    this.oddsPanel.setPosition(x, 2 * TILE + 6).setVisible(true);
   }
 
   private startBattle(seed: number): void {
@@ -1103,7 +1131,7 @@ export class BattleScene extends Phaser.Scene {
     this.explored.clear();
     this.refreshVision();
     this.updateHidden();
-    this.mapText.setText(`FOREST  map ${map.seed}`);
+    this.mapText.setText(`FOREST  MAP ${map.seed}`);
   }
 
   private drawMap(): void {
@@ -1204,7 +1232,7 @@ export class BattleScene extends Phaser.Scene {
     this.reloadButton.setVisible(playerTurn && sel !== null && canReload(this.state, sel));
     this.overwatchButton.setVisible(playerTurn && sel !== null && canOverwatch(this.state, sel));
     this.grenadeButton.setVisible(playerTurn && sel !== null && canThrow(this.state, sel));
-    this.grenadeButton.setText(this.mode === 'grenade' ? 'CANCEL [G]' : 'GRENADE [G]');
+    this.grenadeButton.setLabel(this.mode === 'grenade' ? 'G CANCEL' : 'G GRENADE');
     this.layoutButtons();
     const g = this.marker.clear();
     this.rangeLayer.clear();
@@ -1252,7 +1280,7 @@ export class BattleScene extends Phaser.Scene {
             .fillRect(tx * TILE + 1, ty * TILE + 1, TILE - 2, TILE - 2);
         }
       }
-      this.unitText.setText(`PVT ${unit.name.toUpperCase()}  GRENADE: click a tile  Esc: cancel`);
+      this.unitText.setText(`PVT ${unit.name}  GRENADE: CLICK A TILE  ESC: CANCEL`);
       return;
     }
     for (const t of this.rangeTiles(unit.id)) {
@@ -1274,35 +1302,25 @@ export class BattleScene extends Phaser.Scene {
 
   private createHud(): void {
     const y = MAP_ROWS * TILE;
-    const style = { fontFamily: 'monospace', fontSize: '10px', color: '#8d97a8' };
     this.add.rectangle(0, y, GAME_WIDTH, HUD_HEIGHT, 0x11141b).setOrigin(0).setDepth(DEPTH.hud);
     this.add.rectangle(0, y, GAME_WIDTH, 1, 0x2b3242).setOrigin(0).setDepth(DEPTH.hud);
-    this.unitText = this.add
-      .text(6, y + 5, '', { ...style, color: '#f2a33a' })
-      .setDepth(DEPTH.hud)
-      .setResolution(4);
-    this.mapText = this.add
-      .text(6, y + 18, '', style)
-      .setDepth(DEPTH.hud)
-      .setResolution(4);
-    const hudButton = (label: string, primary: boolean, onClick: () => void) =>
-      this.add
-        .text(0, y + 16, label, {
-          ...style,
-          fontStyle: 'bold',
-          color: primary ? '#11141b' : '#dfe4ec',
-          backgroundColor: primary ? '#f2a33a' : '#2b3242',
-          padding: { x: 4, y: 1 },
-        })
-        .setOrigin(1, 0)
-        .setDepth(DEPTH.hud)
-        .setResolution(4)
-        .setInteractive({ useHandCursor: true })
-        .on('pointerdown', onClick);
-    this.endTurnButton = hudButton('END TURN [E]', true, () => void this.endTurn());
-    this.reloadButton = hudButton('RELOAD [R]', false, () => this.reload());
-    this.overwatchButton = hudButton('WATCH [O]', false, () => this.overwatch());
-    this.grenadeButton = hudButton('GRENADE [G]', false, () => this.toggleGrenade());
+    this.unitText = new PixelText(this, 6, y + 5, '', {
+      color: 0xf2a33a,
+      align: 'left',
+      valign: 'top',
+    }).setDepth(DEPTH.hud);
+    this.mapText = new PixelText(this, 6, y + 19, '', {
+      color: 0xa3adbd,
+      align: 'left',
+      valign: 'top',
+    }).setDepth(DEPTH.hud);
+    // Buttons sit on the info bar's second line; the key comes first, as on the title.
+    const hudButton = (label: string, primary: boolean, onClick: () => void): PixelButton =>
+      new PixelButton(this, 0, y + 22, label, onClick, primary).setDepth(DEPTH.hud);
+    this.endTurnButton = hudButton('E END TURN', true, () => void this.endTurn());
+    this.reloadButton = hudButton('R RELOAD', false, () => this.reload());
+    this.overwatchButton = hudButton('O WATCH', false, () => this.overwatch());
+    this.grenadeButton = hudButton('G GRENADE', false, () => this.toggleGrenade());
     this.layoutButtons();
   }
 
@@ -1316,8 +1334,10 @@ export class BattleScene extends Phaser.Scene {
       this.grenadeButton,
     ]) {
       if (!b.visible) continue;
-      b.setX(right);
-      right -= b.width + 4;
+      // Buttons are positioned by their centre.
+      // Whole pixels only, or the label's glyphs land between pixels and lose columns.
+      b.setX(Math.round(right - b.buttonWidth / 2));
+      right -= b.buttonWidth + 4;
     }
   }
 }

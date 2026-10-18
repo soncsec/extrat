@@ -209,17 +209,22 @@ async function moveEastForAShot(
   return { marineId: marine.id, alien };
 }
 
-test('aliens start hidden in the fog and are spotted when a marine gets close', async ({
-  page,
-}) => {
+test('aliens start hidden and dormant; spotting one wakes its whole pod', async ({ page }) => {
   await openGame(page, SHOT_SEED);
   const start = await snapshot(page);
-  expect(start.units.filter((u) => u.side === 'alien').every((u) => !u.seen)).toBe(true);
+  const aliens = start.units.filter((u) => u.side === 'alien');
+  expect(aliens.every((u) => !u.seen && u.dormant)).toBe(true);
   expect(start.units.filter((u) => u.side === 'marine').every((u) => u.seen)).toBe(true);
   const { alien } = await moveEastForAShot(page);
   const after = await snapshot(page);
-  expect(after.units.find((u) => u.id === alien.id)?.seen).toBe(true);
-  expect(after.units.filter((u) => u.side === 'alien' && !u.seen)).toHaveLength(1);
+  const target = after.units.find((u) => u.id === alien.id);
+  expect(target).toMatchObject({ seen: true, dormant: false });
+  // The rest of the target's pod woke with it; the other pod still waits, unseen.
+  const awake = after.units.filter((u) => u.side === 'alien' && !u.dormant);
+  const asleep = after.units.filter((u) => u.side === 'alien' && u.dormant);
+  expect(awake).toHaveLength(2);
+  expect(asleep).toHaveLength(2);
+  expect(asleep.every((u) => !u.seen)).toBe(true);
 });
 
 test('a marine aims at an alien, fires, and the shot is resolved', async ({ page }) => {
@@ -304,7 +309,9 @@ test('R reloads an empty clip for one action point, and does nothing when full',
 test('O puts a marine on overwatch, and it fires when an alien moves into sight', async ({
   page,
 }) => {
-  await openGame(page, '?seed=42');
+  // Wake a pod first: dormant aliens wait instead of advancing.
+  await openGame(page, SHOT_SEED);
+  await moveEastForAShot(page);
   const marines = (await snapshot(page)).units.filter((u) => u.side === 'marine');
   // Every marine watches, so whichever way the aliens come, someone sees them.
   for (const m of marines) {
@@ -354,8 +361,9 @@ test('G enters grenade mode and Esc leaves it', async ({ page }) => {
 });
 
 test('a grenade hits an alien for 2 and leaves it exposed', async ({ page }) => {
-  await openGame(page, '?seed=42');
-  // Aliens start out of throwing range; end turns until one comes within 8 tiles.
+  // Wake a pod (dormant aliens wait), then end turns until an alien comes within 8 tiles.
+  await openGame(page, SHOT_SEED);
+  await moveEastForAShot(page);
   type U = GameSnapshot['units'][number];
   let pair: { m: U; a: U; d: number } | undefined;
   for (let round = 1; round <= 5 && !pair; round++) {
@@ -433,11 +441,14 @@ test('F aims at the best target, then cycles; Enter fires', async ({ page }) => 
     .toBe(shootable[1 % shootable.length]);
 });
 
-test('E ends the turn; the aliens advance, then round 2 begins', async ({ page }) => {
-  await openGame(page, '?seed=42');
+test('E ends the turn: awake aliens act, dormant pods wait, then round 2 begins', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await openGame(page, SHOT_SEED);
+  await moveEastForAShot(page); // spots one pod; the other stays dormant
   const before = await snapshot(page);
   expect(before).toMatchObject({ turn: 'marine', round: 1 });
-  await page.locator('#game canvas').click({ position: { x: 5, y: 5 } });
   await page.keyboard.press('e');
   await expect.poll(async () => (await snapshot(page)).turn).toBe('alien');
   await expect
@@ -446,14 +457,25 @@ test('E ends the turn; the aliens advance, then round 2 begins', async ({ page }
         const s = await snapshot(page);
         return s.turn === 'marine' && !s.busy ? s.round : 0;
       },
-      { timeout: 20_000 },
+      { timeout: 30_000 },
     )
     .toBe(2);
   const after = await snapshot(page);
-  const westmost = (s: typeof after): number =>
-    Math.min(...s.units.filter((u) => u.side === 'alien').map((u) => u.x));
-  expect(westmost(after)).toBeLessThan(westmost(before));
-  expect(after.units.filter((u) => u.side === 'marine').every((u) => u.ap === 2)).toBe(true);
+  const was = (id: string) => before.units.find((u) => u.id === id);
+  const aliens = after.units.filter((u) => u.side === 'alien');
+  // The dormant pod didn't move.
+  for (const a of aliens.filter((u) => was(u.id)?.dormant)) {
+    expect({ x: a.x, y: a.y }).toEqual({ x: was(a.id)?.x, y: was(a.id)?.y });
+  }
+  // The awake pod acted: one of them moved, or a marine was hurt.
+  const moved = aliens.some(
+    (a) => !was(a.id)?.dormant && (a.x !== was(a.id)?.x || a.y !== was(a.id)?.y),
+  );
+  const hurt = after.units.some((u) => u.side === 'marine' && u.hp < (was(u.id)?.hp ?? 0));
+  expect(moved || hurt).toBe(true);
+  expect(after.units.filter((u) => u.side === 'marine' && u.hp > 0).every((u) => u.ap === 2)).toBe(
+    true,
+  );
 });
 
 test('the End Turn button ends the turn', async ({ page }) => {

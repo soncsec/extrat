@@ -22,6 +22,8 @@ import { ACTION_POINTS, UNITS } from '../config/tuning';
 export function planAlienAction(state: BattleState, alienId: string): Action | null {
   const alien = unitById(state, alienId);
   if (!alien || alien.side !== 'alien' || alien.hp <= 0 || alien.ap <= 0) return null;
+  // A dormant pod waits, unseen, until the squad spots it.
+  if (alien.dormant) return null;
   if (state.turn !== 'alien') return null;
   const marines = livingUnits(state, 'marine');
   if (marines.length === 0) return null;
