@@ -536,6 +536,8 @@ async function scriptedTurn(page: Page): Promise<GameSnapshot> {
 }
 
 test('a fixed-seed turn plays out exactly the same every time', async ({ page }) => {
+  // Two full rounds, alien turns included, run back to back: more than the 30 s default.
+  test.setTimeout(60_000);
   await openGame(page, SHOT_SEED);
   const start = await snapshot(page);
   const first = await scriptedTurn(page);
