@@ -1,29 +1,54 @@
 import { FOREST } from '../config/tuning';
-import { chunkCell, FOREST_CHUNKS, type Chunk, type ChunkSet } from './chunks';
+import { chunkCell, type Chunk } from './chunks';
 import { reachable, type Point } from './grid';
+import { LANDSCAPES, type Landscape, type LandscapeId } from './landscapes';
 import { createRng, type Rng } from './rng';
 
 /** Things that stand on a tile. */
-export type PropKind = 'pine' | 'oak' | 'boulder' | 'rocks' | 'bush';
+export type PropKind =
+  | 'pine'
+  | 'oak'
+  | 'boulder'
+  | 'rocks'
+  | 'bush'
+  | 'house'
+  | 'autumn'
+  | 'cypress'
+  | 'stump'
+  | 'shrub'
+  | 'stone'
+  | 'ledge';
 export type Cover = 'half' | 'full';
 
 export interface PropInfo {
-  /** Footprint in tiles, growing right from the anchor tile. */
+  /** Footprint in tiles: `width` right and `height` up from the anchor tile. */
   width: number;
+  height: number;
   cover: Cover;
 }
 
 export const PROPS: Readonly<Record<PropKind, PropInfo>> = {
-  pine: { width: 1, cover: 'full' },
-  oak: { width: 1, cover: 'full' },
-  boulder: { width: 2, cover: 'full' },
-  rocks: { width: 1, cover: 'half' },
-  bush: { width: 1, cover: 'half' },
+  pine: { width: 1, height: 1, cover: 'full' },
+  oak: { width: 1, height: 1, cover: 'full' },
+  boulder: { width: 2, height: 1, cover: 'full' },
+  rocks: { width: 1, height: 1, cover: 'half' },
+  bush: { width: 1, height: 1, cover: 'half' },
+  // Town (M4.3). A house's walls fill its footprint; its roof is drawn above it.
+  house: { width: 5, height: 3, cover: 'full' },
+  autumn: { width: 1, height: 1, cover: 'full' },
+  cypress: { width: 1, height: 1, cover: 'full' },
+  stump: { width: 2, height: 1, cover: 'half' },
+  shrub: { width: 1, height: 1, cover: 'half' },
+  stone: { width: 1, height: 1, cover: 'half' },
+  ledge: { width: 1, height: 1, cover: 'half' },
 };
 
 export interface Tile {
   prop: PropKind | null;
-  /** True on the tile where the prop's sprite is drawn (the left end of its footprint). */
+  /**
+   * True on the tile where the prop's sprite is drawn: the bottom-left of its
+   * footprint (the left end, for props one tile deep).
+   */
   anchor: boolean;
 }
 
@@ -35,6 +60,8 @@ export interface Decal extends Point {
 export interface BattleMap {
   cols: number;
   rows: number;
+  /** Which landscape's art and props (forest when missing). */
+  landscape?: LandscapeId;
   /** The seed that produced this map (may differ from the one asked for, see generateForest). */
   seed: number;
   /** Row-major: tile (x, y) is at y * cols + x. */
@@ -94,12 +121,24 @@ export function generateForest(
   rows: number,
   opts: ForestOptions = FOREST,
 ): BattleMap {
+  return generateMap(seed, cols, rows, 'forest', opts);
+}
+
+/** A seeded map of any landscape, checked like generateForest. */
+export function generateMap(
+  seed: number,
+  cols: number,
+  rows: number,
+  landscape: LandscapeId,
+  opts: ForestOptions = FOREST,
+): BattleMap {
+  const land = LANDSCAPES[landscape];
   for (let attempt = 0; attempt < opts.maxAttempts; attempt++) {
     const s = (seed + attempt * 7919) >>> 0;
-    const map = buildForest(s, cols, rows, opts);
+    const map = buildMap(s, cols, rows, land, opts);
     if (validateMap(map, opts).length === 0) return map;
   }
-  throw new Error(`no valid forest map for seed ${seed}`);
+  throw new Error(`no valid ${land.name.toLowerCase()} map for seed ${seed}`);
 }
 
 /** Problems that make a map unplayable; an empty list means the map is fine. */
@@ -175,7 +214,13 @@ function stepsBetween(
   return Infinity;
 }
 
-function buildForest(seed: number, cols: number, rows: number, opts: ForestOptions): BattleMap {
+function buildMap(
+  seed: number,
+  cols: number,
+  rows: number,
+  land: Landscape,
+  opts: ForestOptions,
+): BattleMap {
   const rng = createRng(seed);
   const map: BattleMap = {
     cols,
@@ -184,21 +229,27 @@ function buildForest(seed: number, cols: number, rows: number, opts: ForestOptio
     tiles: Array.from({ length: cols * rows }, () => ({ prop: null, anchor: false })),
     decals: [],
   };
+  if (land.id !== 'forest') map.landscape = land.id;
+  // (x, y) is the bottom-left of the footprint, which grows right and up.
   const place = (x: number, y: number, kind: PropKind): boolean => {
-    const width = PROPS[kind].width;
-    for (let i = 0; i < width; i++) if (!isWalkable(map, x + i, y)) return false;
-    for (let i = 0; i < width; i++) {
-      map.tiles[y * cols + x + i] = { prop: kind, anchor: i === 0 };
+    const { width, height } = PROPS[kind];
+    for (let j = 0; j < height; j++) {
+      for (let i = 0; i < width; i++) if (!isWalkable(map, x + i, y - j)) return false;
+    }
+    for (let j = 0; j < height; j++) {
+      for (let i = 0; i < width; i++) {
+        map.tiles[(y - j) * cols + x + i] = { prop: kind, anchor: i === 0 && j === 0 };
+      }
     }
     return true;
   };
   const top = opts.treeLineRows;
 
-  // Dense pines along the top edge. Every tile is blocked; only every other one is drawn,
-  // since each pine is three tiles wide.
+  // Dense trees along the top edge. Every tile is blocked; only every other one is drawn,
+  // since each tree is about three tiles wide.
   for (let y = 0; y < top; y++) {
     for (let x = 0; x < cols; x++) {
-      map.tiles[y * cols + x] = { prop: 'pine', anchor: (x + y) % 2 === 1 };
+      map.tiles[y * cols + x] = { prop: land.edge, anchor: (x + y) % 2 === 1 };
     }
   }
 
@@ -211,14 +262,14 @@ function buildForest(seed: number, cols: number, rows: number, opts: ForestOptio
     for (let cx = 0; (cx + 1) * w <= cols; cx++) {
       const x0 = cx * w;
       const inSpawn = x0 <= westEdge || x0 + w - 1 >= eastEdge;
-      const set: ChunkSet = FOREST_CHUNKS;
-      const chunk = rng.pick(inSpawn ? set.spawn : set.field);
-      stamp(chunk, x0, top + cy * h, rng, opts, place);
+      const chunk = rng.pick(inSpawn ? land.chunks.spawn : land.chunks.field);
+      stamp(chunk, x0, top + cy * h, rng, opts, land, place);
     }
   }
 
-  scatter(opts.scatter.bushes, () => place(rng.int(0, cols - 1), rng.int(top, rows - 1), 'bush'));
-  scatter(opts.scatter.rocks, () => place(rng.int(0, cols - 1), rng.int(top, rows - 1), 'rocks'));
+  const [lightA, lightB] = land.scatter;
+  scatter(opts.scatter.bushes, () => place(rng.int(0, cols - 1), rng.int(top, rows - 1), lightA));
+  scatter(opts.scatter.rocks, () => place(rng.int(0, cols - 1), rng.int(top, rows - 1), lightB));
 
   for (let i = 0; i < opts.dirtPatches; i++) {
     map.decals.push({
@@ -240,10 +291,12 @@ function stamp(
   y0: number,
   rng: Rng,
   opts: ForestOptions,
+  land: Landscape,
   place: (x: number, y: number, kind: PropKind) => boolean,
 ): void {
   const flipX = rng.next() < 0.5;
-  const flipY = rng.next() < 0.5;
+  // Drawn either way, so every chunk uses the seed the same: a house's roof must stay up.
+  const flipY = rng.next() < 0.5 && !chunk.upright;
   const w = chunk.rows[0]?.length ?? 0;
   const h = chunk.rows.length;
   const mx = (i: number): number => x0 + (flipX ? w - 1 - i : i);
@@ -253,19 +306,21 @@ function stamp(
       const cell = chunkCell(ch);
       const y = my(j);
       if (cell.kind === 'prop') {
-        // A boulder's anchor is its left tile, which mirroring moves to the other end.
-        const x = cell.prop === 'boulder' && flipX ? mx(i + 1) : mx(i);
+        // A wide prop's anchor is its left tile, which mirroring moves to the other end.
+        const x = flipX ? mx(i + PROPS[cell.prop].width - 1) : mx(i);
         place(x, y, cell.prop);
       } else if (cell.kind === 'maybeCover') {
         const r = rng.next();
         const { bush, rocks } = opts.maybeCover;
-        if (r < bush) place(mx(i), y, 'bush');
-        else if (r < bush + rocks) place(mx(i), y, 'rocks');
+        const [a, b] = land.maybeCover;
+        if (r < bush) place(mx(i), y, a);
+        else if (r < bush + rocks) place(mx(i), y, b);
       } else if (cell.kind === 'maybeTree') {
         const r = rng.next();
         const { pine, oak } = opts.maybeTree;
-        if (r < pine) place(mx(i), y, 'pine');
-        else if (r < pine + oak) place(mx(i), y, 'oak');
+        const [a, b] = land.maybeTree;
+        if (r < pine) place(mx(i), y, a);
+        else if (r < pine + oak) place(mx(i), y, b);
       }
     });
   });

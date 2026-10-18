@@ -27,3 +27,4 @@ List every file copied into `public/assets/` here, one per line, as its path fro
 - `assets/fx/small-death.png`: Explosions and Magic, Grotto Escape 2 FX (enemy death)
 - `assets/lizard/lizard-hurt.png`: Warped, Grotto Escape 2 lizard (hurt)
 - `assets/snake/snake-hurt.png`: Warped, Grotto Escape 2 snake (hurt)
+- `assets/town/top-down-town-tileset.png`: TinyRPG, Top-Down Town (autumn trees, cottage, garden walls, shrubs, stumps, grass, cobble path)

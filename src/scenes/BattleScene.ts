@@ -50,15 +50,15 @@ import {
 } from '../logic/battle';
 import { planAlienAction } from '../logic/ai';
 import { currentMission, type Campaign } from '../logic/campaign';
-import { generateForest, PROPS, tileAt } from '../logic/map';
+import { landscapeId, LANDSCAPES, type LandscapeId } from '../logic/landscapes';
+import { generateMap, PROPS, tileAt } from '../logic/map';
 import { createRng, type Rng } from '../logic/rng';
 import {
   BASE_SHEETS,
   BULLET,
   EFFECTS,
-  FOREST_SHEET,
+  LANDSCAPE_ART,
   MARINE_SHEET,
-  propFrame,
   SPIT,
   UNIT_ANIMS,
   type AnimName,
@@ -77,7 +77,7 @@ import {
 } from './fx';
 import type { BattleResult } from './ResultScene';
 import { PixelButton, PixelText } from './pixelFont';
-import { initialSeed } from './seed';
+import { initialSeed, urlWord } from './seed';
 
 /** A tile a unit can move to, and the action points that costs (2 means a dash). */
 export interface MoveTile extends Point {
@@ -228,6 +228,8 @@ export class BattleScene extends Phaser.Scene {
   private mode: 'move' | 'grenade' = 'move';
   /** Set when one side has been wiped out; only a new map can follow. */
   private over = false;
+  /** The landscape the battles here are fought in. */
+  private landscape: LandscapeId = 'forest';
   /** The campaign this battle is a mission of, or null for a one-off skirmish (?seed=). */
   private campaign: Campaign | null = null;
 
@@ -239,6 +241,10 @@ export class BattleScene extends Phaser.Scene {
     this.fx = new FxPool(this);
     this.campaign = data.campaign ?? null;
     this.seed = this.campaign?.mapSeed ?? data.seed ?? initialSeed();
+    // A campaign mission's landscape, or ?landscape=town for a skirmish (unknown: forest).
+    this.landscape = this.campaign
+      ? currentMission(this.campaign).landscape
+      : (landscapeId(urlWord('landscape')) ?? 'forest');
     this.seeds = createRng(this.seed);
     this.createHud();
     this.marker = this.add.graphics().setDepth(DEPTH.marker);
@@ -889,6 +895,7 @@ export class BattleScene extends Phaser.Scene {
       aliensKilled: dead('alien'),
       marinesLost: dead('marine'),
       mapSeed: this.state.map.seed,
+      landscape: this.landscape,
       campaign: this.campaign,
     };
     // Let the last death animation play first.
@@ -1376,7 +1383,7 @@ export class BattleScene extends Phaser.Scene {
     this.busy = false;
     this.over = false;
 
-    const map = generateForest(seed, MAP_COLS, MAP_ROWS);
+    const map = generateMap(seed, MAP_COLS, MAP_ROWS, this.landscape);
     const c = this.campaign;
     const mission = c ? currentMission(c) : null;
     this.state = createBattle(
@@ -1391,33 +1398,40 @@ export class BattleScene extends Phaser.Scene {
     this.explored.clear();
     this.refreshVision();
     this.updateHidden();
+    const where = LANDSCAPES[this.landscape].name.toUpperCase();
     this.mapText.setText(
-      c && mission
-        ? `${mission.landscape.toUpperCase()}  MISSION ${c.mission + 1}/${MISSIONS.length}  MAP ${map.seed}`
-        : `FOREST  MAP ${map.seed}`,
+      c
+        ? `${where}  MISSION ${c.mission + 1}/${MISSIONS.length}  MAP ${map.seed}`
+        : `${where}  MAP ${map.seed}`,
     );
   }
 
   private drawMap(): void {
     const { map } = this.state;
+    const art = LANDSCAPE_ART[map.landscape ?? 'forest'];
     const add = (x: number, y: number, frame: string, depth: number): Phaser.GameObjects.Image => {
-      const img = this.add.image(x, y, FOREST_SHEET.key, frame).setDepth(depth);
+      const img = this.add.image(x, y, art.key, frame).setDepth(depth);
       this.mapObjects.push(img);
       return img;
     };
     for (let y = 0; y < map.rows; y++) {
-      for (let x = 0; x < map.cols; x++)
-        add(x * TILE, y * TILE, 'grass', DEPTH.ground).setOrigin(0);
+      for (let x = 0; x < map.cols; x++) {
+        // A fixed scramble of the position, so the ground doesn't show a pattern.
+        const hash = (Math.imul(x + 1, 73856093) ^ Math.imul(y + 1, 19349663)) >>> 0;
+        const ground = art.ground[hash % art.ground.length] as string;
+        add(x * TILE, y * TILE, ground, DEPTH.ground).setOrigin(0);
+      }
     }
     for (const d of map.decals)
-      add(d.x * TILE, d.y * TILE, `dirt${d.kind}`, DEPTH.decal).setOrigin(0);
+      add(d.x * TILE, d.y * TILE, art.decals[d.kind], DEPTH.decal).setOrigin(0);
     map.tiles.forEach((t, i) => {
       if (!t.prop || !t.anchor) return;
       const x = i % map.cols;
       const y = Math.floor(i / map.cols);
+      // The anchor is the bottom-left of the footprint: the sprite stands on its bottom row.
       const bottom = (y + 1) * TILE;
       const centerX = (x + PROPS[t.prop].width / 2) * TILE;
-      const img = add(centerX, bottom, propFrame(t.prop, x, y), DEPTH.standing + bottom);
+      const img = add(centerX, bottom, art.prop(t.prop, x, y), DEPTH.standing + bottom);
       this.props.push(img.setOrigin(0.5, 1));
     });
   }
