@@ -56,6 +56,20 @@ export const PODS = {
   spread: 2,
 } as const;
 
+/**
+ * The campaign's missions, in order (M5.1). Landscapes other than the forest come in
+ * M4.3 and the boss in M5.6; until then those missions use the forest. A gentle ramp
+ * (owner decision 2026-10-18): more and bigger alien groups as the campaign goes on.
+ */
+export const MISSIONS = [
+  { landscape: 'Forest', pods: { count: 2, size: 2 } },
+  { landscape: 'Forest', pods: { count: 2, size: 2 } },
+  { landscape: 'Forest', pods: { count: 3, size: 2 } },
+  { landscape: 'Forest', pods: { count: 3, size: 2 } },
+  { landscape: 'Forest', pods: { count: 3, size: 3 } },
+  { landscape: 'Forest', pods: { count: 3, size: 3 } },
+] as const;
+
 /** Squad and enemy sizes for the skirmish. */
 export const SKIRMISH = {
   marines: 4,

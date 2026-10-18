@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { initialSeed } from '../../src/scenes/seed';
+import { initialSeed, urlNumber } from '../../src/scenes/seed';
 
 describe('initialSeed', () => {
   it('uses ?seed= from the URL', () => {
@@ -21,5 +21,15 @@ describe('initialSeed', () => {
     }
     expect(seeds.size).toBeGreaterThan(1);
     expect(initialSeed('?seed=abc')).toBeLessThan(1_000_000);
+  });
+});
+
+describe('urlNumber', () => {
+  it('reads a whole number for a key, or null', () => {
+    expect(urlNumber('campaign', '?campaign=12')).toBe(12);
+    expect(urlNumber('campaign', '?CAMPAIGN=12')).toBe(12);
+    expect(urlNumber('campaign', '?seed=12')).toBeNull();
+    expect(urlNumber('campaign', '?campaign=<script>')).toBeNull();
+    expect(urlNumber('seed', '')).toBeNull();
   });
 });

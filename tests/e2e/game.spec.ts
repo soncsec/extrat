@@ -31,11 +31,18 @@ async function waitForScene(page: Page, key: string): Promise<void> {
     .toBe(key);
 }
 
-/** Opens the game and starts a battle from the title screen. */
+/**
+ * Opens the game and starts a battle from the title screen. With ?seed= that's a
+ * one-off skirmish; without, a campaign, whose briefing comes first.
+ */
 async function openGame(page: Page, query = ''): Promise<void> {
   await page.goto(`./${query}`);
   await waitForScene(page, 'Title');
   await page.keyboard.press('Enter');
+  if (!/seed=/i.test(query)) {
+    await waitForScene(page, 'Briefing');
+    await page.keyboard.press('Enter');
+  }
   await waitForScene(page, 'Battle');
 }
 
@@ -532,15 +539,15 @@ test('the End Turn button ends the turn', async ({ page }) => {
   await expect.poll(async () => (await snapshot(page)).turn).toBe('alien');
 });
 
-test('the title screen starts a mission with its button', async ({ page }) => {
+test('the title screen starts a campaign with its button', async ({ page }) => {
   await page.goto('./');
   await waitForScene(page, 'Title');
   const box = await page.locator('#game canvas').boundingBox();
   if (!box) throw new Error('no canvas');
   const zoom = box.width / GAME_WIDTH;
-  // START MISSION is centred at y = 172.
+  // START CAMPAIGN is centred at y = 172; the briefing comes first.
   await page.mouse.click(box.x + (GAME_WIDTH / 2) * zoom, box.y + 172 * zoom);
-  await waitForScene(page, 'Battle');
+  await waitForScene(page, 'Briefing');
 });
 
 test('without ?seed= each new game gets a different map', async ({ page }) => {
@@ -549,8 +556,80 @@ test('without ?seed= each new game gets a different map', async ({ page }) => {
   await page.reload();
   await waitForScene(page, 'Title');
   await page.keyboard.press('Enter');
+  await waitForScene(page, 'Briefing');
+  await page.keyboard.press('Enter');
   await waitForScene(page, 'Battle');
   expect((await snapshot(page)).mapSeed).not.toBe(first);
+});
+
+/** Ends the current battle by setting one side's health to 0 (test hook). */
+async function wipeOut(page: Page, side: 'alien' | 'marine'): Promise<void> {
+  for (const u of (await snapshot(page)).units.filter((v) => v.side === side)) {
+    await page.evaluate((id) => window.__game?.setHp(id, 0), u.id);
+  }
+  await expect.poll(() => activeScenes(page)).toContain('Result');
+}
+
+test('a campaign runs mission after mission with the same squad', async ({ page }) => {
+  test.setTimeout(90_000);
+  await openGame(page, '?campaign=7');
+  const first = await snapshot(page);
+  expect(first.campaign).toEqual({ mission: 0, attempt: 0 });
+  const squad = first.units.filter((u) => u.side === 'marine').map((u) => u.name);
+  // Mission 1 won: Enter goes to the next briefing, then the next mission.
+  await wipeOut(page, 'alien');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Briefing');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Battle');
+  const second = await snapshot(page);
+  expect(second.campaign).toEqual({ mission: 1, attempt: 0 });
+  expect(second.mapSeed).not.toBe(first.mapSeed);
+  expect(second.units.filter((u) => u.side === 'marine').map((u) => u.name)).toEqual(squad);
+});
+
+test('a lost campaign mission is retried on a new map; REPLAY keeps the map', async ({ page }) => {
+  await openGame(page, '?campaign=7');
+  const first = await snapshot(page);
+  await wipeOut(page, 'marine');
+  // R replays the same map: same mission, same try.
+  await page.keyboard.press('r');
+  await expect.poll(() => activeScenes(page)).not.toContain('Result');
+  const replay = await snapshot(page);
+  expect(replay.campaign).toEqual({ mission: 0, attempt: 0 });
+  expect(replay.mapSeed).toBe(first.mapSeed);
+  // Lost again: Enter retries the mission on a new map.
+  await wipeOut(page, 'marine');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Briefing');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Battle');
+  const retry = await snapshot(page);
+  expect(retry.campaign).toEqual({ mission: 0, attempt: 1 });
+  expect(retry.mapSeed).not.toBe(first.mapSeed);
+});
+
+test('winning all six missions completes the campaign', async ({ page }) => {
+  test.setTimeout(120_000);
+  await openGame(page, '?campaign=7');
+  const alienCounts: number[] = [];
+  for (let mission = 0; mission < 6; mission++) {
+    const s = await snapshot(page);
+    expect(s.campaign?.mission).toBe(mission);
+    alienCounts.push(s.units.filter((u) => u.side === 'alien').length);
+    await wipeOut(page, 'alien');
+    await page.keyboard.press('Enter');
+    await waitForScene(page, 'Briefing');
+    if (mission < 5) {
+      await page.keyboard.press('Enter');
+      await waitForScene(page, 'Battle');
+    }
+  }
+  // The gentle ramp: 4, 4, 6, 6, 9, 9 aliens.
+  expect(alienCounts).toEqual([4, 4, 6, 6, 9, 9]);
+  // The briefing now shows the campaign victory; Enter goes back to the title.
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Title');
 });
 
 test('wiping out the aliens shows the win screen; Enter plays again', async ({ page }) => {
