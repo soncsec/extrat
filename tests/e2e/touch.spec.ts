@@ -58,6 +58,9 @@ test('a tap on a tile shows the move; a second tap on it makes the move', async 
   await waitForScene(page, 'Title');
   await tapAt(page, GAME_WIDTH / 2, 172); // START MISSION
   await waitForScene(page, 'Battle');
+  // With nothing selected, the prompt says TAP, not CLICK (T3).
+  await page.keyboard.press('Escape');
+  await expect.poll(async () => (await snapshot(page)).prompt).toBe('Tap a marine to select it');
   const start = await snapshot(page);
   const marine = start.units.find((u) => u.side === 'marine');
   if (!marine) throw new Error('no marine');

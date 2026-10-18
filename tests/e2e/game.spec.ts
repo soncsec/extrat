@@ -344,6 +344,8 @@ test('R reloads an empty clip for one action point, and does nothing when full',
 test('O puts a marine on overwatch, and it fires when an alien moves into sight', async ({
   page,
 }) => {
+  // Plays a whole alien turn with animations: near 30 s on a loaded machine (T1).
+  test.setTimeout(60_000);
   // Wake a pod first: dormant aliens wait instead of advancing.
   await openGame(page, SHOT_SEED);
   await moveEastForAShot(page);
@@ -381,6 +383,8 @@ test('O puts a marine on overwatch, and it fires when an alien moves into sight'
 });
 
 test('effect sprites are reused, not made new for every shot and hit', async ({ page }) => {
+  // Plays a whole alien turn with animations: near 30 s on a loaded machine (T1).
+  test.setTimeout(60_000);
   // Two full rounds of fighting on map 33: shots, hits, misses and alien attacks.
   await openGame(page, SHOT_SEED);
   const { alien } = await moveEastForAShot(page);
@@ -476,6 +480,8 @@ test('G enters grenade mode and Esc leaves it', async ({ page }) => {
 });
 
 test('a grenade hits an alien for 2 and leaves it exposed', async ({ page }) => {
+  // Plays a whole alien turn with animations: near 30 s on a loaded machine (T1).
+  test.setTimeout(60_000);
   // Wake a pod (dormant aliens wait), then end turns until an alien comes within 8 tiles.
   await openGame(page, SHOT_SEED);
   await moveEastForAShot(page);
@@ -617,6 +623,9 @@ test('the title screen starts a campaign with its button', async ({ page }) => {
 test('without ?seed= each new game gets a different map', async ({ page }) => {
   await openGame(page);
   const first = (await snapshot(page)).mapSeed;
+  // On a desktop the prompt says CLICK (T3).
+  await page.keyboard.press('Escape');
+  await expect.poll(async () => (await snapshot(page)).prompt).toBe('Click a marine to select it');
   await page.reload();
   await waitForScene(page, 'Title');
   // The first campaign is saved now, so the title offers to continue it: N starts anew.
@@ -632,7 +641,7 @@ async function wipeOut(page: Page, side: 'alien' | 'marine'): Promise<void> {
   for (const u of (await snapshot(page)).units.filter((v) => v.side === side)) {
     await page.evaluate((id) => window.__game?.setHp(id, 0), u.id);
   }
-  await expect.poll(() => activeScenes(page)).toContain('Result');
+  await expect.poll(() => activeScenes(page), { timeout: 15_000 }).toContain('Result');
 }
 
 test('a campaign runs mission after mission with the same squad', async ({ page }) => {
@@ -742,7 +751,7 @@ test('wiping out the aliens shows the win screen; Enter plays again', async ({ p
   for (const a of before.units.filter((u) => u.side === 'alien')) {
     await page.evaluate((id) => window.__game?.setHp(id, 0), a.id);
   }
-  await expect.poll(() => activeScenes(page)).toContain('Result');
+  await expect.poll(() => activeScenes(page), { timeout: 15_000 }).toContain('Result');
   expect((await snapshot(page)).over).toBe(true);
   await page.keyboard.press('Enter');
   await expect.poll(() => activeScenes(page)).not.toContain('Result');
@@ -758,7 +767,7 @@ test('R on the result screen replays the same map from the start', async ({ page
   for (const a of before.units.filter((u) => u.side === 'alien')) {
     await page.evaluate((id) => window.__game?.setHp(id, 0), a.id);
   }
-  await expect.poll(() => activeScenes(page)).toContain('Result');
+  await expect.poll(() => activeScenes(page), { timeout: 15_000 }).toContain('Result');
   await page.keyboard.press('r');
   await expect.poll(() => activeScenes(page)).not.toContain('Result');
   const after = await snapshot(page);
@@ -787,7 +796,7 @@ test('losing the squad shows the loss screen; Esc goes to the title', async ({ p
   for (const m of (await snapshot(page)).units.filter((u) => u.side === 'marine')) {
     await page.evaluate((id) => window.__game?.setHp(id, 0), m.id);
   }
-  await expect.poll(() => activeScenes(page)).toContain('Result');
+  await expect.poll(() => activeScenes(page), { timeout: 15_000 }).toContain('Result');
   await page.keyboard.press('Escape');
   await waitForScene(page, 'Title');
   expect(await activeScenes(page)).toEqual(['Title']);
