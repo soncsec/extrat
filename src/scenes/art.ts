@@ -131,6 +131,14 @@ export const EFFECTS = {
     count: 8,
     fps: 16,
   },
+  blast: {
+    key: 'fx-blast',
+    url: 'assets/fx/grenade-blast.png',
+    frameWidth: 32,
+    frameHeight: 32,
+    count: 8,
+    fps: 16,
+  },
   hit: {
     key: 'fx-hit',
     url: 'assets/fx/hit.png',

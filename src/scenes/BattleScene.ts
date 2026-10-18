@@ -3,6 +3,7 @@ import {
   ACTION_POINTS,
   ANIMATION,
   DEFAULT_SEED,
+  GRENADE,
   GAME_WIDTH,
   HUD_HEIGHT,
   MAP_COLS,
@@ -14,11 +15,13 @@ import {
   apply,
   canAct,
   canOverwatch,
+  canThrow,
   canReload,
   clipSize,
   createBattle,
   coverAgainst,
   hitChance,
+  inThrowRange,
   livingUnits,
   moveCost,
   moveRange,
@@ -33,6 +36,7 @@ import {
   type ShotBlock,
   type ShotOdds,
   type ShotResult,
+  type ThrowResult,
   type Side,
   type Unit,
   type UnitKind,
@@ -51,7 +55,16 @@ import {
   type AnimName,
   type CharacterSheet,
 } from './art';
-import { drawEye, drawPips, drawReticle, drawShield, flash, floatText, playOnce } from './fx';
+import {
+  drawExposed,
+  drawEye,
+  drawPips,
+  drawReticle,
+  drawShield,
+  flash,
+  floatText,
+  playOnce,
+} from './fx';
 import type { BattleResult } from './ResultScene';
 import { initialSeed } from './seed';
 
@@ -75,6 +88,8 @@ export interface GameSnapshot {
     ap: number;
     ammo: number | null;
     overwatch: boolean;
+    grenades: number;
+    exposed: boolean;
     hidden: boolean;
   }[];
   selected: string | null;
@@ -91,6 +106,8 @@ export interface GameSnapshot {
   lastShot: BattleState['lastShot'];
   turn: Side;
   round: number;
+  /** What a map click does now: move (or aim), or throw a grenade. */
+  mode: 'move' | 'grenade';
   /** True once one side has been wiped out. */
   over: boolean;
 }
@@ -127,6 +144,8 @@ interface UnitView {
   moving: boolean;
   /** Overwatch as drawn: it ends when the reaction shot is shown, not when it's rolled. */
   watching: boolean;
+  /** Exposure as drawn: it starts when the blast is shown. */
+  exposed: boolean;
 }
 
 export class BattleScene extends Phaser.Scene {
@@ -155,6 +174,9 @@ export class BattleScene extends Phaser.Scene {
   private endTurnButton!: Phaser.GameObjects.Text;
   private reloadButton!: Phaser.GameObjects.Text;
   private overwatchButton!: Phaser.GameObjects.Text;
+  private grenadeButton!: Phaser.GameObjects.Text;
+  /** What a click on the map does for the selected marine. */
+  private mode: 'move' | 'grenade' = 'move';
   /** Set when one side has been wiped out; only a new map can follow. */
   private over = false;
 
@@ -213,6 +235,7 @@ export class BattleScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-E', () => void this.endTurn());
     this.input.keyboard?.on('keydown-R', () => this.reload());
     this.input.keyboard?.on('keydown-O', () => this.overwatch());
+    this.input.keyboard?.on('keydown-G', () => this.toggleGrenade());
     this.input.keyboard?.on('keydown-N', () => {
       // Not in the middle of an animation, the alien turn, or the result screen.
       if (!this.busy) this.startBattle(this.seeds.int(1, 999_999));
@@ -237,6 +260,10 @@ export class BattleScene extends Phaser.Scene {
       const top = v.sprite.y - SHEETS[u.kind].height - 5;
       const color = u.side === 'marine' ? 0x8bf06a : 0xff6a5a;
       drawPips(this.pips, v.sprite.x, top, v.shownHp, u.maxHp, color);
+      if (v.exposed) {
+        const width = u.maxHp * 4 - 1;
+        drawExposed(this.pips, Math.round(v.sprite.x + width / 2) + 2, top - 3);
+      }
       if (v.watching) {
         const width = u.maxHp * 4 - 1;
         drawEye(this.pips, Math.round(v.sprite.x - width / 2) - 10, top - 2);
@@ -250,7 +277,7 @@ export class BattleScene extends Phaser.Scene {
               : best,
           null,
         );
-        const cover = enemy ? coverAgainst(this.state.map, u, enemy) : null;
+        const cover = enemy && !v.exposed ? coverAgainst(this.state.map, u, enemy) : null;
         const width = u.maxHp * 4 - 1;
         if (cover)
           drawShield(this.pips, Math.round(v.sprite.x + width / 2) + 2, top - 3, cover === 'full');
@@ -273,6 +300,8 @@ export class BattleScene extends Phaser.Scene {
         ap: u.ap,
         ammo: u.ammo,
         overwatch: u.overwatch,
+        grenades: u.grenades,
+        exposed: u.exposed,
         hidden: this.views.get(u.id)?.hidden ?? false,
       })),
       selected,
@@ -287,6 +316,7 @@ export class BattleScene extends Phaser.Scene {
       aimOdds: this.aimTarget && selected ? shotOdds(this.state, selected, this.aimTarget) : null,
       lastShot: this.state.lastShot,
       turn: this.state.turn,
+      mode: this.mode,
       round: this.state.round,
       over: this.over,
     };
@@ -315,9 +345,14 @@ export class BattleScene extends Phaser.Scene {
     const x = Math.floor(px / TILE);
     const y = Math.floor(py / TILE);
     if (y >= MAP_ROWS || this.busy) return;
+    if (this.mode === 'grenade') {
+      this.throwAt({ x, y });
+      return;
+    }
     const unit = this.unitUnderPointer(x, y);
     if (unit?.side === 'marine') {
       this.aimTarget = null;
+      this.mode = 'move';
       this.dispatch({ type: 'select', unitId: unit.id });
       this.drawSelection();
       return;
@@ -353,6 +388,12 @@ export class BattleScene extends Phaser.Scene {
 
   private onEscape(): void {
     if (this.busy) return;
+    if (this.mode === 'grenade') {
+      this.mode = 'move';
+      this.pathLayer.clear();
+      this.drawSelection();
+      return;
+    }
     if (this.aimTarget) this.aimTarget = null;
     else this.dispatch({ type: 'deselect' });
     this.drawSelection();
@@ -372,6 +413,10 @@ export class BattleScene extends Phaser.Scene {
     if (!id || this.busy) return;
     const x = Math.floor(px / TILE);
     const y = Math.floor(py / TILE);
+    if (this.mode === 'grenade') {
+      this.drawBlast(id, { x, y });
+      return;
+    }
     if (!this.aimTarget) {
       const alien = this.unitUnderPointer(x, y);
       this.drawAim(alien?.side === 'alien' ? alien.id : null);
@@ -420,6 +465,92 @@ export class BattleScene extends Phaser.Scene {
     this.aimTarget = null;
     this.drawAim(null);
     void this.run(() => this.playShot(shot));
+  }
+
+  /** Switches the selected marine between moving and aiming a grenade. */
+  private toggleGrenade(): void {
+    const id = this.state.selected;
+    if (this.busy || !id) return;
+    if (this.mode === 'grenade') this.mode = 'move';
+    else if (canThrow(this.state, id)) this.mode = 'grenade';
+    this.aimTarget = null;
+    this.drawAim(null);
+    this.pathLayer.clear();
+    this.coverLayer.clear();
+    this.drawSelection();
+  }
+
+  /** The 3 x 3 blast preview under the pointer, if the tile is in throwing range. */
+  private drawBlast(unitId: string, at: Point): void {
+    const g = this.pathLayer.clear();
+    if (!inThrowRange(this.state, unitId, at)) return;
+    for (let y = at.y - 2; y <= at.y + 2; y++) {
+      for (let x = at.x - 2; x <= at.x + 2; x++) {
+        if (Math.hypot(x - at.x, y - at.y) > GRENADE.radius) continue;
+        g.fillStyle(0xff5a4a, 0.35).fillRect(x * TILE + 1, y * TILE + 1, TILE - 2, TILE - 2);
+      }
+    }
+    g.lineStyle(1, 0xffd23a, 1).strokeRect(
+      at.x * TILE + 1.5,
+      at.y * TILE + 1.5,
+      TILE - 3,
+      TILE - 3,
+    );
+  }
+
+  /** Throws the selected marine's grenade at a tile. */
+  private throwAt(at: Point): void {
+    const id = this.state.selected;
+    if (!id) return;
+    const next = apply(this.state, { type: 'throw', unitId: id, at });
+    const thrown = next.lastThrow;
+    if (next === this.state || !thrown) return;
+    this.state = next;
+    this.mode = 'move';
+    void this.run(() => this.playThrow(thrown));
+  }
+
+  /** The grenade arcs to the tile, explodes, and everyone caught takes damage. */
+  private async playThrow(thrown: ThrowResult): Promise<void> {
+    const thrower = unitById(this.state, thrown.unitId);
+    const tv = this.views.get(thrown.unitId);
+    if (!thrower || !tv) return;
+    this.face(tv, thrower.facing);
+    const sheet = SHEETS[thrower.kind];
+    const from = { x: tv.sprite.x + thrower.facing * 6, y: tv.sprite.y - sheet.muzzle.y - 4 };
+    const to = { x: thrown.at.x * TILE + TILE / 2, y: thrown.at.y * TILE + TILE / 2 };
+    const peak = 24 + Math.hypot(to.x - from.x, to.y - from.y) / 6;
+    const ball = this.add.graphics().setDepth(DEPTH.fx);
+    ball.fillStyle(0x11141b, 1).fillRect(-2, -2, 4, 4);
+    ball.fillStyle(0x6f8f3a, 1).fillRect(-1, -1, 2, 2);
+    ball.setPosition(from.x, from.y);
+    const flight = { t: 0 };
+    await new Promise<void>((resolve) =>
+      this.tweens.add({
+        targets: flight,
+        t: 1,
+        duration: 450,
+        onUpdate: () => {
+          const t = flight.t;
+          ball.setPosition(
+            from.x + (to.x - from.x) * t,
+            from.y + (to.y - from.y) * t - Math.sin(Math.PI * t) * peak,
+          );
+        },
+        onComplete: () => resolve(),
+      }),
+    );
+    ball.destroy();
+    playOnce(this, EFFECTS.blast.key, to.x, to.y, DEPTH.fx, 2);
+    this.cameras.main.shake(160, 0.006);
+    for (const hit of thrown.hits) {
+      const unit = unitById(this.state, hit.unitId);
+      const view = this.views.get(hit.unitId);
+      if (!unit || !view) continue;
+      this.showDamage(view, unit, hit.damage, hit.hpAfter, hit.killed, false);
+      view.exposed = !hit.killed;
+    }
+    await new Promise((resolve) => this.time.delayedCall(700, resolve));
   }
 
   /** Puts the selected marine on overwatch: uses its remaining action points. */
@@ -502,6 +633,7 @@ export class BattleScene extends Phaser.Scene {
   /** Ends the marines' turn, plays every alien's actions, then starts the next round. */
   private async endTurn(): Promise<void> {
     if (this.busy || this.state.turn !== 'marine') return;
+    this.mode = 'move';
     this.aimTarget = null;
     this.drawAim(null);
     this.state = apply(this.state, { type: 'endTurn' });
@@ -717,17 +849,31 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private showImpact(shot: ShotResult, tv: UnitView, target: Unit): void {
+    if (shot.hit) {
+      playOnce(this, EFFECTS.hit.key, tv.sprite.x, tv.sprite.y - 14, DEPTH.fx);
+      this.showDamage(tv, target, shot.damage, shot.hpAfter, shot.killed, shot.crit);
+      return;
+    }
     const headY = tv.sprite.y - SHEETS[target.kind].height;
     tv.shownHp = shot.hpAfter;
-    if (!shot.hit) {
-      floatText(this, tv.sprite.x, headY - 6, 'MISS', '#dfe4ec', DEPTH.fx);
-    } else {
-      playOnce(this, EFFECTS.hit.key, tv.sprite.x, tv.sprite.y - 14, DEPTH.fx);
-      flash(this, tv.sprite);
-      const text = shot.crit ? `CRIT -${shot.damage}` : `-${shot.damage}`;
-      floatText(this, tv.sprite.x, headY - 6, text, shot.crit ? '#ffd23a' : '#ff6a5a', DEPTH.fx);
-    }
-    if (!shot.killed) return;
+    floatText(this, tv.sprite.x, headY - 6, 'MISS', '#dfe4ec', DEPTH.fx);
+  }
+
+  /** Damage landing on a unit: flash, number, health pips, and death if it was fatal. */
+  private showDamage(
+    tv: UnitView,
+    target: Unit,
+    damage: number,
+    hpAfter: number,
+    killed: boolean,
+    crit: boolean,
+  ): void {
+    const headY = tv.sprite.y - SHEETS[target.kind].height;
+    tv.shownHp = hpAfter;
+    flash(this, tv.sprite);
+    const text = crit ? `CRIT -${damage}` : `-${damage}`;
+    floatText(this, tv.sprite.x, headY - 6, text, crit ? '#ffd23a' : '#ff6a5a', DEPTH.fx);
+    if (!killed) return;
     tv.ghost.setVisible(false);
     if (target.kind === 'marine') {
       this.playAnim(tv, target.kind, 'die', target.facing);
@@ -798,6 +944,7 @@ export class BattleScene extends Phaser.Scene {
     if (odds.range !== 0) lines.push(line('DISTANCE', signed(odds.range)));
     if (odds.cover)
       lines.push(line(`${odds.cover.toUpperCase()} COVER`, signed(-odds.coverPenalty)));
+    if (odds.exposed) lines.push(line('EXPOSED', 'NO CVR'));
     lines.push('-'.repeat(17), line('HIT', `${odds.hit}%`));
     lines.push(line(odds.flanked ? 'CRIT (FLANK)' : 'CRIT', `${odds.crit}%`));
     this.oddsPanel.setText(lines.join('\n'));
@@ -816,6 +963,7 @@ export class BattleScene extends Phaser.Scene {
     this.props = [];
     this.views.clear();
     this.aimTarget = null;
+    this.mode = 'move';
     this.busy = false;
     this.over = false;
 
@@ -877,6 +1025,7 @@ export class BattleScene extends Phaser.Scene {
       shownHp: u.hp,
       moving: false,
       watching: u.overwatch,
+      exposed: u.exposed,
     };
   }
 
@@ -909,10 +1058,23 @@ export class BattleScene extends Phaser.Scene {
 
   private drawSelection(): void {
     const playerTurn = this.state.turn === 'marine' && !this.busy && !this.over;
+    if (!this.busy) {
+      // Between animations the drawn exposure catches up with the rules (turn changes).
+      for (const u of this.state.units) {
+        const v = this.views.get(u.id);
+        if (v) v.exposed = u.exposed && u.hp > 0;
+      }
+    }
+    const sel0 = this.state.selected;
+    if (this.mode === 'grenade' && (!playerTurn || !sel0 || !canThrow(this.state, sel0))) {
+      this.mode = 'move';
+    }
     this.endTurnButton.setAlpha(playerTurn ? 1 : 0.35);
     const sel = this.state.selected;
     this.reloadButton.setVisible(playerTurn && sel !== null && canReload(this.state, sel));
     this.overwatchButton.setVisible(playerTurn && sel !== null && canOverwatch(this.state, sel));
+    this.grenadeButton.setVisible(playerTurn && sel !== null && canThrow(this.state, sel));
+    this.grenadeButton.setText(this.mode === 'grenade' ? 'CANCEL [G]' : 'GRENADE [G]');
     this.layoutButtons();
     const g = this.marker.clear();
     this.rangeLayer.clear();
@@ -950,6 +1112,19 @@ export class BattleScene extends Phaser.Scene {
       .fillTriangle(cx - 4, top - 5, cx + 4, top - 5, cx, top - 1)
       .fillStyle(0xf2a33a, 1)
       .fillTriangle(cx - 3, top - 5, cx + 3, top - 5, cx, top - 2);
+    if (this.mode === 'grenade') {
+      // Throwing range instead of move range.
+      for (let ty = 0; ty < this.state.map.rows; ty++) {
+        for (let tx = 0; tx < this.state.map.cols; tx++) {
+          if (!inThrowRange(this.state, unit.id, { x: tx, y: ty })) continue;
+          this.rangeLayer
+            .fillStyle(0xf2a33a, 0.12)
+            .fillRect(tx * TILE + 1, ty * TILE + 1, TILE - 2, TILE - 2);
+        }
+      }
+      this.unitText.setText(`PVT ${unit.name.toUpperCase()}  GRENADE: click a tile  Esc: cancel`);
+      return;
+    }
     for (const t of this.rangeTiles(unit.id)) {
       // Blue: a normal move (1 point). Yellow: a dash (both points).
       const [color, alpha] = t.cost === 1 ? [0x4aa8ff, 0.3] : [0xf2c94a, 0.22];
@@ -996,14 +1171,20 @@ export class BattleScene extends Phaser.Scene {
         .on('pointerdown', onClick);
     this.endTurnButton = hudButton('END TURN [E]', true, () => void this.endTurn());
     this.reloadButton = hudButton('RELOAD [R]', false, () => this.reload());
-    this.overwatchButton = hudButton('OVERWATCH [O]', false, () => this.overwatch());
+    this.overwatchButton = hudButton('WATCH [O]', false, () => this.overwatch());
+    this.grenadeButton = hudButton('GRENADE [G]', false, () => this.toggleGrenade());
     this.layoutButtons();
   }
 
   /** Lines up the visible buttons from the right edge of the info bar. */
   private layoutButtons(): void {
     let right = GAME_WIDTH - 6;
-    for (const b of [this.endTurnButton, this.reloadButton, this.overwatchButton]) {
+    for (const b of [
+      this.endTurnButton,
+      this.reloadButton,
+      this.overwatchButton,
+      this.grenadeButton,
+    ]) {
       if (!b.visible) continue;
       b.setX(right);
       right -= b.width + 4;

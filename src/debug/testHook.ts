@@ -15,6 +15,8 @@ export interface TestHook {
   setHp(unitId: string, hp: number): void;
   /** Sets a unit's ammo, to test reloading. */
   setAmmo(unitId: string, ammo: number): void;
+  /** Slows down (or speeds up) the battle's animations, for frame-by-frame visual checks. */
+  setSpeed(scale: number): void;
   snapshot(): GameSnapshot | null;
 }
 
@@ -29,6 +31,12 @@ export function installTestHook(game: Phaser.Game): void {
     scene: () => game.scene.getScenes(true)[0]?.scene.key ?? null,
     scenes: () => game.scene.getScenes(true).map((s) => s.scene.key),
     setHp: (unitId, hp) => (game.scene.getScene('Battle') as BattleScene).debugSetHp(unitId, hp),
+    setSpeed: (scale) => {
+      const battle = game.scene.getScene('Battle');
+      battle.tweens.timeScale = scale;
+      battle.time.timeScale = scale;
+      game.anims.globalTimeScale = scale;
+    },
     setAmmo: (unitId, ammo) =>
       (game.scene.getScene('Battle') as BattleScene).debugSetAmmo(unitId, ammo),
     snapshot: () => {
