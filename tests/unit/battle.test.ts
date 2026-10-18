@@ -42,7 +42,13 @@ import {
   type Unit,
 } from '../../src/logic/battle';
 import { reachable, type Point } from '../../src/logic/grid';
-import { generateForest, isWalkable, spawnZone, type BattleMap } from '../../src/logic/map';
+import {
+  generateForest,
+  generateMap,
+  isWalkable,
+  spawnZone,
+  type BattleMap,
+} from '../../src/logic/map';
 
 function must<T>(value: T | undefined): T {
   if (value === undefined) throw new Error('missing test fixture');
@@ -70,6 +76,22 @@ function openMap(rows: string[]): BattleMap {
 }
 
 describe('createBattle', () => {
+  it('deploys the squad and both alien groups on 200 town maps', () => {
+    for (let seed = 1; seed <= 200; seed++) {
+      const map = generateMap(seed, MAP_COLS, MAP_ROWS, 'town');
+      const s = createBattle(map, map.seed);
+      expect(
+        s.units.filter((u) => u.side === 'marine'),
+        `seed ${seed}`,
+      ).toHaveLength(SKIRMISH.marines);
+      expect(
+        s.units.filter((u) => u.side === 'alien'),
+        `seed ${seed}`,
+      ).toHaveLength(SKIRMISH.aliens);
+      for (const u of s.units) expect(isWalkable(map, u.x, u.y), `seed ${seed} ${u.id}`).toBe(true);
+    }
+  });
+
   it('puts every alien pod within walking reach of the squad on 1,000 maps', () => {
     for (let seed = 1; seed <= 1000; seed++) {
       const s = battle(seed);

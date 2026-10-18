@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, MAP_ROWS, TILE } from '../config/tuning';
+import type { LandscapeId } from '../logic/landscapes';
 import { pixelButton, pixelText } from './pixelFont';
 
 export interface BattleResult {
@@ -8,6 +9,7 @@ export interface BattleResult {
   aliensKilled: number;
   marinesLost: number;
   mapSeed: number;
+  landscape: LandscapeId;
 }
 
 /** The end-of-battle panel, shown over the battlefield. */
@@ -39,7 +41,9 @@ export class ResultScene extends Phaser.Scene {
       0xdfe4ec,
     );
     // The seed rebuilds this exact map: quote it in a bug report, or open the link.
-    pixelText(this, cx, cy + 18, `Map ${result.mapSeed}   Link: ?seed=${result.mapSeed}`, 0xa3adbd);
+    const where = result.landscape === 'forest' ? '' : `&landscape=${result.landscape}`;
+    const link = `?seed=${result.mapSeed}${where}`;
+    pixelText(this, cx, cy + 18, `Map ${result.mapSeed}   Link: ${link}`, 0xa3adbd);
     pixelButton(this, cx - 52, cy + 44, 'PLAY AGAIN', () => this.leave('play-again'));
     pixelButton(this, cx + 15, cy + 44, 'REPLAY', () => this.leave('replay'), false);
     pixelButton(this, cx + 67, cy + 44, 'TITLE', () => this.toTitle(), false);

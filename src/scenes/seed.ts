@@ -13,3 +13,13 @@ export function initialSeed(search: string = window.location.search): number {
   crypto.getRandomValues(buf);
   return (buf[0] as number) % 1_000_000;
 }
+
+/**
+ * A short word from the URL, such as `?landscape=town`, lower-cased and cut to 32
+ * characters; null if missing. Callers check it against a fixed list before use.
+ */
+export function urlWord(key: string, search: string = window.location.search): string | null {
+  const params = [...new URLSearchParams(search)];
+  const raw = params.find(([k]) => k.toLowerCase() === key)?.[1] ?? null;
+  return raw === null ? null : raw.toLowerCase().slice(0, 32);
+}
