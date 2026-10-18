@@ -34,10 +34,25 @@ export const FOREST = {
   maxAttempts: 50,
 } as const;
 
-/** Squad and enemy sizes for the M1 skirmish. */
+/**
+ * Alien groups ("pods"): they wait, out of sight, until a marine spots one of them,
+ * then the whole pod scrambles to cover (M3.2).
+ */
+export const PODS = {
+  count: 2,
+  size: 2,
+  /** Pods start somewhere from this column eastwards. */
+  westmostColumn: 12,
+  /** Pod leaders start at least this many steps apart. */
+  minApart: 6,
+  /** Pod members start within this many steps of their leader. */
+  spread: 2,
+} as const;
+
+/** Squad and enemy sizes for the skirmish. */
 export const SKIRMISH = {
   marines: 4,
-  aliens: 2,
+  aliens: PODS.count * PODS.size,
   /** Units on the same side start at least this many steps apart. */
   minSpacing: 3,
 } as const;

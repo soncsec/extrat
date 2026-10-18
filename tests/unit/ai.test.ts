@@ -36,7 +36,11 @@ function scene(rows: string[], marines: Partial<Unit>[], alien: Partial<Unit>): 
     ...base,
     map: mapOf(rows),
     turn: 'alien',
-    units: [...marines.map((p, i) => ({ ...m, id: `m${i}`, ...p })), { ...a, id: 'a', ...alien }],
+    // These tests are about an alien that has been spotted (awake), unless they say otherwise.
+    units: [
+      ...marines.map((p, i) => ({ ...m, id: `m${i}`, ...p })),
+      { ...a, id: 'a', dormant: false, ...alien },
+    ],
   };
 }
 
@@ -159,5 +163,14 @@ describe('planAlienAction and flanking', () => {
     const plan = planAlienAction(s, 'a');
     if (plan?.type !== 'move') throw new Error(`expected a move, got ${JSON.stringify(plan)}`);
     expect(plan.to.y).toBeLessThanOrEqual(2);
+  });
+});
+
+describe('planAlienAction and dormant pods', () => {
+  it('does nothing while its pod is dormant, even with a marine in range', () => {
+    const s = scene(open, [{ x: 10, y: 2 }], { x: 13, y: 2, dormant: true });
+    expect(planAlienAction(s, 'a')).toBeNull();
+    const awake = scene(open, [{ x: 10, y: 2 }], { x: 13, y: 2 });
+    expect(planAlienAction(awake, 'a')).toMatchObject({ type: 'shoot' });
   });
 });
