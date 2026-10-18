@@ -2,6 +2,7 @@ import {
   ACTION_POINTS,
   GRENADE,
   OVERWATCH,
+  PODS,
   SHOOTING,
   SIGHT,
   SKIRMISH,
@@ -48,6 +49,10 @@ export interface Unit extends Point {
   grenades: number;
   /** Caught by a grenade: no cover bonus until the thrower's side starts its next turn. */
   exposed: boolean;
+  /** The alien group this unit belongs to (null for marines). */
+  pod: number | null;
+  /** A pod member that hasn't been spotted yet: it waits and doesn't act. */
+  dormant: boolean;
 }
 
 export interface BattleState {
@@ -74,6 +79,8 @@ export interface ThrowResult {
   at: Point;
   /** Everyone caught in the blast (friend or foe), in unit order. */
   hits: { unitId: string; damage: number; hpAfter: number; killed: boolean }[];
+  /** A blast wakes a hidden pod: its survivors scramble to cover. */
+  scampers: Scamper[];
 }
 
 export interface MoveResult {
@@ -82,6 +89,16 @@ export interface MoveResult {
   path: Point[];
   /** Reaction shots, each fired when the mover reached path[step]. */
   reactions: { step: number; shot: ShotResult }[];
+  /** Aliens the squad spotted on the last tile walked; spotting stops the move there. */
+  spotted: string[];
+  /** Woken aliens' free scramble to cover, in order. */
+  scampers: Scamper[];
+}
+
+/** A woken alien's free move to cover. */
+export interface Scamper {
+  unitId: string;
+  path: Point[];
 }
 
 export interface ShotResult {
@@ -131,8 +148,10 @@ export function createBattle(map: BattleMap, seed: number): BattleState {
     overwatch: false,
     grenades: GRENADE.perMarine,
     exposed: false,
+    pod: null,
+    dormant: false,
   }));
-  const aliens = deploy(map, rng, 'east', SKIRMISH.aliens).map((p, i): Unit => ({
+  const aliens = deployPods(map, rng, marines).map(({ pod, ...p }, i): Unit => ({
     ...p,
     id: `a${i + 1}`,
     side: 'alien',
@@ -147,6 +166,8 @@ export function createBattle(map: BattleMap, seed: number): BattleState {
     overwatch: false,
     grenades: 0,
     exposed: false,
+    pod,
+    dormant: true,
   }));
   return {
     map,
@@ -410,7 +431,20 @@ function throwGrenade(state: BattleState, unitId: string, at: Point): BattleStat
   // Throwing uses all remaining action points, like a shot.
   const after = unitById(next, unitId) as Unit;
   next = replaceUnit(next, { ...after, grenades: after.grenades - 1, ap: 0, facing });
-  return { ...next, lastThrow: { unitId, at: { x: at.x, y: at.y }, hits } };
+  // A blast in the fog wakes the pod it lands on.
+  const pods = [
+    ...new Set(
+      blastTargets(state, at)
+        .filter((u) => u.dormant && u.pod !== null)
+        .map((u) => u.pod as number),
+    ),
+  ];
+  const woken = pods.length > 0 ? wakePods(next, pods) : { state: next, scampers: [] };
+  next = woken.state;
+  return {
+    ...next,
+    lastThrow: { unitId, at: { x: at.x, y: at.y }, hits, scampers: woken.scampers },
+  };
 }
 
 /** True if the unit can go on overwatch now: its turn, an action point, and ammo. */
@@ -483,19 +517,23 @@ function move(state: BattleState, unitId: string, to: Point): BattleState {
   if (!unit || unit.side !== state.turn) return state;
   const path = pathFor(state, unit.id, to);
   if (!path) return state;
-  const ap = unit.ap - moveCost(unit, path.length);
 
   let next = state;
   let facing = unit.facing;
   let prev: Point = unit;
   const walked: Point[] = [];
   const reactions: MoveResult['reactions'] = [];
+  let spotted: string[] = [];
+  let scampers: Scamper[] = [];
   for (const [step, p] of path.entries()) {
+    // The path was planned around units the mover's side can see. A hidden one in the
+    // way stops the move just before it.
+    if (unitAt(next, p.x, p.y)) break;
     // Face the way the last sideways step went; straight up or down keeps the old facing.
     if (p.x !== prev.x) facing = p.x > prev.x ? 1 : -1;
     prev = p;
     walked.push(p);
-    next = replaceUnit(next, { ...(unitById(next, unitId) as Unit), x: p.x, y: p.y, facing, ap });
+    next = replaceUnit(next, { ...(unitById(next, unitId) as Unit), x: p.x, y: p.y, facing });
     for (const watcher of next.units) {
       const odds = reactionOdds(next, watcher.id, unitId);
       if (!odds) continue;
@@ -508,8 +546,85 @@ function move(state: BattleState, unitId: string, to: Point): BattleState {
       if (fired.shot.killed) break;
     }
     if ((unitById(next, unitId) as Unit).hp <= 0) break;
+    // A marine who spots a hidden pod stops here, and the pod scrambles to cover.
+    if (unit.side === 'marine') {
+      const pods = spottedPods(next);
+      if (pods.length > 0) {
+        spotted = next.units.filter((u) => u.pod !== null && pods.includes(u.pod)).map((u) => u.id);
+        const woken = wakePods(next, pods);
+        next = woken.state;
+        scampers = woken.scampers;
+        break;
+      }
+    }
   }
-  return { ...next, lastMove: { unitId, path: walked, reactions } };
+  // The move costs what was actually walked: a dash cut short by a sighting may cost one.
+  const after = unitById(next, unitId) as Unit;
+  const ap = walked.length === 0 ? after.ap : unit.ap - moveCost(unit, walked.length);
+  next = replaceUnit(next, { ...after, ap });
+  return { ...next, lastMove: { unitId, path: walked, reactions, spotted, scampers } };
+}
+
+/** Pods with a dormant, living member the squad can now see. */
+function spottedPods(state: BattleState): number[] {
+  const pods = new Set<number>();
+  for (const u of state.units) {
+    if (u.dormant && u.hp > 0 && u.pod !== null && isVisibleTo(state, 'marine', u)) pods.add(u.pod);
+  }
+  return [...pods];
+}
+
+/**
+ * Wakes pods: every member is no longer dormant, and each living one makes a free
+ * move (no action points, no overwatch reactions) to the best cover nearby, facing
+ * the nearest marine. The aliens' "scamper" in XCOM.
+ */
+function wakePods(state: BattleState, pods: number[]): { state: BattleState; scampers: Scamper[] } {
+  let next: BattleState = {
+    ...state,
+    units: state.units.map((u) =>
+      u.pod !== null && pods.includes(u.pod) ? { ...u, dormant: false } : u,
+    ),
+  };
+  const scampers: Scamper[] = [];
+  for (const alien of next.units) {
+    if (alien.pod === null || !pods.includes(alien.pod) || alien.hp <= 0) continue;
+    const me = unitById(next, alien.id) as Unit;
+    const marines = livingUnits(next, 'marine');
+    if (marines.length === 0) break;
+    const nearestTo = (p: Point): Unit =>
+      marines.reduce((a, b) =>
+        Math.hypot(b.x - p.x, b.y - p.y) < Math.hypot(a.x - p.x, a.y - p.y) ? b : a,
+      );
+    const COVER = { full: 20, half: 10 } as const;
+    const score = (p: Point, steps: number): number => {
+      const cover = coverAgainst(next.map, p, nearestTo(p));
+      return (cover ? COVER[cover] : 0) - steps * 0.1;
+    };
+    const cols = next.map.cols;
+    let best: Point = me;
+    let bestScore = score(me, 0);
+    const range = reachable(next.map.cols, next.map.rows, passableFor(next, 'alien'), me, me.move);
+    for (const [key, steps] of range) {
+      const p = { x: key % cols, y: Math.floor(key / cols) };
+      const sc = score(p, steps);
+      if (sc > bestScore) {
+        bestScore = sc;
+        best = p;
+      }
+    }
+    const target = nearestTo(best);
+    const facing: 1 | -1 = target.x === best.x ? me.facing : target.x > best.x ? 1 : -1;
+    if (best.x === me.x && best.y === me.y) {
+      next = replaceUnit(next, { ...me, facing });
+      continue;
+    }
+    const path = findPath(next.map.cols, next.map.rows, passableFor(next, 'alien'), me, best);
+    if (!path) continue;
+    next = replaceUnit(next, { ...me, x: best.x, y: best.y, facing });
+    scampers.push({ unitId: me.id, path });
+  }
+  return { state: next, scampers };
 }
 
 /** Tiles a unit could move to with one move action, keyed by `y * cols + x`, with step counts. */
@@ -517,7 +632,13 @@ export function moveRange(state: BattleState, unitId: string): Map<number, numbe
   const unit = unitById(state, unitId);
   if (!unit || unit.hp <= 0 || unit.ap <= 0) return new Map();
   const steps = maxSteps(unit);
-  const range = reachable(state.map.cols, state.map.rows, passableFor(state), unit, steps);
+  const range = reachable(
+    state.map.cols,
+    state.map.rows,
+    passableFor(state, unit.side),
+    unit,
+    steps,
+  );
   range.delete(unit.y * state.map.cols + unit.x);
   return range;
 }
@@ -540,12 +661,25 @@ export function pathFor(state: BattleState, unitId: string, to: Point): Point[] 
   const unit = unitById(state, unitId);
   if (!unit || unit.hp <= 0 || unit.ap <= 0) return null;
   const { cols, rows } = state.map;
-  return findPath(cols, rows, passableFor(state), unit, to, maxSteps(unit));
+  return findPath(cols, rows, passableFor(state, unit.side), unit, to, maxSteps(unit));
 }
 
 /** Units block movement (living ones only); so do props. */
-function passableFor(state: BattleState): (x: number, y: number) => boolean {
-  return (x, y) => isWalkable(state.map, x, y) && unitAt(state, x, y) === undefined;
+/**
+ * What blocks a move for `side`: props, and living units, except that marines plan
+ * around only the aliens they can see (a hidden one stops the move when reached).
+ * Aliens still know where every marine is.
+ */
+function passableFor(state: BattleState, side: Side): (x: number, y: number) => boolean {
+  const cols = state.map.cols;
+  const blocked = new Set(
+    state.units
+      .filter(
+        (u) => u.hp > 0 && (side === 'alien' || u.side === side || isVisibleTo(state, side, u)),
+      )
+      .map((u) => u.y * cols + u.x),
+  );
+  return (x, y) => isWalkable(state.map, x, y) && !blocked.has(y * cols + x);
 }
 
 function replaceUnit(state: BattleState, unit: Unit): BattleState {
@@ -644,6 +778,55 @@ function deploy(map: BattleMap, rng: Rng, zone: 'west' | 'east', count: number):
   }
   if (chosen.length < count) throw new Error(`only ${chosen.length} spawn tiles in the ${zone}`);
   return chosen;
+}
+
+/**
+ * Places the alien pods somewhere in the east of the map, out of the squad's sight:
+ * leaders at least PODS.minApart steps apart, members within PODS.spread of their
+ * leader. Falls back to closer spacing (or into sight) only if the map is crowded.
+ */
+function deployPods(
+  map: BattleMap,
+  rng: Rng,
+  marines: readonly Point[],
+): (Point & { pod: number })[] {
+  const [eastStart, eastEdge] = spawnZone(map.cols, 'east');
+  // On small maps (tests) the east spawn zone may start west of westmostColumn.
+  const westmost = Math.min(PODS.westmostColumn, eastStart);
+  const seen = tilesSeenFrom(map, marines);
+  const free: Point[] = [];
+  for (let y = 0; y < map.rows; y++) {
+    for (let x = westmost; x <= eastEdge; x++) if (isWalkable(map, x, y)) free.push({ x, y });
+  }
+  const order = free.map((p) => ({ p, r: rng.next() })).sort((a, b) => a.r - b.r);
+  const dist = (a: Point, b: Point): number => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+  const placed: (Point & { pod: number })[] = [];
+  const taken = (p: Point): boolean => placed.some((q) => q.x === p.x && q.y === p.y);
+  for (const hideOnly of [true, false]) {
+    for (const apart of [PODS.minApart, 1]) {
+      for (let pod = placed.length / PODS.size; pod < PODS.count; pod++) {
+        const leader = order.find(
+          ({ p }) =>
+            !taken(p) &&
+            (!hideOnly || !seen.has(p.y * map.cols + p.x)) &&
+            placed.every((q) => q.pod === pod || dist(p, q) >= apart),
+        );
+        if (!leader) break;
+        const members = [leader.p];
+        for (const { p } of order) {
+          if (members.length === PODS.size) break;
+          if (taken(p) || members.some((m) => m.x === p.x && m.y === p.y)) continue;
+          if (dist(p, leader.p) > PODS.spread) continue;
+          if (hideOnly && seen.has(p.y * map.cols + p.x)) continue;
+          members.push(p);
+        }
+        if (members.length < PODS.size) break;
+        placed.push(...members.map((m) => ({ ...m, pod })));
+      }
+      if (placed.length === PODS.count * PODS.size) return placed;
+    }
+  }
+  throw new Error(`only ${placed.length} alien spawn tiles`);
 }
 
 function shuffled<T>(rng: Rng, items: readonly T[]): T[] {

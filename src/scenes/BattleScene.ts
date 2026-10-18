@@ -37,6 +37,7 @@ import {
   type Action,
   type BattleState,
   type MoveResult,
+  type Scamper,
   type ShotBlock,
   type ShotOdds,
   type ShotResult,
@@ -96,6 +97,8 @@ export interface GameSnapshot {
     exposed: boolean;
     /** The squad can see this unit now (aliens in the fog are false). */
     seen: boolean;
+    /** An alien whose pod hasn't been spotted yet. */
+    dormant: boolean;
     hidden: boolean;
   }[];
   selected: string | null;
@@ -336,6 +339,7 @@ export class BattleScene extends Phaser.Scene {
         grenades: u.grenades,
         exposed: u.exposed,
         seen: this.isSeen(u),
+        dormant: u.dormant,
         hidden: this.views.get(u.id)?.hidden ?? false,
       })),
       selected,
@@ -486,7 +490,10 @@ export class BattleScene extends Phaser.Scene {
     const moved = next.lastMove;
     if (next === this.state || !moved) return;
     this.state = next;
-    void this.run(() => this.playMove(moved));
+    void this.run(async () => {
+      await this.playMove(moved);
+      await this.playSighting(moved.spotted, moved.scampers);
+    });
   }
 
   /** Player shot at the aimed target. */
@@ -510,11 +517,19 @@ export class BattleScene extends Phaser.Scene {
     this.vision = eyes ? tilesSeenFrom(this.state.map, eyes) : visibleTiles(this.state, 'marine');
     for (const k of this.vision) this.explored.add(k);
     const { cols, rows } = this.state.map;
+    // A marine's sprite is about two tiles tall and its rifle reaches into the next
+    // tile: fogging those would darken the marine itself.
+    const bodyTiles = new Set<number>();
+    for (const m of livingUnits(this.state, 'marine')) {
+      for (let dy = -1; dy <= 0; dy++) {
+        for (let dx = -1; dx <= 1; dx++) bodyTiles.add((m.y + dy) * cols + (m.x + dx));
+      }
+    }
     const g = this.fogLayer.clear();
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         const k = y * cols + x;
-        if (this.vision.has(k)) continue;
+        if (this.vision.has(k) || bodyTiles.has(k)) continue;
         // Seen before: dimmed. Never seen: darker.
         g.fillStyle(0x05070f, this.explored.has(k) ? 0.45 : 0.72).fillRect(
           x * TILE,
@@ -655,6 +670,7 @@ export class BattleScene extends Phaser.Scene {
       view.exposed = !hit.killed;
     }
     await new Promise((resolve) => this.time.delayedCall(700, resolve));
+    await this.playSighting([], thrown.scampers);
   }
 
   /** Puts the selected marine on overwatch: uses its remaining action points. */
@@ -874,6 +890,33 @@ export class BattleScene extends Phaser.Scene {
   }
 
   /** Runs a unit's sprite along a path. The state must already hold the move. */
+  /**
+   * A pod has been spotted: "ALIENS SPOTTED" and a "!" over each alien, then every
+   * woken alien's free scramble to cover.
+   */
+  private async playSighting(spotted: string[], scampers: Scamper[]): Promise<void> {
+    if (spotted.length > 0) {
+      this.refreshVision();
+      for (const id of spotted) {
+        const unit = unitById(this.state, id);
+        const view = this.views.get(id);
+        if (!unit || !view || !view.sprite.visible) continue;
+        const headY = view.sprite.y - SHEETS[unit.kind].height;
+        floatText(this, view.sprite.x, headY - 6, '!', '#ff5a4a', DEPTH.fx);
+      }
+      await this.banner('ALIENS SPOTTED', '#ff6a5a');
+    }
+    for (const sc of scampers) {
+      await this.playMove({
+        unitId: sc.unitId,
+        path: sc.path,
+        reactions: [],
+        spotted: [],
+        scampers: [],
+      });
+    }
+  }
+
   /**
    * Runs a unit's sprite along a move the state already holds, pausing for each
    * overwatch reaction shot where it happened. A killed mover stops there.
