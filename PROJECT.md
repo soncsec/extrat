@@ -33,11 +33,12 @@ It is built mainly from the Ansimuz "Legacy Collection" pixel-art pack (CC0) and
 | Squad | 4 marines, each recolored so they can be told apart |
 | Turns | Player turn, then alien turn. Each marine has **2 actions** per turn |
 | Combat | Half and full cover depending on the shooter's direction; flanking; hit chance shown before shooting; overwatch; reload; grenades. Exact mechanics and numbers are Claude's to design (owner decision 2026-10-17) and live in `src/config/tuning.ts` |
-| Aliens | Hidden by fog of war until spotted. Groups of aliens wake when they see the squad and **ambush** it. Several alien types (walker, flyer, lizard, snake) with their own abilities; a mech boss in the final mission |
+| Aliens | Hidden by fog of war until spotted. Groups of aliens wake when they see the squad and **ambush** it. Several alien types (walker, flyer, lizard, snake) with their own abilities, introduced one kind per mission with the deadliest (snake) no earlier than mission 4 (owner, 2026-10-18); a mech boss in the final mission |
 | Maps | **Randomly generated** for each mission from a seed. Every map is checked automatically to be playable and fair |
 | Landscapes | One per mission: forest, town, coast, rocky hills, alien crash site, alien ship (final mission) |
 | Campaign | **6 missions**. Mission goal: wipe out the aliens (the final mission ends with the boss). If the whole squad dies, the player retries the mission on a new map |
-| Ranks | Marines earn XP and rise in rank, with small stat increases |
+| Ranks | Marines earn XP for hits and kills and rise in rank, with small stat increases and one tangible perk per promotion (owner, 2026-10-18) |
+| Supplies | Marines can run short of grenades in a mission. A simple resupply between missions (design to be confirmed by the owner). No shop, no weapon upgrades |
 | Fallen marines | **No permadeath.** A marine killed in a mission comes back for the next one at full health, but is **shamed**: an embarrassing nickname, a "Wall of Shame" death count, and mocking debrief lines. Shame is cosmetic only (owner decision 2026-10-17) |
 | Save and resume | The campaign autosaves every turn in the browser (localStorage) and resumes after the browser is closed |
 | Difficulty | One level, beatable by a casual player |
@@ -50,7 +51,7 @@ It is built mainly from the Ansimuz "Legacy Collection" pixel-art pack (CC0) and
 
 ### Out of scope (v1)
 
-- Base building, research, world map, equipment economy
+- Base building, research, world map, weapon upgrades or a shop (a simple resupply between missions is in scope, owner 2026-10-18)
 - Permadeath, multiple difficulty levels
 - Music (planned after v1)
 - Gamepad controls
@@ -90,8 +91,9 @@ It is built mainly from the Ansimuz "Legacy Collection" pixel-art pack (CC0) and
 | 2026-10-17 | Marines gain ranks. No permadeath: fallen marines return at full health and are shamed (cosmetic only) |
 | 2026-10-17 | Whole squad lost: retry the mission on a new map |
 | 2026-10-17 | Campaign save in localStorage (security decision, ADR-E6) |
+| 2026-10-18 | PM review: alien kinds introduced one per mission (walkers first, snakes from mission 4 at the earliest); balance pass now, not in M6; XP per hit; a tangible perk per rank; resupply between missions (design to confirm); alien turn fast-forward; landscapes built in the order ship, crash site, coast, hills, none dropped; help screen is enough onboarding for now |
 | 2026-10-18 | Playable on phones and tablets with touch, as well as desktop. Tap to preview, tap again to act. Whole map on phones (zoom and drag only if needed after play-testing). Landscape only. Built before the Wall of Shame |
 
 ## 8. Open questions
 
-None at the moment.
+- Resupply design (M5.10): a SUPPLY pick in the debrief, or pickups dropped by aliens? Claude recommends the debrief pick.
