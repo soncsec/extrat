@@ -161,13 +161,16 @@ test('a marine can move onto the tile just above a squadmate', async ({ page }) 
     .find((t) => reachable.some((r) => r.x === t.x && r.y === t.y));
   if (!target) throw new Error('no squadmate with a reachable tile above it on this map');
   await clickTile(page, target.x, target.y);
+  // The mover got there: the click wasn't taken as selecting the squadmate. (Which marine
+  // is selected afterwards isn't checked: if the move used both points, the next marine
+  // is selected automatically.)
   await expect
     .poll(async () => {
       const s = await snapshot(page);
       const u = s.units.find((v) => v.id === mover.id);
-      return s.busy ? 'running' : `${s.selected} ${u?.x},${u?.y}`;
+      return s.busy ? 'running' : `${u?.x},${u?.y}`;
     })
-    .toBe(`${mover.id} ${target.x},${target.y}`);
+    .toBe(`${target.x},${target.y}`);
 });
 
 test('clicking a tile out of range does not move the marine', async ({ page }) => {
@@ -374,6 +377,44 @@ test('a grenade hits an alien for 2 and leaves it exposed', async ({ page }) => 
   const hit = (await snapshot(page)).units.find((u) => u.id === pair.a.id);
   expect(hit?.hp).toBe(Math.max(0, pair.a.hp - 2));
   expect(hit?.exposed).toBe((hit?.hp ?? 0) > 0);
+});
+
+test('Tab and 1-4 pick marines; Tab skips marines with no actions left', async ({ page }) => {
+  await openGame(page, '?seed=42');
+  const ids = (await snapshot(page)).units.filter((u) => u.side === 'marine').map((u) => u.id);
+  await page.locator('#game canvas').click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Tab');
+  await expect.poll(async () => (await snapshot(page)).selected).toBe(ids[0]);
+  await page.keyboard.press('Tab');
+  await expect.poll(async () => (await snapshot(page)).selected).toBe(ids[1]);
+  await page.keyboard.press('Shift+Tab');
+  await expect.poll(async () => (await snapshot(page)).selected).toBe(ids[0]);
+  await page.keyboard.press('3');
+  await expect.poll(async () => (await snapshot(page)).selected).toBe(ids[2]);
+  // Marine 3 goes on overwatch (no actions left), so the next marine is picked for us...
+  await page.keyboard.press('o');
+  await expect.poll(async () => (await snapshot(page)).selected).toBe(ids[3]);
+  // ...and Tab from marine 2 skips marine 3.
+  await page.keyboard.press('2');
+  await page.keyboard.press('Tab');
+  await expect.poll(async () => (await snapshot(page)).selected).toBe(ids[3]);
+});
+
+test('F aims at the best target, then cycles; Enter fires', async ({ page }) => {
+  await openGame(page, SHOT_SEED);
+  await moveEastForAShot(page);
+  const { shootable } = await snapshot(page);
+  await page.keyboard.press('f');
+  await expect.poll(async () => (await snapshot(page)).aimTarget).toBe(shootable[0]);
+  await page.keyboard.press('f');
+  // With one target F stays on it; with more it moves to the next.
+  await expect
+    .poll(async () => (await snapshot(page)).aimTarget)
+    .toBe(shootable[1 % shootable.length]);
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(async () => (await snapshot(page)).lastShot?.targetId)
+    .toBe(shootable[1 % shootable.length]);
 });
 
 test('E ends the turn; the aliens advance, then round 2 begins', async ({ page }) => {

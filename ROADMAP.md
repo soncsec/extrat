@@ -8,7 +8,7 @@ The order follows the risks: first prove the core fight is fun and readable with
 |---|---|
 | M0 Setup | Done |
 | M1 Walking skeleton | Built; owner: "looks great so far" (2026-10-17), full play-test notes pending |
-| M2 Tactical core | In progress |
+| M2 Tactical core | Built; waiting for the owner's play-test |
 | M3 Aliens and ambush | Not started |
 | M4 Maps and landscapes | Not started |
 | M5 Campaign | Not started |
@@ -58,7 +58,7 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 - [x] M2.4 Ammo and reload
 - [x] M2.5 Overwatch: shoot the first enemy that moves in sight
 - [x] M2.6 Grenades: area damage, removes cover bonus for one turn
-- [ ] M2.7 Camera pan and zoom levels; keyboard shortcuts (next marine, end turn, actions 1–4, Esc to cancel)
+- [x] M2.7 Keyboard shortcuts: Tab / Shift+Tab and 1–4 pick marines, F cycles targets, Enter fires, plus R, O, G, E, Esc; the next ready marine is selected automatically. Camera pan and zoom dropped (owner, 2026-10-17): the whole map fits on screen; revisit if M4 maps grow
 
 **Acceptance criteria:** the owner sees cover and flanking change the hit chance in play; each mechanic has unit tests with fixed seeds; CI green.
 

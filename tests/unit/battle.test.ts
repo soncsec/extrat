@@ -25,10 +25,12 @@ import {
   livingUnits,
   moveCost,
   moveRange,
+  nextReadyMarine,
   pathFor,
   reactionOdds,
   shotBlock,
   shotOdds,
+  shootableTargets,
   unitAt,
   unitById,
   type BattleState,
@@ -865,5 +867,48 @@ describe('grenades', () => {
     const next = apply(walled, { type: 'throw', unitId: 'm', at: { x: 8, y: 3 } });
     expect(next.lastThrow?.hits.length).toBeGreaterThan(0);
     expect(blastTargets(walled, { x: 0, y: 0 })).toEqual([]);
+  });
+});
+
+describe('shortcut helpers', () => {
+  it('cycles to the next marine with action points, wrapping round and skipping the rest', () => {
+    const s = battle(3);
+    const ids = s.units.filter((u) => u.side === 'marine').map((u) => u.id);
+    const [m1, m2, m3, m4] = ids as [string, string, string, string];
+    expect(nextReadyMarine(s, null)).toBe(m1);
+    expect(nextReadyMarine(s, null, -1)).toBe(m4);
+    expect(nextReadyMarine(s, m1)).toBe(m2);
+    expect(nextReadyMarine(s, m4)).toBe(m1);
+    expect(nextReadyMarine(s, m1, -1)).toBe(m4);
+    const tired = {
+      ...s,
+      units: s.units.map((u) =>
+        u.id === m2 ? { ...u, ap: 0 } : u.id === m3 ? { ...u, hp: 0 } : u,
+      ),
+    };
+    expect(nextReadyMarine(tired, m1)).toBe(m4);
+    const onlyMe = { ...s, units: s.units.map((u) => (u.id === m1 ? u : { ...u, ap: 0 })) };
+    expect(nextReadyMarine(onlyMe, m1)).toBe(m1);
+    const nobody = { ...s, units: s.units.map((u) => ({ ...u, ap: 0 })) };
+    expect(nextReadyMarine(nobody, m1)).toBeNull();
+  });
+
+  it('lists shootable enemies, best chance first', () => {
+    // m at (0,2); a1 at 9 tiles (distance penalty), a2 2 tiles away, a3 behind the pine at (5,2).
+    const s = createBattle(openMap(['.'.repeat(16), '.'.repeat(16), '.....#..........']), 1);
+    const m = must(s.units.find((u) => u.side === 'marine'));
+    const a = must(s.units.find((u) => u.side === 'alien'));
+    const state: BattleState = {
+      ...s,
+      map: openMap(['.'.repeat(16), '.'.repeat(16), '.....#..........']),
+      units: [
+        { ...m, id: 'm', x: 0, y: 2 },
+        { ...a, id: 'a1', x: 9, y: 0 },
+        { ...a, id: 'a2', x: 0, y: 0 },
+        { ...a, id: 'a3', x: 8, y: 2 },
+      ],
+    };
+    expect(shootableTargets(state, 'm')).toEqual(['a2', 'a1']);
+    expect(shootableTargets(state, 'nobody')).toEqual([]);
   });
 });
