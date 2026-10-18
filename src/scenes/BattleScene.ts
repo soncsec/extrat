@@ -145,12 +145,25 @@ const DEPTH = {
   range: 2,
   marker: 3,
   path: 4,
+  // Fog shades the ground and markers; standing pictures are shaded by tint (see refreshVision).
+  fog: 9,
   standing: 10,
-  fog: 800,
   ghost: 900,
   overlay: 950,
   fx: 960,
   hud: 1000,
+} as const;
+
+/**
+ * Fog of war. Tiles out of sight get a dark layer (more opaque if never seen); props
+ * out of sight get the matching tint, which multiplies their colours by about 1 - alpha.
+ */
+const FOG = {
+  color: 0x05070f,
+  explored: 0.45,
+  unseen: 0.72,
+  exploredTint: 0x8c8c8c,
+  unseenTint: 0x474747,
 } as const;
 
 /** Each kind's main sheet: its idle pose, height and muzzle. */
@@ -198,6 +211,8 @@ export class BattleScene extends Phaser.Scene {
   private state!: BattleState;
   private mapObjects: Phaser.GameObjects.GameObject[] = [];
   private props: Phaser.GameObjects.Image[] = [];
+  /** Each prop's footprint tiles, in the same order as `props`. */
+  private propTiles: number[][] = [];
   private views = new Map<string, UnitView>();
   private marker!: Phaser.GameObjects.Graphics;
   private chevron!: Phaser.GameObjects.Graphics;
@@ -579,21 +594,15 @@ export class BattleScene extends Phaser.Scene {
     this.vision = eyes ? tilesSeenFrom(this.state.map, eyes) : visibleTiles(this.state, 'marine');
     for (const k of this.vision) this.explored.add(k);
     const { cols, rows } = this.state.map;
-    // A marine's sprite is about two tiles tall and its rifle reaches into the next
-    // tile: fogging those would darken the marine itself.
-    const bodyTiles = new Set<number>();
-    for (const m of livingUnits(this.state, 'marine')) {
-      for (let dy = -1; dy <= 0; dy++) {
-        for (let dx = -1; dx <= 1; dx++) bodyTiles.add((m.y + dy) * cols + (m.x + dx));
-      }
-    }
+    // The fog lies on the ground, under everything standing, so a tall picture (a roof,
+    // a treetop) never gets a fogged square from a tile it hangs over. Seen before:
+    // dimmed. Never seen: darker.
     const g = this.fogLayer.clear();
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         const k = y * cols + x;
-        if (this.vision.has(k) || bodyTiles.has(k)) continue;
-        // Seen before: dimmed. Never seen: darker.
-        g.fillStyle(0x05070f, this.explored.has(k) ? 0.45 : 0.72).fillRect(
+        if (this.vision.has(k)) continue;
+        g.fillStyle(FOG.color, this.explored.has(k) ? FOG.explored : FOG.unseen).fillRect(
           x * TILE,
           y * TILE,
           TILE,
@@ -601,6 +610,12 @@ export class BattleScene extends Phaser.Scene {
         );
       }
     }
+    // Props are shaded whole, like the best-seen tile of their footprint.
+    this.props.forEach((img, i) => {
+      const tiles = this.propTiles[i] ?? [];
+      if (tiles.some((k) => this.vision.has(k))) img.clearTint();
+      else img.setTint(tiles.some((k) => this.explored.has(k)) ? FOG.exploredTint : FOG.unseenTint);
+    });
     this.updateAlienVisibility();
   }
 
@@ -1380,6 +1395,7 @@ export class BattleScene extends Phaser.Scene {
     }
     this.mapObjects = [];
     this.props = [];
+    this.propTiles = [];
     this.views.clear();
     this.aimTarget = null;
     this.mode = 'move';
@@ -1436,6 +1452,12 @@ export class BattleScene extends Phaser.Scene {
       const centerX = (x + PROPS[t.prop].width / 2) * TILE;
       const img = add(centerX, bottom, art.prop(t.prop, x, y), DEPTH.standing + bottom);
       this.props.push(img.setOrigin(0.5, 1));
+      const { width, height } = PROPS[t.prop];
+      const tiles: number[] = [];
+      for (let j = 0; j < height; j++) {
+        for (let k = 0; k < width; k++) tiles.push((y - j) * map.cols + x + k);
+      }
+      this.propTiles.push(tiles);
     });
   }
 
