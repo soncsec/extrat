@@ -58,7 +58,7 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 - [x] M2.4 Ammo and reload
 - [x] M2.5 Overwatch: shoot the first enemy that moves in sight
 - [x] M2.6 Grenades: area damage, removes cover bonus for one turn
-- [x] M2.7 Keyboard shortcuts: Tab / Shift+Tab and 1–4 pick marines, F cycles targets, Enter fires, plus R, O, G, E, Esc; the next ready marine is selected automatically. Camera pan and zoom dropped (owner, 2026-10-17): the whole map fits on screen; revisit if M4 maps grow
+- [x] M2.7 Keyboard shortcuts: Tab / Shift+Tab and 1–4 pick marines, F cycles targets, Enter fires, plus R, O, G, E, Esc; the next ready marine is selected automatically. Camera pan and zoom left out: the whole map fits on screen (proposed to the owner 2026-10-17, no objection; to confirm at the M2 review). Revisit if M4 maps grow
 
 **Acceptance criteria:** the owner sees cover and flanking change the hit chance in play; each mechanic has unit tests with fixed seeds; CI green.
 
