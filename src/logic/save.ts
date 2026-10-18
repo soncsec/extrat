@@ -27,11 +27,11 @@ import { generateMap, isWalkable } from './map';
  * checked. Anything unexpected (wrong version, an extra field, a number out of range,
  * a unit standing in a tree) rejects the whole save.
  */
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 /**
  * Older saves still load, checked just as strictly, with the fields they lack at their
  * starting values. Version 1 (M5.5) had no XP, kills or replay flag; version 2 (M5.2)
- * had no hit counts.
+ * had no hit counts; version 3 (M5.9) had no death counts.
  */
 const OLDEST_VERSION = 1;
 /** A save larger than this isn't ours: it is rejected before parsing. */
@@ -84,6 +84,7 @@ export function encodeSave(campaign: Campaign, battle: BattleState | null, repla
       mapSeed: campaign.mapSeed,
       squad: [...campaign.squad],
       xp: [...campaign.xp],
+      deaths: [...campaign.deaths],
     },
     battle: battle
       ? {
@@ -225,9 +226,15 @@ const CAMPAIGN_KEYS = ['seed', 'mission', 'attempt', 'mapSeed', 'squad'] as cons
 
 function checkCampaign(v: unknown, version: number): Campaign | null {
   const old = version < 2;
-  if (!isRecord(v) || !hasOnly(v, old ? CAMPAIGN_KEYS : [...CAMPAIGN_KEYS, 'xp'])) return null;
+  const keys = old
+    ? CAMPAIGN_KEYS
+    : version < 4
+      ? [...CAMPAIGN_KEYS, 'xp']
+      : [...CAMPAIGN_KEYS, 'xp', 'deaths'];
+  if (!isRecord(v) || !hasOnly(v, keys)) return null;
   const { seed, mission, attempt, mapSeed, squad } = v;
   const xp = old ? noXp() : v.xp;
+  const deaths = version < 4 ? noXp() : v.deaths;
   if (!isInt(seed, 0, 0xffffffff)) return null;
   // A completed campaign isn't saved, so the mission is always one still to play.
   if (!isInt(mission, 0, MISSIONS.length - 1)) return null;
@@ -240,6 +247,8 @@ function checkCampaign(v: unknown, version: number): Campaign | null {
   if (new Set(squad).size !== squad.length) return null;
   if (!Array.isArray(xp) || xp.length !== squad.length) return null;
   if (!xp.every((x) => isInt(x, 0, XP.max))) return null;
+  if (!Array.isArray(deaths) || deaths.length !== squad.length) return null;
+  if (!deaths.every((d) => isInt(d, 0, 100_000))) return null;
   return {
     seed,
     mission,
@@ -247,10 +256,11 @@ function checkCampaign(v: unknown, version: number): Campaign | null {
     mapSeed,
     squad: [...(squad as string[])],
     xp: [...(xp as number[])],
+    deaths: [...(deaths as number[])],
   };
 }
 
-/** No XP for each marine (a version 1 save). */
+/** Zero for each marine: the XP of a version 1 save, or the deaths of one before 4. */
 function noXp(): number[] {
   return Array.from({ length: SKIRMISH.marines }, () => 0);
 }
