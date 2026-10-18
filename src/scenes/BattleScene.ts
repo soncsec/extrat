@@ -262,21 +262,30 @@ export class BattleScene extends Phaser.Scene {
 
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => this.onClick(p.worldX, p.worldY));
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.onHover(p.worldX, p.worldY));
-    this.input.keyboard?.on('keydown-ESC', () => this.onEscape());
     this.input.keyboard?.on('keydown-ENTER', () => {
       if (this.aimTarget && !this.busy) this.fire(this.aimTarget);
     });
     this.input.keyboard?.on('keydown-E', () => void this.endTurn());
     this.input.keyboard?.on('keydown-R', () => this.reload());
     this.input.keyboard?.on('keydown-O', () => this.overwatch());
-    this.input.keyboard?.on('keydown-G', () => this.toggleGrenade());
     // Selection shortcuts: Tab / Shift+Tab cycle through marines that can still act,
     // 1-4 pick one directly, F aims at the best target and then the next. They use a
     // plain browser listener so they run in the order pressed: through Phaser's key
     // queue Firefox sometimes lost Shift, and mixing the two reordered quick presses.
+    // G and Esc are here too: they toggle and undo, so a press handled twice (seen once
+    // under heavy load) would cancel itself out or drop the selection.
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Tab') e.preventDefault(); // keep the browser's focus where it is
+      if (e.key === 'Escape') {
+        // Its own checks: it also works while the aliens move (it just does nothing).
+        if (this.scene.isActive()) this.onEscape();
+        return;
+      }
       if (this.busy || this.state.turn !== 'marine') return;
+      if (e.key === 'g' || e.key === 'G') {
+        if (!e.repeat) this.toggleGrenade(); // holding G doesn't flicker on and off
+        return;
+      }
       if (e.key === 'Tab') {
         const next = nextReadyMarine(this.state, this.state.selected, e.shiftKey ? -1 : 1);
         if (next) this.selectMarine(next);
