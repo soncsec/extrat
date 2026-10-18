@@ -928,3 +928,10 @@ test('a skirmish (?seed=) never touches the campaign save', async ({ page }) => 
   await wipeOut(page, 'alien');
   expect(await page.evaluate((k) => window.localStorage.getItem(k), SAVE_KEY)).toBeNull();
 });
+
+test('a desktop window never shows the turn-sideways notice, even when tall', async ({ page }) => {
+  await page.setViewportSize({ width: 600, height: 900 });
+  await page.goto('./');
+  await waitForScene(page, 'Title');
+  await expect(page.locator('#rotate')).toBeHidden();
+});

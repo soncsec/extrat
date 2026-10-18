@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import './style.css';
 import { GAME_HEIGHT, GAME_WIDTH } from './config/tuning';
-import { integerZoom } from './logic/scaling';
+import { pixelZoom } from './logic/scaling';
 import { BattleScene } from './scenes/BattleScene';
 import { BriefingScene } from './scenes/BriefingScene';
 import { HelpScene } from './scenes/HelpScene';
@@ -10,7 +10,13 @@ import { ResultScene } from './scenes/ResultScene';
 import { TitleScene } from './scenes/TitleScene';
 
 const zoomForWindow = (): number =>
-  integerZoom(window.innerWidth, window.innerHeight, GAME_WIDTH, GAME_HEIGHT);
+  pixelZoom(
+    window.innerWidth,
+    window.innerHeight,
+    GAME_WIDTH,
+    GAME_HEIGHT,
+    window.devicePixelRatio,
+  );
 
 export const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -20,8 +26,11 @@ export const game = new Phaser.Game({
   backgroundColor: '#11141b',
   pixelArt: true,
   roundPixels: true,
+  // A long press on a touchscreen (or a right click) doesn't open the browser's menu.
+  disableContextMenu: true,
   scale: {
-    // Whole-number zoom keeps pixels crisp; the page's CSS centers the canvas.
+    // Each art pixel covers a whole number of screen pixels, so pixels stay crisp; the
+    // page's CSS centers the canvas.
     mode: Phaser.Scale.NONE,
     zoom: zoomForWindow(),
   },

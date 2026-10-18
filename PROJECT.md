@@ -19,7 +19,7 @@ It is built mainly from the Ansimuz "Legacy Collection" pixel-art pack (CC0) and
 
 ## 3. Users
 
-- **Primary:** casual players on desktop browsers (Chrome, Firefox), using a mouse with a few keyboard shortcuts.
+- **Primary:** casual players on desktop browsers (Chrome, Firefox), using a mouse with a few keyboard shortcuts, and on phones and tablets with a touchscreen (owner, 2026-10-18).
 - **Secondary:** the owner, as play-tester and reviewer.
 
 ## 4. Scope — Version 1.0
@@ -41,29 +41,30 @@ It is built mainly from the Ansimuz "Legacy Collection" pixel-art pack (CC0) and
 | Fallen marines | **No permadeath.** A marine killed in a mission comes back for the next one at full health, but is **shamed**: an embarrassing nickname, a "Wall of Shame" death count, and mocking debrief lines. Shame is cosmetic only (owner decision 2026-10-17) |
 | Save and resume | The campaign autosaves every turn in the browser (localStorage) and resumes after the browser is closed |
 | Difficulty | One level, beatable by a casual player |
-| Controls | Mouse: select, move, target. A few keyboard shortcuts (for example next marine, end turn, choose action, cancel) |
+| Controls | Mouse: select, move, target. A few keyboard shortcuts (for example next marine, end turn, choose action, cancel). Touch: tap a tile once to preview the move (path, cost, cover), tap it again to move; everything the keys do has an on-screen button |
 | Screens | Title, squad (with Wall of Shame), mission briefing, battle, debrief, campaign victory, game over |
 | Navigation | A link back to the games portal from the title screen |
 | Audio | CC0 sound effects. No music in v1 (planned later) |
 | Art | Legacy pack: Warped space marine and aliens, TinyRPG top-down terrain, Warped sci-fi interior, explosions and hit effects, Warped portraits. Claude draws missing terrain pieces in matching style |
-| Display | Native pixel art, whole-number scaling, fits the browser window |
+| Display | Native pixel art, fits the browser window. Every art pixel covers a whole number of the screen's own pixels (so phones can show the game at, say, 4/3 and stay crisp). Phones and tablets: landscape only, with a notice to turn the device when held upright |
 
 ### Out of scope (v1)
 
 - Base building, research, world map, equipment economy
 - Permadeath, multiple difficulty levels
 - Music (planned after v1)
-- Touch, mobile and gamepad controls
+- Gamepad controls
+- Portrait (upright) play on phones
 - Multiplayer, online leaderboards, accounts, payments, analytics
 - Destructible terrain, multi-level buildings
 - Any backend or server-side code
 
 ## 5. Constraints (shared by every Soncrant Arcade game)
 
-- Browser only, single player, desktop browsers (current Chrome, Firefox, Safari, Edge).
+- Browser only, single player: desktop browsers (current Chrome, Firefox, Safari, Edge) and phone/tablet browsers (current Chrome, Safari) in landscape.
 - No accounts, payments, analytics, cookies or third-party requests.
 - **Browser storage holds only the campaign save and settings** (owner approved 2026-10-17, ADR-E6). No personal data.
-- Art keeps its native pixel style; whole-number scaling only.
+- Art keeps its native pixel style; each art pixel is a whole number of screen pixels.
 - Served at `games.soncrant.com/extrat/` over HTTP (ADR-010), behind the security headers in the portal's Apache config.
 
 ## 6. Definition of success
@@ -89,6 +90,7 @@ It is built mainly from the Ansimuz "Legacy Collection" pixel-art pack (CC0) and
 | 2026-10-17 | Marines gain ranks. No permadeath: fallen marines return at full health and are shamed (cosmetic only) |
 | 2026-10-17 | Whole squad lost: retry the mission on a new map |
 | 2026-10-17 | Campaign save in localStorage (security decision, ADR-E6) |
+| 2026-10-18 | Playable on phones and tablets with touch, as well as desktop. Tap to preview, tap again to act. Whole map on phones (zoom and drag only if needed after play-testing). Landscape only. Built before the Wall of Shame |
 
 ## 8. Open questions
 
