@@ -62,9 +62,13 @@ export class TitleScene extends Phaser.Scene {
     const skirmish = urlNumber('seed') !== null;
     pixelButton(this, cx, 172, skirmish ? 'START MISSION' : 'START CAMPAIGN', () => this.start());
     pixelButton(this, cx, 194, 'BACK TO GAMES', () => window.location.assign(PORTAL_URL), false);
-    pixelText(this, cx, 214, 'Enter: start', 0xa3adbd);
+    pixelText(this, cx, 214, 'Enter: start   H: how to play', 0xa3adbd);
 
     this.input.keyboard?.once('keydown-ENTER', () => this.start());
+    this.input.keyboard?.on('keydown-H', () => {
+      this.scene.pause();
+      this.scene.launch('Help', { from: 'Title' });
+    });
   }
 
   private start(): void {
