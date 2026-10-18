@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAP_COLS, MAP_ROWS, MISSIONS } from '../../src/config/tuning';
+import { MAP_COLS, MAP_ROWS, MISSIONS, XP } from '../../src/config/tuning';
 import { apply, createBattle, type BattleState } from '../../src/logic/battle';
 import { afterBattle, currentMission, newCampaign, type Campaign } from '../../src/logic/campaign';
 import { generateForest, generateMap, isWalkable, type BattleMap } from '../../src/logic/map';
@@ -8,6 +8,7 @@ import {
   encodeSave,
   MAX_SAVE_LENGTH,
   restoreBattle,
+  SAVE_VERSION,
   type Save,
 } from '../../src/logic/save';
 
@@ -34,11 +35,16 @@ function raw(campaign: Campaign, battle: BattleState | null): Save {
 
 const decodes = (data: unknown): boolean => decodeSave(JSON.stringify(data)).ok;
 
+/** A copy of `o` without `key`. */
+function without<T extends object>(o: T, key: keyof T): Partial<T> {
+  return Object.fromEntries(Object.entries(o).filter(([k]) => k !== key)) as Partial<T>;
+}
+
 describe('save round trip', () => {
   it('restores a campaign between missions', () => {
     const { campaign } = setup(2);
     const loaded = decodeSave(encodeSave(campaign, null));
-    expect(loaded).toEqual({ ok: true, save: { v: 1, campaign, battle: null } });
+    expect(loaded).toEqual({ ok: true, save: { v: SAVE_VERSION, campaign, battle: null } });
   });
 
   it('restores a battle mid-mission exactly, from the units and the random state', () => {
@@ -76,14 +82,16 @@ describe('save loading rejects anything unexpected', () => {
   });
 
   it('rejects another version, extra fields and missing fields', () => {
-    expect(decodes({ ...good, v: 2 })).toBe(false);
+    expect(decodes({ ...good, v: 3 })).toBe(false);
+    expect(decodes({ ...good, v: 0 })).toBe(false);
+    expect(decodes({ ...good, v: '2' })).toBe(false);
     expect(decodes({ ...good, extra: 1 })).toBe(false);
     expect(decodes({ v: 1, campaign: good.campaign })).toBe(false);
     expect(decodes({ ...good, campaign: { ...good.campaign, admin: true } })).toBe(false);
   });
 
   it('rejects a __proto__ key instead of letting it through', () => {
-    const text = encodeSave(campaign, null).replace('"v":1', '"v":1,"__proto__":{"polluted":1}');
+    const text = encodeSave(campaign, null).replace('"v":2', '"v":2,"__proto__":{"polluted":1}');
     expect(decodeSave(text).ok).toBe(false);
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
@@ -207,5 +215,88 @@ describe('restoreBattle uses the mission`s own landscape', () => {
     const units = b.units.map((u) => (u.id === marine.id ? { ...u, ...spot } : u));
     expect(restoreBattle(campaign, { ...b, units })).toBeNull();
     expect(restoreBattle(campaign, b)?.map).toEqual(town);
+  });
+});
+
+describe('save version 2: XP, kills and replays (M5.2)', () => {
+  const { campaign, battle } = setup(1);
+  const ranked = { ...campaign, xp: [0, 25, 60, 150] };
+  const good = raw(ranked, battle);
+  const b = good.battle;
+  if (!b) throw new Error('no battle');
+
+  it('keeps the squad`s XP and the replay flag', () => {
+    const loaded = decodeSave(encodeSave(ranked, battle, true));
+    if (!loaded.ok || !loaded.save.battle) throw new Error('did not load');
+    expect(loaded.save.campaign.xp).toEqual([0, 25, 60, 150]);
+    expect(loaded.save.battle.replay).toBe(true);
+    expect(decodeSave(encodeSave(ranked, battle)).ok && good.battle?.replay).toBe(false);
+  });
+
+  it('rebuilds the marines with their ranks`s health', () => {
+    const back = restoreBattle(ranked, b);
+    const marines = back?.units.filter((u) => u.side === 'marine') ?? [];
+    expect(marines.map((u) => u.rank)).toEqual([0, 1, 2, 4]);
+    expect(marines.map((u) => u.maxHp)).toEqual([4, 4, 5, 6]);
+  });
+
+  it('rejects XP that is missing, of the wrong size, type or range', () => {
+    const c = good.campaign;
+    const noXp = without(c, 'xp');
+    expect(decodes({ ...good, campaign: noXp })).toBe(false);
+    expect(decodes({ ...good, campaign: { ...c, xp: [0, 0, 0] } })).toBe(false);
+    expect(decodes({ ...good, campaign: { ...c, xp: [0, 0, 0, -1] } })).toBe(false);
+    expect(decodes({ ...good, campaign: { ...c, xp: [0, 0, 0, 1.5] } })).toBe(false);
+    expect(decodes({ ...good, campaign: { ...c, xp: [0, 0, 0, '9'] } })).toBe(false);
+    expect(decodes({ ...good, campaign: { ...c, xp: [0, 0, 0, XP.max + 1] } })).toBe(false);
+    expect(decodes({ ...good, campaign: { ...c, xp: [0, 0, 0, XP.max] } })).toBe(true);
+  });
+
+  it('rejects a missing or wrong replay flag, and bad kill counts', () => {
+    const noReplay = without(b, 'replay');
+    expect(decodes({ ...good, battle: noReplay })).toBe(false);
+    expect(decodes({ ...good, battle: { ...b, replay: 'no' } })).toBe(false);
+    const unit = b.units[0] as (typeof b.units)[number];
+    const withUnit = (u: object): unknown => ({
+      ...good,
+      battle: { ...b, units: [u, ...b.units.slice(1)] },
+    });
+    expect(decodes(withUnit({ ...unit, kills: -1 }))).toBe(false);
+    expect(decodes(withUnit({ ...unit, kills: 2.5 }))).toBe(false);
+    const noKills = without(unit, 'kills');
+    expect(decodes(withUnit(noKills))).toBe(false);
+  });
+
+  it('rejects more kills than the other side has lost', () => {
+    const marine = b.units.find((u) => u.id === 'm1') as (typeof b.units)[number];
+    const alien = b.units.find((u) => u.id.startsWith('a')) as (typeof b.units)[number];
+    const units = (kills: number, alienHp: number): typeof b.units =>
+      b.units.map((u) =>
+        u.id === marine.id ? { ...u, kills } : u.id === alien.id ? { ...u, hp: alienHp } : u,
+      );
+    expect(restoreBattle(ranked, { ...b, units: units(1, 0) })).not.toBeNull();
+    expect(restoreBattle(ranked, { ...b, units: units(1, alien.hp) })).toBeNull();
+    expect(restoreBattle(ranked, { ...b, units: units(2, 0) })).toBeNull();
+  });
+
+  it('still loads a version 1 save, with no XP, kills or replay', () => {
+    const v1 = {
+      v: 1,
+      campaign: without(good.campaign, 'xp'),
+      battle: {
+        round: b.round,
+        rng: b.rng,
+        units: b.units.map((u) => without(u, 'kills')),
+      },
+    };
+    const loaded = decodeSave(JSON.stringify(v1));
+    if (!loaded.ok || !loaded.save.battle) throw new Error('did not load');
+    expect(loaded.save.v).toBe(SAVE_VERSION);
+    expect(loaded.save.campaign.xp).toEqual([0, 0, 0, 0]);
+    expect(loaded.save.battle.replay).toBe(false);
+    expect(loaded.save.battle.units.every((u) => u.kills === 0)).toBe(true);
+    // A version 1 save with version 2's fields isn't one.
+    expect(decodes({ ...v1, campaign: good.campaign })).toBe(false);
+    expect(decodes({ ...v1, battle: { ...v1.battle, replay: false } })).toBe(false);
   });
 });

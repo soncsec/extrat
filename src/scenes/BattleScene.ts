@@ -35,6 +35,7 @@ import {
   shootableTargets,
   tilesSeenFrom,
   unitAt,
+  rankOf,
   unitById,
   visibleTiles,
   type Action,
@@ -50,7 +51,15 @@ import {
   type UnitKind,
 } from '../logic/battle';
 import { planAlienAction } from '../logic/ai';
-import { afterBattle, currentMission, isComplete, type Campaign } from '../logic/campaign';
+import {
+  afterBattle,
+  awardXp,
+  battleXp,
+  currentMission,
+  isComplete,
+  squadRanks,
+  type Campaign,
+} from '../logic/campaign';
 import { landscapeId, LANDSCAPES, type LandscapeId } from '../logic/landscapes';
 import { generateMap, PROPS, tileAt } from '../logic/map';
 import { createRng, type Rng } from '../logic/rng';
@@ -90,8 +99,10 @@ export interface MoveTile extends Point {
 export interface GameSnapshot {
   seed: number;
   mapSeed: number;
-  /** The campaign mission (0-based) and try, or null in a skirmish. */
-  campaign: { mission: number; attempt: number } | null;
+  /** The campaign mission (0-based), try and squad XP, or null in a skirmish. */
+  campaign: { mission: number; attempt: number; xp: number[] } | null;
+  /** This battle was started with REPLAY (it earns no XP). */
+  replaying: boolean;
   /** One character per tile, row by row: '.' free, or the first letter of the prop. */
   layout: string;
   units: {
@@ -111,6 +122,9 @@ export interface GameSnapshot {
     poison: number;
     /** Squares the unit can still walk for free (left from a move cut short). */
     freeSteps: number;
+    /** Index into RANKS. */
+    rank: number;
+    maxHp: number;
     /** The squad can see this unit now (aliens in the fog are false). */
     seen: boolean;
     /** An alien whose pod hasn't been spotted yet. */
@@ -156,6 +170,9 @@ const DEPTH = {
   fx: 960,
   hud: 1000,
 } as const;
+
+/** A marine's rank and name for the status line, e.g. 'CPL REYES'. */
+const marineLabel = (u: Unit): string => `${rankOf(u.rank).short} ${u.name.toUpperCase()}`;
 
 /**
  * Fog of war. Tiles out of sight get a dark layer (more opaque if never seen); props
@@ -253,12 +270,19 @@ export class BattleScene extends Phaser.Scene {
   private landscape: LandscapeId = 'forest';
   /** The campaign this battle is a mission of, or null for a one-off skirmish (?seed=). */
   private campaign: Campaign | null = null;
+  /** This battle was started with REPLAY: it earns no XP. */
+  private replaying = false;
 
   constructor() {
     super('Battle');
   }
 
-  create(data: { seed?: number; campaign?: Campaign; resume?: BattleState }): void {
+  create(data: {
+    seed?: number;
+    campaign?: Campaign;
+    resume?: BattleState;
+    replay?: boolean;
+  }): void {
     this.fx = new FxPool(this);
     this.campaign = data.campaign ?? null;
     this.seed = this.campaign?.mapSeed ?? data.seed ?? initialSeed();
@@ -345,18 +369,22 @@ export class BattleScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-N', () => {
       // A new map: skirmish only (a campaign moves on through the debrief). Not in the
       // middle of an animation, the alien turn, or the result screen.
-      if (!this.busy && !this.campaign) this.startBattle(this.seeds.int(1, 999_999));
+      if (!this.busy && !this.campaign)
+        this.startBattle(this.seeds.int(1, 999_999), undefined, false);
     });
-    this.events.on('play-again', () => this.startBattle(this.seeds.int(1, 999_999)));
+    this.events.on('play-again', () =>
+      this.startBattle(this.seeds.int(1, 999_999), undefined, false),
+    );
     // The same map again (M4.4): its seed rebuilds it exactly, units and all.
-    this.events.on('replay', () => this.startBattle(this.state.map.seed));
+    // A replayed battle earns no XP (owner decision 2026-10-18).
+    this.events.on('replay', () => this.startBattle(this.state.map.seed, undefined, true));
     // The scene object is reused when the player comes back from the title.
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.events.off('play-again');
       this.events.off('replay');
     });
 
-    this.startBattle(this.seed, data.resume);
+    this.startBattle(this.seed, data.resume, data.replay ?? false);
   }
 
   override update(): void {
@@ -407,8 +435,13 @@ export class BattleScene extends Phaser.Scene {
     return {
       seed: this.seed,
       campaign: this.campaign
-        ? { mission: this.campaign.mission, attempt: this.campaign.attempt }
+        ? {
+            mission: this.campaign.mission,
+            attempt: this.campaign.attempt,
+            xp: [...this.campaign.xp],
+          }
         : null,
+      replaying: this.replaying,
       mapSeed: map.seed,
       layout: map.tiles.map((t) => (t.prop ? t.prop[0] : '.')).join(''),
       units: units.map((u) => ({
@@ -426,6 +459,8 @@ export class BattleScene extends Phaser.Scene {
         name: u.name,
         poison: u.poison,
         freeSteps: u.freeSteps,
+        rank: u.rank,
+        maxHp: u.maxHp,
         seen: this.isSeen(u),
         dormant: u.dormant,
         hidden: this.views.get(u.id)?.hidden ?? false,
@@ -892,7 +927,7 @@ export class BattleScene extends Phaser.Scene {
     this.refreshVision();
     await this.banner(`TURN ${this.state.round}`, '#f2a33a');
     await this.playPoison();
-    if (this.campaign) writeSave(this.campaign, this.state);
+    if (this.campaign) writeSave(this.campaign, this.state, this.replaying);
     this.busy = false;
     const first = nextReadyMarine(this.state, null);
     if (first) this.selectMarine(first);
@@ -920,8 +955,18 @@ export class BattleScene extends Phaser.Scene {
       mapSeed: this.state.map.seed,
       landscape: this.landscape,
       campaign: this.campaign,
+      xp: null,
     };
     if (this.campaign) {
+      // XP is earned when the battle ends, whatever is picked on the debrief; a
+      // replayed battle earns none.
+      const gained = this.replaying ? null : battleXp(this.state, won);
+      if (gained) {
+        const awarded = awardXp(this.campaign, gained);
+        this.campaign = awarded.campaign;
+        result.campaign = awarded.campaign;
+        result.xp = { gained, promotions: awarded.promotions };
+      }
       // Closing the browser on the debrief picks up at the next briefing: the next
       // mission after a win, a new map after a loss. A finished campaign isn't kept.
       const next = afterBattle(this.campaign, won, won ? 'next' : 'retry');
@@ -1399,8 +1444,12 @@ export class BattleScene extends Phaser.Scene {
     this.oddsPanel.setPosition(x, 2 * TILE + 6).setVisible(true);
   }
 
-  /** Starts a battle on the map from `seed`, or picks up a saved one (`resume`). */
-  private startBattle(seed: number, resume?: BattleState): void {
+  /**
+   * Starts a battle on the map from `seed`, or picks up a saved one (`resume`).
+   * `replay`: started with REPLAY, so it earns no XP.
+   */
+  private startBattle(seed: number, resume: BattleState | undefined, replay: boolean): void {
+    this.replaying = replay;
     for (const o of this.mapObjects) o.destroy();
     for (const v of this.views.values()) {
       v.sprite.destroy();
@@ -1420,9 +1469,13 @@ export class BattleScene extends Phaser.Scene {
     const mission = c ? currentMission(c) : null;
     this.state =
       resume ??
-      createBattle(map, map.seed, c && mission ? { names: c.squad, pods: mission.pods } : {});
+      createBattle(
+        map,
+        map.seed,
+        c && mission ? { names: c.squad, pods: mission.pods, ranks: squadRanks(c) } : {},
+      );
     // A campaign saves as each of the squad's turns begins, this first one included.
-    if (c) writeSave(c, this.state);
+    if (c) writeSave(c, this.state, replay);
     this.drawMap();
     for (const u of this.state.units) this.views.set(u.id, this.drawUnit(u));
     this.updateHidden();
@@ -1563,7 +1616,7 @@ export class BattleScene extends Phaser.Scene {
     if (!unit || this.busy) {
       this.chevron.clear();
       if (this.busy) {
-        this.unitText.setText(unit ? `PVT ${unit.name.toUpperCase()}` : '');
+        this.unitText.setText(unit ? marineLabel(unit) : '');
         return;
       }
       this.unitText.setText('Click a marine to select it');
@@ -1601,7 +1654,7 @@ export class BattleScene extends Phaser.Scene {
             .fillRect(tx * TILE + 1, ty * TILE + 1, TILE - 2, TILE - 2);
         }
       }
-      this.unitText.setText(`PVT ${unit.name}  GRENADE: CLICK A TILE  ESC: CANCEL`);
+      this.unitText.setText(`${marineLabel(unit)}  GRENADE: CLICK A TILE  ESC: CANCEL`);
       return;
     }
     for (const t of this.rangeTiles(unit.id)) {
@@ -1620,7 +1673,7 @@ export class BattleScene extends Phaser.Scene {
     const ammo = clip === null || unit.ammo === null ? '' : `  AMMO ${unit.ammo}/${clip}`;
     const poison = unit.poison > 0 ? '  POISONED' : '';
     this.unitText.setText(
-      `PVT ${unit.name.toUpperCase()}  HP ${unit.hp}/${unit.maxHp}  ${status}${ammo}${poison}`,
+      `${marineLabel(unit)}  HP ${unit.hp}/${unit.maxHp}  ${status}${ammo}${poison}`,
     );
   }
 

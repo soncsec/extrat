@@ -5,6 +5,7 @@ import {
   GRENADE,
   OVERWATCH,
   PODS,
+  RANKS,
   SHOOTING,
   SIGHT,
   SKIRMISH,
@@ -64,6 +65,10 @@ export interface Unit extends Point {
    * the turn, uses them up.
    */
   freeSteps: number;
+  /** Index into RANKS (M5.2): adds aim and health. Aliens are always 0. */
+  rank: number;
+  /** Enemies this unit has killed in this battle (for XP). */
+  kills: number;
 }
 
 /** Health lost to poison at the start of a side's turn. */
@@ -165,6 +170,8 @@ export interface BattleSetup {
   names?: readonly string[];
   /** Alien groups for this mission (default: PODS). */
   pods?: { count: number; size: number };
+  /** Marine ranks in squad order (index into RANKS); missing ones are rookies. */
+  ranks?: readonly number[];
 }
 
 /** A new battle: marines deploy in the west spawn zone, aliens in the east. */
@@ -172,26 +179,32 @@ export function createBattle(map: BattleMap, seed: number, setup: BattleSetup = 
   const rng = createRng(seed);
   const drawn = shuffled(rng, MARINE_NAMES);
   const names = drawn.map((n, i) => setup.names?.[i] ?? n);
-  const marines = deploy(map, rng, 'west', SKIRMISH.marines).map((p, i): Unit => ({
-    ...p,
-    id: `m${i + 1}`,
-    side: 'marine',
-    kind: 'marine',
-    name: names[i] ?? `Marine ${i + 1}`,
-    hp: UNITS.marine.hp,
-    maxHp: UNITS.marine.hp,
-    facing: 1,
-    ap: ACTION_POINTS,
-    move: UNITS.marine.move,
-    ammo: UNITS.marine.ammo,
-    overwatch: false,
-    grenades: GRENADE.perMarine,
-    exposed: false,
-    pod: null,
-    dormant: false,
-    poison: 0,
-    freeSteps: 0,
-  }));
+  const marines = deploy(map, rng, 'west', SKIRMISH.marines).map((p, i): Unit => {
+    const rank = rankIndex(setup.ranks?.[i] ?? 0);
+    const hp = UNITS.marine.hp + rankOf(rank).hp;
+    return {
+      ...p,
+      id: `m${i + 1}`,
+      side: 'marine',
+      kind: 'marine',
+      name: names[i] ?? `Marine ${i + 1}`,
+      hp,
+      maxHp: hp,
+      facing: 1,
+      ap: ACTION_POINTS,
+      move: UNITS.marine.move,
+      ammo: UNITS.marine.ammo,
+      overwatch: false,
+      grenades: GRENADE.perMarine,
+      exposed: false,
+      pod: null,
+      dormant: false,
+      poison: 0,
+      freeSteps: 0,
+      rank,
+      kills: 0,
+    };
+  });
   // Kinds come from their own generator, so the draw doesn't move where anyone stands.
   const kindRng = createRng((seed ^ 0x5bd1e995) >>> 0);
   const aliens = deployPods(map, rng, marines, setup.pods ?? PODS).map(({ pod, ...p }, i): Unit => {
@@ -215,6 +228,8 @@ export function createBattle(map: BattleMap, seed: number, setup: BattleSetup = 
       dormant: true,
       poison: 0,
       freeSteps: 0,
+      rank: 0,
+      kills: 0,
     };
   });
   return {
@@ -372,7 +387,7 @@ export function hitChance(state: BattleState, shooterId: string, targetId: strin
 
 /** Everything that goes into a shot's odds, for the breakdown panel. */
 export interface ShotOdds {
-  /** The shooter's base aim. */
+  /** The shooter's aim, with its rank's bonus. */
   aim: number;
   /** Lost to distance beyond close range (zero or negative). */
   range: number;
@@ -432,6 +447,7 @@ export function oddsBetween(
   reaction: boolean,
 ): ShotOdds {
   const stats = UNITS[shooter.kind];
+  const aim = stats.aim + rankOf(shooter.rank).aim;
   const dist = Math.hypot(target.x - shooter.x, target.y - shooter.y);
   const range = -Math.max(0, Math.floor(dist) - SHOOTING.closeRange) * SHOOTING.penaltyPerTile;
   const ability = stats.ability;
@@ -446,13 +462,13 @@ export function oddsBetween(
   const reactionPenalty = reaction ? OVERWATCH.aimPenalty : 0;
   const hit = Math.min(
     SHOOTING.maxChance,
-    Math.max(SHOOTING.minChance, stats.aim + range - coverPenalty - reactionPenalty),
+    Math.max(SHOOTING.minChance, aim + range - coverPenalty - reactionPenalty),
   );
   const critBase = stats.crit + (flanked ? SHOOTING.flankCrit : 0);
   const crit = reaction && !OVERWATCH.canCrit ? 0 : Math.min(100, critBase);
   const exposed = target.exposed;
   return {
-    aim: stats.aim,
+    aim,
     range,
     cover,
     coverPenalty,
@@ -502,14 +518,18 @@ function throwGrenade(state: BattleState, unitId: string, at: Point): BattleStat
     next = replaceUnit(next, { ...target, hp, exposed: hp > 0 });
   }
   const facing = at.x === thrower.x ? thrower.facing : at.x > thrower.x ? 1 : -1;
-  // Throwing uses all remaining action points, like a shot.
+  // Throwing uses all remaining action points, like a shot. Only enemies count as kills.
   const after = unitById(next, unitId) as Unit;
+  const kills = hits.filter(
+    (h) => h.killed && unitById(state, h.unitId)?.side !== thrower.side,
+  ).length;
   next = replaceUnit(next, {
     ...after,
     grenades: after.grenades - 1,
     ap: 0,
     facing,
     freeSteps: 0,
+    kills: after.kills + kills,
   });
   // A blast in the fog wakes the pod it lands on.
   const pods = [
@@ -577,7 +597,8 @@ function rollShot(
   const hp = Math.max(0, target.hp - damage);
   const facing = target.x === shooter.x ? shooter.facing : target.x > shooter.x ? 1 : -1;
   const ammo = shooter.ammo === null ? null : shooter.ammo - 1;
-  let next = replaceUnit(state, { ...shooter, facing, ammo });
+  const kills = shooter.kills + (hp === 0 && target.hp > 0 ? 1 : 0);
+  let next = replaceUnit(state, { ...shooter, facing, ammo, kills });
   next = replaceUnit(next, { ...target, hp });
   // Abilities ride on aimed hits that leave the target standing, not on reactions.
   let pulledTo: Point | null = null;
@@ -990,4 +1011,14 @@ function shuffled<T>(rng: Rng, items: readonly T[]): T[] {
     [out[i], out[j]] = [out[j] as T, out[i] as T];
   }
   return out;
+}
+
+/** A rank index kept within RANKS. */
+export function rankIndex(rank: number): number {
+  return Math.max(0, Math.min(RANKS.length - 1, Math.floor(rank)));
+}
+
+/** The rank's name and bonuses. */
+export function rankOf(rank: number): (typeof RANKS)[number] {
+  return RANKS[rankIndex(rank)] as (typeof RANKS)[number];
 }

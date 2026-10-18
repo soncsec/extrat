@@ -116,6 +116,6 @@ export class TitleScene extends Phaser.Scene {
       this.scene.restart({ damaged: true });
       return;
     }
-    this.scene.start('Battle', { campaign: save.campaign, resume });
+    this.scene.start('Battle', { campaign: save.campaign, resume, replay: save.battle.replay });
   }
 }

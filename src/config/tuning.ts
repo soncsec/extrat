@@ -71,6 +71,30 @@ export const MISSIONS = [
   { landscape: 'forest', pods: { count: 3, size: 3 } },
 ] as const;
 
+/**
+ * XP (M5.2). Each marine earns XP for the aliens they kill (shots and grenades), and
+ * the whole squad earns the mission bonus for a win. A battle started with REPLAY
+ * earns none (owner decision 2026-10-18), so a map can't be farmed.
+ */
+export const XP = {
+  kill: 10,
+  missionWon: 10,
+  /** No marine can have more: saves with more are rejected. */
+  max: 10_000,
+} as const;
+
+/**
+ * Ranks (M5.2): the XP a marine needs for each, and the aim and health it adds over a
+ * rookie. Six missions earn a marine about 60-160 XP, so most finish as Sergeants.
+ */
+export const RANKS = [
+  { name: 'Rookie', short: 'RKE', xp: 0, aim: 0, hp: 0 },
+  { name: 'Squaddie', short: 'SQD', xp: 20, aim: 5, hp: 0 },
+  { name: 'Corporal', short: 'CPL', xp: 50, aim: 5, hp: 1 },
+  { name: 'Sergeant', short: 'SGT', xp: 90, aim: 10, hp: 1 },
+  { name: 'Lieutenant', short: 'LT', xp: 140, aim: 10, hp: 2 },
+] as const;
+
 /** Squad and enemy sizes for the skirmish. */
 export const SKIRMISH = {
   marines: 4,

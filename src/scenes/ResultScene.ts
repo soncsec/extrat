@@ -1,8 +1,15 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, MAP_ROWS, MISSIONS, TILE } from '../config/tuning';
-import { afterBattle, type Campaign, type DebriefChoice } from '../logic/campaign';
+import { rankOf } from '../logic/battle';
+import {
+  afterBattle,
+  rankForXp,
+  type Campaign,
+  type DebriefChoice,
+  type Promotion,
+} from '../logic/campaign';
 import type { LandscapeId } from '../logic/landscapes';
-import { PixelButton, pixelText } from './pixelFont';
+import { LINE_H, PixelButton, PixelText, pixelText } from './pixelFont';
 
 export interface BattleResult {
   won: boolean;
@@ -11,12 +18,16 @@ export interface BattleResult {
   marinesLost: number;
   mapSeed: number;
   landscape: LandscapeId;
-  /** The campaign the battle was a mission of, or null for a skirmish. */
+  /** The campaign the battle was a mission of (with this battle's XP), or null for a skirmish. */
   campaign: Campaign | null;
+  /** XP each marine earned (squad order) and who was promoted; null for a replay or skirmish. */
+  xp: { gained: number[]; promotions: Promotion[] } | null;
 }
 
 /** Space between buttons in a row. */
 const BUTTON_GAP = 8;
+/** Line spacing of the squad's XP rows, the same as the stats beside them. */
+const ROW_HEIGHT = LINE_H;
 
 /** The end-of-battle panel (the debrief), shown over the battlefield. */
 export class ResultScene extends Phaser.Scene {
@@ -29,7 +40,10 @@ export class ResultScene extends Phaser.Scene {
     const cx = GAME_WIDTH / 2;
     const cy = mapHeight / 2;
     this.add.rectangle(0, 0, GAME_WIDTH, mapHeight, 0x11141b, 0.6).setOrigin(0);
-    this.add.rectangle(cx, cy, 252, 136, 0x0b0e15, 0.97).setStrokeStyle(1, 0x3d4760);
+    // A campaign debrief has a second column: the squad's XP and ranks.
+    const squad = result.campaign !== null;
+    const width = squad ? 312 : 252;
+    this.add.rectangle(cx, cy, width, 136, 0x0b0e15, 0.97).setStrokeStyle(1, 0x3d4760);
 
     const title = result.won ? 'MISSION COMPLETE' : 'SQUAD LOST';
     pixelText(this, cx, cy - 46, title, result.won ? 0x8bf06a : 0xff6a5a, 2);
@@ -37,7 +51,7 @@ export class ResultScene extends Phaser.Scene {
       `${name.padEnd(15)}${String(value).padStart(3)}`;
     pixelText(
       this,
-      cx,
+      squad ? cx - 74 : cx,
       cy - 10,
       [
         row('Rounds', result.rounds),
@@ -46,6 +60,7 @@ export class ResultScene extends Phaser.Scene {
       ].join('\n'),
       0xdfe4ec,
     );
+    if (result.campaign) this.squadXp(cx + 14, cy - 10, result.campaign, result.xp);
     // The seed rebuilds this exact map: quote it in a bug report, or open the link.
     const where = result.landscape === 'forest' ? '' : `&landscape=${result.landscape}`;
     pixelText(this, cx, cy + 18, `Link: ?seed=${result.mapSeed}${where}`, 0xa3adbd);
@@ -75,6 +90,28 @@ export class ResultScene extends Phaser.Scene {
     }
     this.input.keyboard?.once('keydown-R', () => this.leave('replay'));
     this.input.keyboard?.once('keydown-ESC', () => this.toTitle());
+  }
+
+  /**
+   * One row per marine, left-aligned at `x` and centred on `cy`: the XP earned in this
+   * battle and their rank, in orange with '!' if just promoted. A replay earns none.
+   */
+  private squadXp(x: number, cy: number, c: Campaign, xp: BattleResult['xp']): void {
+    if (!xp) {
+      pixelText(this, x + 54, cy, 'REPLAY\nNO XP', 0xa3adbd);
+      return;
+    }
+    const top = cy - ((c.squad.length - 1) * ROW_HEIGHT) / 2;
+    c.squad.forEach((name, i) => {
+      const promoted = xp.promotions.some((p) => p.name === name);
+      const rank = rankOf(rankForXp(c.xp[i] ?? 0)).short;
+      const gained = `+${xp.gained[i] ?? 0}`.padStart(3);
+      const text = `${name.toUpperCase().padEnd(9)} ${gained}  ${rank}${promoted ? '!' : ''}`;
+      new PixelText(this, x, top + i * ROW_HEIGHT, text, {
+        color: promoted ? 0xf2a33a : 0xdfe4ec,
+        align: 'left',
+      });
+    });
   }
 
   /** Buttons side by side, centred on `cx`, with whole-pixel positions. */

@@ -1,4 +1,12 @@
-import { ABILITIES, ACTION_POINTS, MAP_COLS, MAP_ROWS, MISSIONS, SKIRMISH } from '../config/tuning';
+import {
+  ABILITIES,
+  ACTION_POINTS,
+  MAP_COLS,
+  MAP_ROWS,
+  MISSIONS,
+  SKIRMISH,
+  XP,
+} from '../config/tuning';
 import {
   clipSize,
   createBattle,
@@ -7,7 +15,7 @@ import {
   type BattleState,
   type Unit,
 } from './battle';
-import { currentMission, mapSeedFor, type Campaign } from './campaign';
+import { currentMission, mapSeedFor, squadRanks, type Campaign } from './campaign';
 import { generateMap, isWalkable } from './map';
 
 /**
@@ -19,7 +27,12 @@ import { generateMap, isWalkable } from './map';
  * checked. Anything unexpected (wrong version, an extra field, a number out of range,
  * a unit standing in a tree) rejects the whole save.
  */
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
+/**
+ * Version 1 (M5.5) had no XP, kills or replay flag. Its saves still load, checked just
+ * as strictly, with no XP, no kills and no replay.
+ */
+const OLD_VERSION = 1;
 /** A save larger than this isn't ours: it is rejected before parsing. */
 export const MAX_SAVE_LENGTH = 16_384;
 
@@ -37,6 +50,7 @@ export interface SavedUnit {
   dormant: boolean;
   poison: number;
   facing: 1 | -1;
+  kills: number;
 }
 
 /** A battle saved at the start of the squad's turn. */
@@ -44,6 +58,8 @@ export interface SavedBattle {
   round: number;
   rng: number;
   units: SavedUnit[];
+  /** Started with REPLAY: it earns no XP, even after a reload. */
+  replay: boolean;
 }
 
 export interface Save {
@@ -56,7 +72,7 @@ export interface Save {
 export type LoadResult = { ok: true; save: Save } | { ok: false; reason: string };
 
 /** The save text for a campaign, and the battle in progress if any. */
-export function encodeSave(campaign: Campaign, battle: BattleState | null): string {
+export function encodeSave(campaign: Campaign, battle: BattleState | null, replay = false): string {
   const save: Save = {
     v: SAVE_VERSION,
     campaign: {
@@ -65,6 +81,7 @@ export function encodeSave(campaign: Campaign, battle: BattleState | null): stri
       attempt: campaign.attempt,
       mapSeed: campaign.mapSeed,
       squad: [...campaign.squad],
+      xp: [...campaign.xp],
     },
     battle: battle
       ? {
@@ -83,7 +100,9 @@ export function encodeSave(campaign: Campaign, battle: BattleState | null): stri
             dormant: u.dormant,
             poison: u.poison,
             facing: u.facing,
+            kills: u.kills,
           })),
+          replay,
         }
       : null,
   };
@@ -103,11 +122,12 @@ export function decodeSave(text: string): LoadResult {
     return fail('not valid JSON');
   }
   if (!isRecord(data) || !hasOnly(data, ['v', 'campaign', 'battle'])) return fail('bad shape');
-  if (data.v !== SAVE_VERSION) return fail('unknown version');
-  const campaign = checkCampaign(data.campaign);
+  if (data.v !== SAVE_VERSION && data.v !== OLD_VERSION) return fail('unknown version');
+  const old = data.v === OLD_VERSION;
+  const campaign = checkCampaign(data.campaign, old);
   if (!campaign) return fail('bad campaign');
   if (data.battle === null) return { ok: true, save: { v: SAVE_VERSION, campaign, battle: null } };
-  const battle = checkBattleShape(data.battle);
+  const battle = checkBattleShape(data.battle, old);
   if (!battle) return fail('bad battle');
   return { ok: true, save: { v: SAVE_VERSION, campaign, battle } };
 }
@@ -126,6 +146,7 @@ export function restoreBattle(campaign: Campaign, saved: SavedBattle): BattleSta
   const fresh = createBattle(map, map.seed, {
     names: campaign.squad,
     pods: mission.pods,
+    ranks: squadRanks(campaign),
   });
   if (saved.units.length !== fresh.units.length) return null;
   const byId = new Map(saved.units.map((u) => [u.id, u]));
@@ -152,6 +173,12 @@ export function restoreBattle(campaign: Campaign, saved: SavedBattle): BattleSta
   }
   const alive = (side: Unit['side']): boolean => units.some((u) => u.side === side && u.hp > 0);
   if (!alive('marine') || !alive('alien')) return null;
+  // A side can't have killed more than the other side has lost.
+  const count = (side: Unit['side'], f: (u: Unit) => number): number =>
+    units.filter((u) => u.side === side).reduce((n, u) => n + f(u), 0);
+  const dead = (u: Unit): number => (u.hp <= 0 ? 1 : 0);
+  if (count('marine', (u) => u.kills) > count('alien', dead)) return null;
+  if (count('alien', (u) => u.kills) > count('marine', dead)) return null;
   const state: BattleState = {
     ...fresh,
     units,
@@ -187,11 +214,12 @@ function isInt(v: unknown, min: number, max: number): v is number {
   return typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
 }
 
-function checkCampaign(v: unknown): Campaign | null {
-  if (!isRecord(v) || !hasOnly(v, ['seed', 'mission', 'attempt', 'mapSeed', 'squad'])) {
-    return null;
-  }
+const CAMPAIGN_KEYS = ['seed', 'mission', 'attempt', 'mapSeed', 'squad'] as const;
+
+function checkCampaign(v: unknown, old: boolean): Campaign | null {
+  if (!isRecord(v) || !hasOnly(v, old ? CAMPAIGN_KEYS : [...CAMPAIGN_KEYS, 'xp'])) return null;
   const { seed, mission, attempt, mapSeed, squad } = v;
+  const xp = old ? noXp() : v.xp;
   if (!isInt(seed, 0, 0xffffffff)) return null;
   // A completed campaign isn't saved, so the mission is always one still to play.
   if (!isInt(mission, 0, MISSIONS.length - 1)) return null;
@@ -202,7 +230,21 @@ function checkCampaign(v: unknown): Campaign | null {
   const names = MARINE_NAMES as readonly string[];
   if (!squad.every((n) => typeof n === 'string' && names.includes(n))) return null;
   if (new Set(squad).size !== squad.length) return null;
-  return { seed, mission, attempt, mapSeed, squad: [...(squad as string[])] };
+  if (!Array.isArray(xp) || xp.length !== squad.length) return null;
+  if (!xp.every((x) => isInt(x, 0, XP.max))) return null;
+  return {
+    seed,
+    mission,
+    attempt,
+    mapSeed,
+    squad: [...(squad as string[])],
+    xp: [...(xp as number[])],
+  };
+}
+
+/** No XP for each marine (a version 1 save). */
+function noXp(): number[] {
+  return Array.from({ length: SKIRMISH.marines }, () => 0);
 }
 
 const UNIT_KEYS = [
@@ -220,15 +262,24 @@ const UNIT_KEYS = [
   'facing',
 ] as const;
 
-function checkBattleShape(v: unknown): SavedBattle | null {
-  if (!isRecord(v) || !hasOnly(v, ['round', 'rng', 'units'])) return null;
+function checkBattleShape(v: unknown, old: boolean): SavedBattle | null {
+  if (
+    !isRecord(v) ||
+    !hasOnly(v, old ? ['round', 'rng', 'units'] : ['round', 'rng', 'units', 'replay'])
+  ) {
+    return null;
+  }
   const { round, rng, units } = v;
+  const replay = old ? false : v.replay;
+  if (typeof replay !== 'boolean') return null;
   if (!isInt(round, 1, 10_000) || !isInt(rng, 0, 0xffffffff)) return null;
   if (!Array.isArray(units) || units.length === 0 || units.length > 64) return null;
   const out: SavedUnit[] = [];
   for (const u of units) {
-    if (!isRecord(u) || !hasOnly(u, UNIT_KEYS)) return null;
+    if (!isRecord(u) || !hasOnly(u, old ? UNIT_KEYS : [...UNIT_KEYS, 'kills'])) return null;
     const { id, x, y, hp, ap, ammo, overwatch, grenades, exposed, dormant, poison, facing } = u;
+    const kills = old ? 0 : u.kills;
+    if (!isInt(kills, 0, 64)) return null;
     if (typeof id !== 'string' || !/^[am][0-9]{1,2}$/.test(id)) return null;
     if (!isInt(x, 0, 255) || !isInt(y, 0, 255) || !isInt(hp, 0, 99)) return null;
     if (!isInt(ap, 0, ACTION_POINTS) || !isInt(grenades, 0, 9)) return null;
@@ -237,7 +288,21 @@ function checkBattleShape(v: unknown): SavedBattle | null {
     if (typeof dormant !== 'boolean') return null;
     if (!isInt(poison, 0, ABILITIES.poison.turns)) return null;
     if (facing !== 1 && facing !== -1) return null;
-    out.push({ id, x, y, hp, ap, ammo, overwatch, grenades, exposed, dormant, poison, facing });
+    out.push({
+      id,
+      x,
+      y,
+      hp,
+      ap,
+      ammo,
+      overwatch,
+      grenades,
+      exposed,
+      dormant,
+      poison,
+      facing,
+      kills,
+    });
   }
-  return { round, rng, units: out };
+  return { round, rng, units: out, replay };
 }
