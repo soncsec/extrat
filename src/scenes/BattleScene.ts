@@ -291,9 +291,16 @@ export class BattleScene extends Phaser.Scene {
     // under heavy load) would cancel itself out or drop the selection.
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Tab') e.preventDefault(); // keep the browser's focus where it is
+      // Paused under the help screen (or stopped): keys belong to whatever is on top.
+      if (!this.scene.isActive()) return;
+      if ((e.key === 'h' || e.key === 'H') && !e.repeat && !this.over) {
+        this.scene.pause();
+        this.scene.launch('Help', { from: 'Battle' });
+        return;
+      }
       if (e.key === 'Escape') {
         // Its own checks: it also works while the aliens move (it just does nothing).
-        if (this.scene.isActive()) this.onEscape();
+        this.onEscape();
         return;
       }
       if (this.busy || this.state.turn !== 'marine') return;
