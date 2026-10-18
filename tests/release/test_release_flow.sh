@@ -61,7 +61,7 @@ git init -q -b main
 git config user.name test && git config user.email test@example.invalid
 mkdir -p scripts deploy
 cp "$SRC/scripts/release.sh" "$SRC/scripts/release-remote.sh" "$SRC/scripts/smoke_test.py" scripts/
-printf 'dist/\ndeploy/server.env\n' >.gitignore
+printf 'dist/\ndeploy/server.env\ndeploy/dry-run.*\n' >.gitignore
 printf '{"name": "extrat"}\n' >package.json
 git add -A && git commit -q -m init
 git remote add origin "$T/remote/soncsec/$GAME_REPO.git" && git push -q origin main
