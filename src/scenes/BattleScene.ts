@@ -26,6 +26,7 @@ import {
   inThrowRange,
   livingUnits,
   moveCost,
+  hasActions,
   moveRange,
   nextReadyMarine,
   pathFor,
@@ -121,6 +122,8 @@ export interface GameSnapshot {
     name: string;
     /** Turns of poison left. */
     poison: number;
+    /** Squares the unit can still walk for free (left from a move cut short). */
+    freeSteps: number;
     /** Index into RANKS. */
     rank: number;
     maxHp: number;
@@ -470,6 +473,7 @@ export class BattleScene extends Phaser.Scene {
         kind: u.kind,
         name: u.name,
         poison: u.poison,
+        freeSteps: u.freeSteps,
         rank: u.rank,
         maxHp: u.maxHp,
         seen: this.isSeen(u),
@@ -920,7 +924,7 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
     const sel = this.state.selected ? unitById(this.state, this.state.selected) : undefined;
-    if (sel && sel.ap <= 0) {
+    if (sel && !hasActions(sel)) {
       const next = nextReadyMarine(this.state, sel.id);
       if (next) this.selectMarine(next);
     }
@@ -1700,13 +1704,15 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
     for (const t of this.rangeTiles(unit.id)) {
-      // Blue: a normal move (1 point). Yellow: a dash (both points).
-      const [color, alpha] = t.cost === 1 ? [0x4aa8ff, 0.3] : [0xf2c94a, 0.22];
+      // Blue: a normal move (1 point, or free squares left from a move cut short).
+      // Yellow: a dash (both points).
+      const [color, alpha] = t.cost <= 1 ? [0x4aa8ff, 0.3] : [0xf2c94a, 0.22];
       this.rangeLayer
         .fillStyle(color, alpha)
         .fillRect(t.x * TILE + 1, t.y * TILE + 1, TILE - 2, TILE - 2);
     }
-    const ap = unit.ap > 0 ? `AP ${unit.ap}/${ACTION_POINTS}` : 'NO ACTIONS LEFT';
+    const free = unit.freeSteps > 0 ? `  FREE MOVE ${unit.freeSteps}` : '';
+    const ap = hasActions(unit) ? `AP ${unit.ap}/${ACTION_POINTS}${free}` : 'NO ACTIONS LEFT';
     const aimed = this.aimTarget ? hitChance(this.state, unit.id, this.aimTarget) : null;
     const status = aimed === null ? ap : `SHOOT ${aimed}%  Enter: fire`;
     const clip = clipSize(unit);
