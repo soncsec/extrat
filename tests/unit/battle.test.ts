@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ACTION_POINTS,
+  GRENADE,
   MAP_COLS,
   MAP_ROWS,
   OVERWATCH,
@@ -10,14 +11,17 @@ import {
 } from '../../src/config/tuning';
 import {
   apply,
+  blastTargets,
   canAct,
   canOverwatch,
   canReload,
   canSee,
+  canThrow,
   clipSize,
   coverAgainst,
   createBattle,
   hitChance,
+  inThrowRange,
   livingUnits,
   moveCost,
   moveRange,
@@ -529,6 +533,7 @@ describe('shot odds, flanking and crits', () => {
       coverPenalty: SHOOTING.cover.half,
       flanked: false,
       reactionPenalty: 0,
+      exposed: false,
       hit: UNITS.marine.aim - 4 * SHOOTING.penaltyPerTile - SHOOTING.cover.half,
       crit: UNITS.marine.crit,
     });
@@ -755,5 +760,110 @@ describe('overwatch', () => {
     const next = apply(watch(), { type: 'endTurn' });
     expect(next.turn).toBe('marine');
     expect(unitById(next, 'm')?.overwatch).toBe(false);
+  });
+});
+
+describe('grenades', () => {
+  /**
+   * A 20 x 7 field: marine 'm' at (2,3); aliens 'a1' at (8,3) and 'a2' at (9,4), next to
+   * each other; marine 'm2' at (3,3), right beside 'm'. Bush at (7,3) covers a1 from the west.
+   */
+  function field(): BattleState {
+    const rows = Array(7).fill('.'.repeat(20));
+    rows[3] = '.......b............';
+    const s = createBattle(openMap(rows), 1);
+    const m = must(s.units.find((u) => u.side === 'marine'));
+    const a = must(s.units.find((u) => u.side === 'alien'));
+    return {
+      ...s,
+      map: openMap(rows),
+      units: [
+        { ...m, id: 'm', x: 2, y: 3 },
+        { ...m, id: 'm2', x: 3, y: 3 },
+        { ...a, id: 'a1', x: 8, y: 3 },
+        { ...a, id: 'a2', x: 9, y: 4 },
+      ],
+    };
+  }
+
+  it('starts marines with grenades and aliens without', () => {
+    for (const u of battle(5).units) {
+      expect(u.grenades).toBe(u.side === 'marine' ? GRENADE.perMarine : 0);
+      expect(u.exposed).toBe(false);
+    }
+  });
+
+  it('damages everyone in the 3 x 3 blast and nobody outside it', () => {
+    const s = field();
+    const next = apply(s, { type: 'throw', unitId: 'm', at: { x: 8, y: 4 } });
+    const thrown = must(next.lastThrow ?? undefined);
+    expect(thrown.hits.map((h) => h.unitId).sort()).toEqual(['a1', 'a2']);
+    for (const id of ['a1', 'a2']) {
+      expect(unitById(next, id)).toMatchObject({
+        hp: UNITS.walker.hp - GRENADE.damage,
+        exposed: true,
+      });
+    }
+    expect(unitById(next, 'm')).toMatchObject({
+      grenades: GRENADE.perMarine - 1,
+      ap: 0,
+      facing: 1,
+    });
+    expect(unitById(next, 'm2')?.hp).toBe(UNITS.marine.hp);
+  });
+
+  it('hurts friends too', () => {
+    const next = apply(field(), { type: 'throw', unitId: 'm', at: { x: 4, y: 3 } });
+    expect(next.lastThrow?.hits.map((h) => h.unitId)).toEqual(['m2']);
+    expect(unitById(next, 'm2')?.hp).toBe(UNITS.marine.hp - GRENADE.damage);
+  });
+
+  it('kills what it brings to zero, and dead units are not exposed', () => {
+    const s = field();
+    const weak = { ...s, units: s.units.map((u) => (u.id === 'a1' ? { ...u, hp: 2 } : u)) };
+    const next = apply(weak, { type: 'throw', unitId: 'm', at: { x: 8, y: 3 } });
+    expect(next.lastThrow?.hits.find((h) => h.unitId === 'a1')).toMatchObject({
+      killed: true,
+      hpAfter: 0,
+    });
+    expect(unitById(next, 'a1')).toMatchObject({ hp: 0, exposed: false });
+  });
+
+  it("strips cover from the survivors until the thrower's side starts its next turn", () => {
+    const s = field();
+    const covered = must(hitChance(s, 'm2', 'a1') ?? undefined);
+    const next = apply(s, { type: 'throw', unitId: 'm', at: { x: 9, y: 3 } });
+    const odds = must(shotOdds(next, 'm2', 'a1') ?? undefined);
+    expect(odds.cover).toBeNull();
+    expect(odds.exposed).toBe(true);
+    expect(odds.hit).toBe(covered + SHOOTING.cover.half);
+    const alienTurn = apply(next, { type: 'endTurn' });
+    expect(unitById(alienTurn, 'a1')?.exposed).toBe(true); // still exposed in their turn
+    const back = apply(alienTurn, { type: 'endTurn' });
+    expect(unitById(back, 'a1')?.exposed).toBe(false);
+  });
+
+  it('refuses throws out of range, off the map, without grenades or points, or out of turn', () => {
+    const s = field();
+    expect(apply(s, { type: 'throw', unitId: 'm', at: { x: 2 + GRENADE.range + 1, y: 3 } })).toBe(
+      s,
+    );
+    expect(apply(s, { type: 'throw', unitId: 'm', at: { x: -1, y: 3 } })).toBe(s);
+    const none = { ...s, units: s.units.map((u) => (u.id === 'm' ? { ...u, grenades: 0 } : u)) };
+    expect(apply(none, { type: 'throw', unitId: 'm', at: { x: 8, y: 3 } })).toBe(none);
+    const tired = { ...s, units: s.units.map((u) => (u.id === 'm' ? { ...u, ap: 0 } : u)) };
+    expect(apply(tired, { type: 'throw', unitId: 'm', at: { x: 8, y: 3 } })).toBe(tired);
+    const theirs = { ...s, turn: 'alien' as const };
+    expect(apply(theirs, { type: 'throw', unitId: 'm', at: { x: 8, y: 3 } })).toBe(theirs);
+    expect(canThrow(s, 'a1')).toBe(false);
+    expect(inThrowRange(s, 'nobody', { x: 1, y: 1 })).toBe(false);
+  });
+
+  it('lands over trees: no line of sight needed', () => {
+    const s = field();
+    const walled = { ...s, map: openMap(Array(7).fill('.....#..............')) };
+    const next = apply(walled, { type: 'throw', unitId: 'm', at: { x: 8, y: 3 } });
+    expect(next.lastThrow?.hits.length).toBeGreaterThan(0);
+    expect(blastTargets(walled, { x: 0, y: 0 })).toEqual([]);
   });
 });

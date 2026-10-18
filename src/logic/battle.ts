@@ -1,4 +1,4 @@
-import { ACTION_POINTS, OVERWATCH, SHOOTING, SKIRMISH, UNITS } from '../config/tuning';
+import { ACTION_POINTS, GRENADE, OVERWATCH, SHOOTING, SKIRMISH, UNITS } from '../config/tuning';
 import { findPath, hasLineOfSight, reachable, type Point } from './grid';
 import {
   blocksSight,
@@ -36,6 +36,10 @@ export interface Unit extends Point {
   ammo: number | null;
   /** Watching for enemies who move into sight; cleared when this unit's turn comes round. */
   overwatch: boolean;
+  /** Grenades left. */
+  grenades: number;
+  /** Caught by a grenade: no cover bonus until the thrower's side starts its next turn. */
+  exposed: boolean;
 }
 
 export interface BattleState {
@@ -53,6 +57,15 @@ export interface BattleState {
   lastShot: ShotResult | null;
   /** What the most recent move did, including reaction shots along the way. */
   lastMove: MoveResult | null;
+  /** What the most recent grenade did. */
+  lastThrow: ThrowResult | null;
+}
+
+export interface ThrowResult {
+  unitId: string;
+  at: Point;
+  /** Everyone caught in the blast (friend or foe), in unit order. */
+  hits: { unitId: string; damage: number; hpAfter: number; killed: boolean }[];
 }
 
 export interface MoveResult {
@@ -86,6 +99,7 @@ export type Action =
   | { type: 'shoot'; unitId: string; targetId: string }
   | { type: 'reload'; unitId: string }
   | { type: 'overwatch'; unitId: string }
+  | { type: 'throw'; unitId: string; at: Point }
   | { type: 'endTurn' };
 
 const MARINE_NAMES = ['Vasquez', 'Okafor', 'Lindqvist', 'Moreau', 'Tanaka', 'Reyes'];
@@ -107,6 +121,8 @@ export function createBattle(map: BattleMap, seed: number): BattleState {
     move: UNITS.marine.move,
     ammo: UNITS.marine.ammo,
     overwatch: false,
+    grenades: GRENADE.perMarine,
+    exposed: false,
   }));
   const aliens = deploy(map, rng, 'east', SKIRMISH.aliens).map((p, i): Unit => ({
     ...p,
@@ -121,6 +137,8 @@ export function createBattle(map: BattleMap, seed: number): BattleState {
     move: UNITS.walker.move,
     ammo: UNITS.walker.ammo,
     overwatch: false,
+    grenades: 0,
+    exposed: false,
   }));
   return {
     map,
@@ -131,6 +149,7 @@ export function createBattle(map: BattleMap, seed: number): BattleState {
     rng: (seed ^ 0x9e3779b9) >>> 0,
     lastShot: null,
     lastMove: null,
+    lastThrow: null,
   };
 }
 
@@ -154,6 +173,8 @@ export function apply(state: BattleState, action: Action): BattleState {
     }
     case 'shoot':
       return shoot(state, action.unitId, action.targetId);
+    case 'throw':
+      return throwGrenade(state, action.unitId, action.at);
     case 'reload': {
       const unit = unitById(state, action.unitId);
       if (!unit || !canReload(state, unit.id)) return state;
@@ -162,10 +183,12 @@ export function apply(state: BattleState, action: Action): BattleState {
     case 'endTurn': {
       // The other side's living units get their action points back.
       const turn: Side = state.turn === 'marine' ? 'alien' : 'marine';
-      // Their overwatch ends: it only lasts through the other side's turn.
-      const units = state.units.map((u) =>
-        u.side === turn && u.hp > 0 ? { ...u, ap: ACTION_POINTS, overwatch: false } : u,
-      );
+      // Their overwatch ends: it only lasts through the other side's turn. The other
+      // side's exposure ends too: it lasted until this side's turn came round again.
+      const units = state.units.map((u) => {
+        if (u.side !== turn) return u.exposed ? { ...u, exposed: false } : u;
+        return u.hp > 0 ? { ...u, ap: ACTION_POINTS, overwatch: false } : u;
+      });
       const round = turn === 'marine' ? state.round + 1 : state.round;
       return { ...state, units, turn, round, selected: null };
     }
@@ -241,6 +264,8 @@ export interface ShotOdds {
   flanked: boolean;
   /** Taken off for an overwatch reaction shot (zero for aimed shots). */
   reactionPenalty: number;
+  /** The target was caught by a grenade: its cover doesn't count. */
+  exposed: boolean;
   /** Final chances in percent. */
   hit: number;
   crit: number;
@@ -280,7 +305,8 @@ function oddsBetween(state: BattleState, shooter: Unit, target: Unit, reaction: 
   const stats = UNITS[shooter.kind];
   const dist = Math.hypot(target.x - shooter.x, target.y - shooter.y);
   const range = -Math.max(0, Math.floor(dist) - SHOOTING.closeRange) * SHOOTING.penaltyPerTile;
-  const cover = coverAgainst(state.map, target, shooter);
+  // A unit caught by a grenade has no cover to hide behind.
+  const cover = target.exposed ? null : coverAgainst(state.map, target, shooter);
   const coverPenalty = cover ? SHOOTING.cover[cover] : 0;
   const flanked = cover === null;
   const reactionPenalty = reaction ? OVERWATCH.aimPenalty : 0;
@@ -290,7 +316,58 @@ function oddsBetween(state: BattleState, shooter: Unit, target: Unit, reaction: 
   );
   const critBase = stats.crit + (flanked ? SHOOTING.flankCrit : 0);
   const crit = reaction && !OVERWATCH.canCrit ? 0 : Math.min(100, critBase);
-  return { aim: stats.aim, range, cover, coverPenalty, flanked, reactionPenalty, hit, crit };
+  const exposed = target.exposed;
+  return {
+    aim: stats.aim,
+    range,
+    cover,
+    coverPenalty,
+    flanked,
+    reactionPenalty,
+    exposed,
+    hit,
+    crit,
+  };
+}
+
+/** True if the unit can throw a grenade now: its turn, an action point, and a grenade. */
+export function canThrow(state: BattleState, unitId: string): boolean {
+  const unit = unitById(state, unitId);
+  if (!unit || unit.hp <= 0 || unit.ap <= 0 || unit.side !== state.turn) return false;
+  return unit.grenades > 0;
+}
+
+/** True if `at` is on the map and within throwing range of the unit. */
+export function inThrowRange(state: BattleState, unitId: string, at: Point): boolean {
+  const unit = unitById(state, unitId);
+  const { cols, rows } = state.map;
+  if (!unit || at.x < 0 || at.y < 0 || at.x >= cols || at.y >= rows) return false;
+  return Math.hypot(at.x - unit.x, at.y - unit.y) <= GRENADE.range;
+}
+
+/** The living units a grenade landing on `at` would hit. */
+export function blastTargets(state: BattleState, at: Point): Unit[] {
+  return state.units.filter(
+    (u) => u.hp > 0 && Math.hypot(u.x - at.x, u.y - at.y) <= GRENADE.radius,
+  );
+}
+
+/** Throws a grenade: fixed damage to everyone in the blast, survivors lose cover. */
+function throwGrenade(state: BattleState, unitId: string, at: Point): BattleState {
+  const thrower = unitById(state, unitId);
+  if (!thrower || !canThrow(state, unitId) || !inThrowRange(state, unitId, at)) return state;
+  const hits: ThrowResult['hits'] = [];
+  let next = state;
+  for (const target of blastTargets(state, at)) {
+    const hp = Math.max(0, target.hp - GRENADE.damage);
+    hits.push({ unitId: target.id, damage: GRENADE.damage, hpAfter: hp, killed: hp === 0 });
+    next = replaceUnit(next, { ...target, hp, exposed: hp > 0 });
+  }
+  const facing = at.x === thrower.x ? thrower.facing : at.x > thrower.x ? 1 : -1;
+  // Throwing uses all remaining action points, like a shot.
+  const after = unitById(next, unitId) as Unit;
+  next = replaceUnit(next, { ...after, grenades: after.grenades - 1, ap: 0, facing });
+  return { ...next, lastThrow: { unitId, at: { x: at.x, y: at.y }, hits } };
 }
 
 /** True if the unit can go on overwatch now: its turn, an action point, and ammo. */

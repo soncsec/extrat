@@ -47,8 +47,9 @@ export function playOnce(
   x: number,
   y: number,
   depth: number,
+  scale = 1,
 ): Phaser.GameObjects.Sprite {
-  const s = scene.add.sprite(x, y, key).setDepth(depth);
+  const s = scene.add.sprite(x, y, key).setDepth(depth).setScale(scale);
   s.play(key);
   s.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => s.destroy());
   return s;
@@ -141,4 +142,22 @@ export function drawEye(g: Phaser.GameObjects.Graphics, x: number, y: number): v
   });
   g.fillStyle(0x11141b, 1).fillRect(x + 3, y + 1, 3, 3);
   g.fillStyle(0xffd23a, 1).fillRect(x + 4, y + 2, 1, 1);
+}
+
+/** A small red cross-hatched shield (7 x 8) with its top-left at (x, y): cover blown away. */
+export function drawExposed(g: Phaser.GameObjects.Graphics, x: number, y: number): void {
+  SHIELD.forEach((row, j) => {
+    [...row].forEach((c, i) => {
+      if (c !== '1') return;
+      const edge =
+        j === 0 ||
+        i === 0 ||
+        i === 6 ||
+        row[i - 1] === '0' ||
+        row[i + 1] === '0' ||
+        SHIELD[j + 1]?.[i] !== '1';
+      const crack = (i + j) % 3 === 0;
+      g.fillStyle(edge ? 0x0b1220 : crack ? 0x11141b : 0xff5a4a, 1).fillRect(x + i, y + j, 1, 1);
+    });
+  });
 }

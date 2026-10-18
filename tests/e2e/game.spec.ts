@@ -319,6 +319,63 @@ test('O puts a marine on overwatch, and it fires when an alien moves into sight'
   expect(fired.length).toBeGreaterThan(0);
 });
 
+test('G enters grenade mode and Esc leaves it', async ({ page }) => {
+  await openGame(page, '?seed=42');
+  const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
+  if (!marine) throw new Error('no marine');
+  expect(marine.grenades).toBe(1);
+  await clickTile(page, marine.x, marine.y);
+  await page.keyboard.press('g');
+  await expect.poll(async () => (await snapshot(page)).mode).toBe('grenade');
+  await page.keyboard.press('Escape');
+  await expect.poll(async () => (await snapshot(page)).mode).toBe('move');
+  expect((await snapshot(page)).selected).toBe(marine.id); // Esc left grenade mode, not the marine
+
+  await page.keyboard.press('Escape'); // and Esc again deselects
+});
+
+test('a grenade hits an alien for 2 and leaves it exposed', async ({ page }) => {
+  await openGame(page, '?seed=42');
+  // Aliens start out of throwing range; end turns until one comes within 8 tiles.
+  type U = GameSnapshot['units'][number];
+  let pair: { m: U; a: U; d: number } | undefined;
+  for (let round = 1; round <= 5 && !pair; round++) {
+    const s = await snapshot(page);
+    const living = (side: string): U[] => s.units.filter((u) => u.side === side && u.hp > 0);
+    pair = living('marine')
+      .flatMap((m) => living('alien').map((a) => ({ m, a, d: Math.hypot(a.x - m.x, a.y - m.y) })))
+      .filter((p) => p.d <= 8 && p.d > 2) // in range, and far enough not to hit the thrower
+      .sort((p, q) => p.d - q.d)[0];
+    if (pair) break;
+    await page.locator('#game canvas').click({ position: { x: 5, y: 5 } });
+    await page.keyboard.press('e');
+    await expect
+      .poll(
+        async () => {
+          const t = await snapshot(page);
+          return t.turn === 'marine' && !t.busy ? t.round : 0;
+        },
+        { timeout: 30_000 },
+      )
+      .toBe(round + 1);
+  }
+  if (!pair) throw new Error('no marine came within throwing range of an alien by round 5');
+  await clickTile(page, pair.m.x, pair.m.y);
+  await page.keyboard.press('g');
+  await expect.poll(async () => (await snapshot(page)).mode).toBe('grenade');
+  await clickTile(page, pair.a.x, pair.a.y);
+  await expect
+    .poll(async () => {
+      const t = await snapshot(page);
+      const u = t.units.find((v) => v.id === pair.m.id);
+      return t.busy ? 'throwing' : `${u?.grenades},${u?.ap},${t.mode}`;
+    })
+    .toBe('0,0,move');
+  const hit = (await snapshot(page)).units.find((u) => u.id === pair.a.id);
+  expect(hit?.hp).toBe(Math.max(0, pair.a.hp - 2));
+  expect(hit?.exposed).toBe((hit?.hp ?? 0) > 0);
+});
+
 test('E ends the turn; the aliens advance, then round 2 begins', async ({ page }) => {
   await openGame(page, '?seed=42');
   const before = await snapshot(page);

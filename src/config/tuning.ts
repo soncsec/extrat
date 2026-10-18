@@ -78,6 +78,17 @@ export const OVERWATCH = {
   canCrit: false,
 } as const;
 
+/** Frag grenades: thrown at a tile, damage everyone nearby, strip their cover for a turn. */
+export const GRENADE = {
+  /** Grenades each marine carries into a battle (aliens carry none). */
+  perMarine: 1,
+  /** Farthest throw, in tiles (it arcs, so trees don't block it). */
+  range: 8,
+  /** Units within this distance of the target tile are hit: 1.5 covers the 3 x 3 square. */
+  radius: 1.5,
+  damage: 2,
+} as const;
+
 /** Action points each unit gets at the start of its side's turn. A move costs 1. */
 export const ACTION_POINTS = 2;
 
