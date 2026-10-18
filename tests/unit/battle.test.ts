@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ACTION_POINTS,
+  ALIEN_KINDS,
   GRENADE,
   MAP_COLS,
   MAP_ROWS,
@@ -90,6 +91,25 @@ describe('createBattle', () => {
         `seed ${seed}`,
       ).toHaveLength(SKIRMISH.aliens);
       for (const u of s.units) expect(isWalkable(map, u.x, u.y), `seed ${seed} ${u.id}`).toBe(true);
+    }
+  });
+
+  it('draws every alien kind by default, and only the listed kinds when given some', () => {
+    const seen = new Set<string>();
+    for (let seed = 1; seed <= 40; seed++) {
+      for (const u of battle(seed).units) if (u.side === 'alien') seen.add(u.kind);
+    }
+    expect([...seen].sort()).toEqual([...ALIEN_KINDS].sort());
+    for (let seed = 1; seed <= 40; seed++) {
+      const map = generateForest(seed, MAP_COLS, MAP_ROWS);
+      const only = createBattle(map, seed, { kinds: ['walker'] });
+      expect(only.units.filter((u) => u.side === 'alien').every((u) => u.kind === 'walker')).toBe(
+        true,
+      );
+      // The marines and everyone's places are the same whatever kinds are drawn.
+      expect(only.units.map((u) => [u.id, u.x, u.y])).toEqual(
+        battle(seed).units.map((u) => [u.id, u.x, u.y]),
+      );
     }
   });
 

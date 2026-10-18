@@ -61,15 +61,36 @@ export const PODS = {
  * logic/landscapes.ts). Coast, rocky hills, crash site and alien ship come in M4.3 and
  * the boss in M5.6; until then those missions use the forest. A gentle ramp
  * (owner decision 2026-10-18): more and bigger alien groups as the campaign goes on.
+ *
+ * `kinds` are the alien kinds that mission can field (M5.8, owner decision 2026-10-18):
+ * one new kind per mission, walkers first, so a new player learns one ability at a
+ * time, and snakes (poison, the deadliest) no earlier than mission 4. The last kind
+ * listed is the new one, and the battle always fields at least one of it.
  */
 export const MISSIONS = [
-  { landscape: 'forest', pods: { count: 2, size: 2 } },
-  { landscape: 'town', pods: { count: 2, size: 2 } },
-  { landscape: 'forest', pods: { count: 3, size: 2 } },
-  { landscape: 'forest', pods: { count: 3, size: 2 } },
-  { landscape: 'forest', pods: { count: 3, size: 3 } },
-  { landscape: 'forest', pods: { count: 3, size: 3 } },
-] as const;
+  { landscape: 'forest', pods: { count: 2, size: 2 }, kinds: ['walker'] },
+  { landscape: 'town', pods: { count: 2, size: 2 }, kinds: ['walker', 'flyer'] },
+  { landscape: 'forest', pods: { count: 3, size: 2 }, kinds: ['walker', 'flyer', 'lizard'] },
+  {
+    landscape: 'forest',
+    pods: { count: 3, size: 2 },
+    kinds: ['walker', 'flyer', 'lizard', 'snake'],
+  },
+  {
+    landscape: 'forest',
+    pods: { count: 3, size: 3 },
+    kinds: ['walker', 'flyer', 'lizard', 'snake'],
+  },
+  {
+    landscape: 'forest',
+    pods: { count: 3, size: 3 },
+    kinds: ['walker', 'flyer', 'lizard', 'snake'],
+  },
+] as const satisfies readonly {
+  landscape: string;
+  pods: { count: number; size: number };
+  kinds: readonly (typeof ALIEN_KINDS)[number][];
+}[];
 
 /**
  * XP (M5.2). Each marine earns XP for the aliens they kill (shots and grenades), and
@@ -122,11 +143,14 @@ export const UNITS = {
     ammo: 3,
     ability: null,
   },
-  /** Charges in and claws: reaches the 8 tiles around it, ignores cover, can't watch. */
+  /**
+   * Charges in and claws: reaches the 8 tiles around it, ignores cover, can't watch.
+   * Aim was 80 until the balance pass of 2026-10-18 (M5.8): two claws killed a rookie.
+   */
   walker: {
     hp: 4,
     move: 5,
-    aim: 80,
+    aim: 70,
     damage: { min: 2, max: 3 },
     range: 1.5,
     crit: 10,

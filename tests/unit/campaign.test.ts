@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAP_COLS, MAP_ROWS, MISSIONS, SKIRMISH } from '../../src/config/tuning';
+import { ALIEN_KINDS, MAP_COLS, MAP_ROWS, MISSIONS, SKIRMISH } from '../../src/config/tuning';
 import { createBattle, MARINE_NAMES } from '../../src/logic/battle';
 import {
   afterBattle,
@@ -91,6 +91,35 @@ describe('missions', () => {
             `seed ${seed} pod ${pod}`,
           ).toHaveLength(m.pods.size);
         }
+      }
+    }
+  }, 30_000);
+
+  it('introduce one alien kind per mission, walkers first, snakes from mission 4', () => {
+    expect(MISSIONS[0]?.kinds).toEqual(['walker']);
+    for (let i = 1; i < MISSIONS.length; i++) {
+      const before = MISSIONS[i - 1]?.kinds ?? [];
+      const now = MISSIONS[i]?.kinds ?? [];
+      // Never fewer kinds, nothing dropped, and at most one new kind, listed last.
+      expect(now.slice(0, before.length)).toEqual(before);
+      expect(now.length - before.length).toBeLessThanOrEqual(1);
+    }
+    const firstSnake = MISSIONS.findIndex((m) => (m.kinds as readonly string[]).includes('snake'));
+    expect(firstSnake).toBeGreaterThanOrEqual(3);
+    expect([...(MISSIONS[MISSIONS.length - 1]?.kinds ?? [])].sort()).toEqual(
+      [...ALIEN_KINDS].sort(),
+    );
+  });
+
+  it('field only the mission`s kinds, always including the new one, on 100 maps', () => {
+    for (const [i, m] of MISSIONS.entries()) {
+      const newest = m.kinds[m.kinds.length - 1];
+      for (let seed = 1; seed <= 100; seed++) {
+        const map = generateMap(seed, MAP_COLS, MAP_ROWS, m.landscape);
+        const b = createBattle(map, map.seed, { pods: m.pods, kinds: m.kinds });
+        const kinds = b.units.filter((u) => u.side === 'alien').map((u) => u.kind);
+        for (const k of kinds) expect(m.kinds, `mission ${i + 1} seed ${seed}`).toContain(k);
+        expect(kinds, `mission ${i + 1} seed ${seed}`).toContain(newest);
       }
     }
   }, 30_000);
