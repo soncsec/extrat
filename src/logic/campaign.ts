@@ -19,6 +19,8 @@ export interface Campaign {
   squad: string[];
   /** Each marine's XP, in squad order (M5.2). */
   xp: number[];
+  /** How many times each marine has died this campaign, in squad order (M5.3). */
+  deaths: number[];
 }
 
 /** What the player picked on the debrief. */
@@ -38,7 +40,21 @@ export function newCampaign(seed: number): Campaign {
     mapSeed: mapSeedFor(seed, 0, 0),
     squad: names.slice(0, SKIRMISH.marines),
     xp: Array.from({ length: SKIRMISH.marines }, () => 0),
+    deaths: Array.from({ length: SKIRMISH.marines }, () => 0),
   };
+}
+
+/**
+ * The campaign with a death counted for each marine lying dead in a finished battle
+ * (M5.3). They come back next mission at full health: shame is the only cost. Scenes
+ * don't call this for a replayed battle, as with XP.
+ */
+export function recordDeaths(c: Campaign, battle: BattleState): Campaign {
+  const deaths = c.deaths.map((d, i) => {
+    const marine = battle.units.find((u) => u.id === `m${i + 1}`);
+    return marine && marine.hp <= 0 ? d + 1 : d;
+  });
+  return { ...c, deaths };
 }
 
 /** The map seed for a mission try: fixed by the campaign seed, so a campaign replays. */

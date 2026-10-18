@@ -297,10 +297,32 @@ describe('save version 2: XP, kills and replays (M5.2)', () => {
     expect(restoreBattle(ranked, { ...b, units: units(1, alien.hp) })).toBeNull();
   });
 
+  it('keeps death counts, and rejects bad ones (M5.3, version 4)', () => {
+    const shamed = { ...ranked, deaths: [2, 0, 1, 0] };
+    const loaded = decodeSave(encodeSave(shamed, null));
+    expect(loaded.ok && loaded.save.campaign.deaths).toEqual([2, 0, 1, 0]);
+    const c = good.campaign;
+    expect(decodes({ ...good, campaign: without(c, 'deaths') })).toBe(false);
+    expect(decodes({ ...good, campaign: { ...c, deaths: [0, 0, 0] } })).toBe(false);
+    expect(decodes({ ...good, campaign: { ...c, deaths: [0, 0, 0, -1] } })).toBe(false);
+    expect(decodes({ ...good, campaign: { ...c, deaths: [0, 0, 0, 0.5] } })).toBe(false);
+    expect(decodes({ ...good, campaign: { ...c, deaths: [0, 0, 0, '1'] } })).toBe(false);
+    expect(decodes({ ...good, campaign: { ...c, deaths: [0, 0, 0, 100_001] } })).toBe(false);
+  });
+
+  it('still loads a version 3 save, with no deaths', () => {
+    const v3 = { v: 3, campaign: without(good.campaign, 'deaths'), battle: b };
+    const loaded = decodeSave(JSON.stringify(v3));
+    if (!loaded.ok) throw new Error('did not load');
+    expect(loaded.save.v).toBe(SAVE_VERSION);
+    expect(loaded.save.campaign.deaths).toEqual([0, 0, 0, 0]);
+    expect(decodes({ ...v3, campaign: good.campaign })).toBe(false);
+  });
+
   it('still loads a version 2 save, with no hits', () => {
     const v2 = {
       v: 2,
-      campaign: good.campaign,
+      campaign: without(good.campaign, 'deaths'),
       battle: { ...b, units: b.units.map((u) => without(u, 'hits')) },
     };
     const loaded = decodeSave(JSON.stringify(v2));
@@ -327,7 +349,7 @@ describe('save version 2: XP, kills and replays (M5.2)', () => {
   it('still loads a version 1 save, with no XP, kills or replay', () => {
     const v1 = {
       v: 1,
-      campaign: without(good.campaign, 'xp'),
+      campaign: without(without(good.campaign, 'xp'), 'deaths'),
       battle: {
         round: b.round,
         rng: b.rng,

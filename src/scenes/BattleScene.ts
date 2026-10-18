@@ -54,6 +54,7 @@ import { planAlienAction } from '../logic/ai';
 import {
   afterBattle,
   awardXp,
+  recordDeaths,
   battleXp,
   currentMission,
   isComplete,
@@ -100,7 +101,7 @@ export interface GameSnapshot {
   seed: number;
   mapSeed: number;
   /** The campaign mission (0-based), try and squad XP, or null in a skirmish. */
-  campaign: { mission: number; attempt: number; xp: number[] } | null;
+  campaign: { mission: number; attempt: number; xp: number[]; deaths: number[] } | null;
   /** This battle was started with REPLAY (it earns no XP). */
   replaying: boolean;
   /** Touch: the tile tapped once, whose preview shows until it is tapped again. */
@@ -453,6 +454,7 @@ export class BattleScene extends Phaser.Scene {
             mission: this.campaign.mission,
             attempt: this.campaign.attempt,
             xp: [...this.campaign.xp],
+            deaths: [...this.campaign.deaths],
           }
         : null,
       replaying: this.replaying,
@@ -1001,6 +1003,7 @@ export class BattleScene extends Phaser.Scene {
       landscape: this.landscape,
       campaign: this.campaign,
       xp: null,
+      lost: this.state.units.filter((u) => u.side === 'marine' && u.hp <= 0).map((u) => u.name),
     };
     if (this.campaign) {
       // XP is earned when the battle ends, whatever is picked on the debrief; a
@@ -1008,8 +1011,9 @@ export class BattleScene extends Phaser.Scene {
       const gained = this.replaying ? null : battleXp(this.state, won);
       if (gained) {
         const awarded = awardXp(this.campaign, gained);
-        this.campaign = awarded.campaign;
-        result.campaign = awarded.campaign;
+        // Deaths are counted when XP is: never for a replay (M5.3).
+        this.campaign = recordDeaths(awarded.campaign, this.state);
+        result.campaign = this.campaign;
         result.xp = { gained, promotions: awarded.promotions };
       }
       // Closing the browser on the debrief picks up at the next briefing: the next

@@ -99,6 +99,12 @@ export const RANKS = [
   { name: 'Lieutenant', short: 'LT', xp: 140, aim: 10, hp: 2, grenades: 2, ammo: 1 },
 ] as const;
 
+/** The Wall of Shame (M5.3): shame is cosmetic only (owner decision 2026-10-17). */
+export const SHAME = {
+  /** Deaths in a campaign before a marine's nickname gets worse. */
+  veteranDeaths: 3,
+} as const;
+
 /** Squad and enemy sizes for the skirmish. */
 export const SKIRMISH = {
   marines: 4,
