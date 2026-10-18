@@ -56,7 +56,7 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 - [x] M2.2 Line of sight; half and full cover by direction, with shield icons on hover
 - [x] M2.3 Hit chance from aim, cover, distance and flanking, with a breakdown panel
 - [x] M2.4 Ammo and reload
-- [ ] M2.5 Overwatch: shoot the first enemy that moves in sight
+- [x] M2.5 Overwatch: shoot the first enemy that moves in sight
 - [ ] M2.6 Grenades: area damage, removes cover bonus for one turn
 - [ ] M2.7 Camera pan and zoom levels; keyboard shortcuts (next marine, end turn, actions 1–4, Esc to cancel)
 

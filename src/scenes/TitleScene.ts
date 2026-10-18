@@ -46,7 +46,7 @@ export class TitleScene extends Phaser.Scene {
       this,
       cx,
       122,
-      'Click a marine, then a blue tile to move.\nClick an alien to aim, click again to fire.\nE ends the turn.',
+      'Click a marine, then a blue tile to move (yellow: dash).\nClick an alien to aim, click again to fire.\nR reload   O overwatch   E end turn   Esc cancel',
       9,
       '#8d97a8',
     );

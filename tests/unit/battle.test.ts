@@ -3,6 +3,7 @@ import {
   ACTION_POINTS,
   MAP_COLS,
   MAP_ROWS,
+  OVERWATCH,
   SHOOTING,
   SKIRMISH,
   UNITS,
@@ -10,6 +11,7 @@ import {
 import {
   apply,
   canAct,
+  canOverwatch,
   canReload,
   canSee,
   clipSize,
@@ -20,6 +22,7 @@ import {
   moveCost,
   moveRange,
   pathFor,
+  reactionOdds,
   shotBlock,
   shotOdds,
   unitAt,
@@ -525,6 +528,7 @@ describe('shot odds, flanking and crits', () => {
       cover: 'half',
       coverPenalty: SHOOTING.cover.half,
       flanked: false,
+      reactionPenalty: 0,
       hit: UNITS.marine.aim - 4 * SHOOTING.penaltyPerTile - SHOOTING.cover.half,
       crit: UNITS.marine.crit,
     });
@@ -657,5 +661,99 @@ describe('ammo and reloading', () => {
     const walkers = range({}, 'alien');
     expect(canReload(walkers, 'a')).toBe(false);
     expect(apply(walkers, { type: 'reload', unitId: 'nobody' })).toBe(walkers);
+  });
+});
+
+describe('overwatch', () => {
+  /**
+   * A 20 x 5 field: marine 'm' at (2,2) on overwatch, alien 'a' at (17,2), 15 tiles away
+   * (just inside the marine's range of 16). It's the aliens' turn.
+   */
+  function watch(rows?: string[], rng = 1): BattleState {
+    const pic = rows ?? Array(5).fill('.'.repeat(20));
+    const s = createBattle(openMap(pic), 1);
+    const m = must(s.units.find((u) => u.side === 'marine'));
+    const a = must(s.units.find((u) => u.side === 'alien'));
+    return {
+      ...s,
+      rng,
+      turn: 'alien',
+      units: [
+        { ...m, id: 'm', x: 2, y: 2, ap: 0, overwatch: true },
+        { ...a, id: 'a', x: 17, y: 2, ap: ACTION_POINTS },
+      ],
+    };
+  }
+
+  it('costs the rest of the turn and needs a point and ammo', () => {
+    const s = { ...watch(), turn: 'marine' as const };
+    const fresh = {
+      ...s,
+      units: s.units.map((u) => (u.id === 'm' ? { ...u, ap: 2, overwatch: false } : u)),
+    };
+    expect(canOverwatch(fresh, 'm')).toBe(true);
+    const on = apply(fresh, { type: 'overwatch', unitId: 'm' });
+    expect(unitById(on, 'm')).toMatchObject({ overwatch: true, ap: 0 });
+    expect(apply(on, { type: 'overwatch', unitId: 'm' })).toBe(on); // already on, no points
+    const dry = { ...fresh, units: fresh.units.map((u) => (u.id === 'm' ? { ...u, ammo: 0 } : u)) };
+    expect(apply(dry, { type: 'overwatch', unitId: 'm' })).toBe(dry);
+    expect(apply(fresh, { type: 'overwatch', unitId: 'a' })).toBe(fresh); // not the aliens' turn
+  });
+
+  it('fires once when an enemy moves within sight, then stops watching', () => {
+    const s = watch();
+    const next = apply(s, { type: 'move', unitId: 'a', to: { x: 14, y: 2 } });
+    const moved = must(next.lastMove ?? undefined);
+    expect(moved.reactions).toHaveLength(1);
+    const { step, shot } = must(moved.reactions[0]);
+    expect(step).toBe(0); // the first tile it stepped onto was already in sight
+    expect(shot).toMatchObject({ shooterId: 'm', targetId: 'a', reaction: true, crit: false });
+    expect(unitById(next, 'm')).toMatchObject({ overwatch: false, ammo: UNITS.marine.ammo - 1 });
+    expect(unitById(next, 'a')?.hp).toBe(shot.hpAfter);
+  });
+
+  it('takes the snap-shot penalty and never crits', () => {
+    const s = watch();
+    const moved = { ...s, units: s.units.map((u) => (u.id === 'a' ? { ...u, x: 7 } : u)) };
+    const odds = must(reactionOdds(moved, 'm', 'a') ?? undefined);
+    expect(odds.reactionPenalty).toBe(OVERWATCH.aimPenalty);
+    expect(odds.hit).toBe(UNITS.marine.aim - OVERWATCH.aimPenalty);
+    expect(odds.crit).toBe(0);
+    for (let rng = 1; rng <= 100; rng++) {
+      const next = apply(watch(undefined, rng), { type: 'move', unitId: 'a', to: { x: 14, y: 2 } });
+      for (const r of next.lastMove?.reactions ?? []) expect(r.shot.crit).toBe(false);
+    }
+  });
+
+  it('stops the move where a reaction shot kills the mover', () => {
+    for (let rng = 1; rng <= 300; rng++) {
+      const s = watch(undefined, rng);
+      const weak = { ...s, units: s.units.map((u) => (u.id === 'a' ? { ...u, hp: 1 } : u)) };
+      const next = apply(weak, { type: 'move', unitId: 'a', to: { x: 14, y: 2 } });
+      if (!next.lastMove?.reactions[0]?.shot.killed) continue;
+      expect(next.lastMove.path).toEqual([{ x: 16, y: 2 }]);
+      expect(unitById(next, 'a')).toMatchObject({ x: 16, y: 2, hp: 0 });
+      return;
+    }
+    throw new Error('no killing reaction shot in 300 random states');
+  });
+
+  it('does not fire at moves it cannot see, or out of range', () => {
+    // A wall of pines between them.
+    const rows = Array(5).fill('..........#.........');
+    const blind = apply(watch(rows), { type: 'move', unitId: 'a', to: { x: 14, y: 2 } });
+    expect(blind.lastMove?.reactions).toEqual([]);
+    expect(unitById(blind, 'm')?.overwatch).toBe(true);
+    // Moving away, staying beyond 16 tiles.
+    const s = watch();
+    const far = { ...s, units: s.units.map((u) => (u.id === 'a' ? { ...u, x: 19 } : u)) };
+    const away = apply(far, { type: 'move', unitId: 'a', to: { x: 19, y: 4 } });
+    expect(away.lastMove?.reactions).toEqual([]);
+  });
+
+  it("ends when the watcher's side gets the turn back", () => {
+    const next = apply(watch(), { type: 'endTurn' });
+    expect(next.turn).toBe('marine');
+    expect(unitById(next, 'm')?.overwatch).toBe(false);
   });
 });
