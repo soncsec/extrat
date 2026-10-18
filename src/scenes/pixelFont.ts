@@ -70,6 +70,7 @@ export interface PixelTextStyle {
 
 /** Pixel-font text that can be changed later. */
 export class PixelText extends Phaser.GameObjects.Container {
+  private lastText = '';
   private readonly main: Phaser.GameObjects.BitmapText;
   private readonly shade: Phaser.GameObjects.BitmapText | null;
   private readonly panel: Phaser.GameObjects.Rectangle | null;
@@ -109,7 +110,13 @@ export class PixelText extends Phaser.GameObjects.Container {
     return this.main.height;
   }
 
+  /** The text as last set, before the font's own substitutions. */
+  get text(): string {
+    return this.lastText;
+  }
+
   setText(text: string): this {
+    this.lastText = text;
     const t = toFontText(text);
     const { align, valign, padding, scale } = this.style;
     for (const b of [this.main, this.shade]) {
