@@ -822,10 +822,8 @@ test('Space fast-forwards the alien turn, and the speed resets when it ends (M5.
   expect((await snapshot(page)).fast).toBe(false);
   await page.keyboard.press('e');
   await expect.poll(async () => (await snapshot(page)).busy).toBe(true);
-  await page.keyboard.press(' ');
-  await expect.poll(async () => (await snapshot(page)).fast).toBe(true);
-  await page.keyboard.press(' ');
-  await expect.poll(async () => (await snapshot(page)).fast).toBe(false);
+  // One press, straight after the turn starts: a short alien turn (dormant pods) ends
+  // in a couple of seconds, so toggling back and forth would race it.
   await page.keyboard.press(' ');
   await expect.poll(async () => (await snapshot(page)).fast).toBe(true);
   await expect.poll(async () => (await snapshot(page)).busy, { timeout: 40_000 }).toBe(false);
