@@ -100,14 +100,16 @@ export interface Promotion {
 }
 
 /**
- * The XP each marine (in squad order) earned in a finished battle: their kills, and
- * the mission bonus if the squad won. Fallen marines keep what they earned and get
- * the bonus too: they come back next mission (no permadeath).
+ * The XP each marine (in squad order) earned in a finished battle: their hits and
+ * kills, and the mission bonus if the squad won. Fallen marines keep what they earned
+ * and get the bonus too: they come back next mission (no permadeath).
  */
 export function battleXp(battle: BattleState, won: boolean): number[] {
   return Array.from({ length: SKIRMISH.marines }, (_, i) => {
     const marine = battle.units.find((u) => u.id === `m${i + 1}`);
-    return (marine?.kills ?? 0) * XP.kill + (won ? XP.missionWon : 0);
+    return (
+      (marine?.hits ?? 0) * XP.hit + (marine?.kills ?? 0) * XP.kill + (won ? XP.missionWon : 0)
+    );
   });
 }
 

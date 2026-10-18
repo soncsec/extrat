@@ -82,16 +82,20 @@ describe('save loading rejects anything unexpected', () => {
   });
 
   it('rejects another version, extra fields and missing fields', () => {
-    expect(decodes({ ...good, v: 3 })).toBe(false);
+    expect(decodes({ ...good, v: SAVE_VERSION + 1 })).toBe(false);
     expect(decodes({ ...good, v: 0 })).toBe(false);
-    expect(decodes({ ...good, v: '2' })).toBe(false);
+    expect(decodes({ ...good, v: String(SAVE_VERSION) })).toBe(false);
     expect(decodes({ ...good, extra: 1 })).toBe(false);
     expect(decodes({ v: 1, campaign: good.campaign })).toBe(false);
     expect(decodes({ ...good, campaign: { ...good.campaign, admin: true } })).toBe(false);
   });
 
   it('rejects a __proto__ key instead of letting it through', () => {
-    const text = encodeSave(campaign, null).replace('"v":2', '"v":2,"__proto__":{"polluted":1}');
+    const text = encodeSave(campaign, null).replace(
+      `"v":${SAVE_VERSION}`,
+      `"v":${SAVE_VERSION},"__proto__":{"polluted":1}`,
+    );
+    expect(text).toContain('__proto__');
     expect(decodeSave(text).ok).toBe(false);
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
@@ -267,6 +271,47 @@ describe('save version 2: XP, kills and replays (M5.2)', () => {
     expect(decodes(withUnit(noKills))).toBe(false);
   });
 
+  it('rejects bad hit counts: missing, negative, fewer than kills (M5.9)', () => {
+    const unit = b.units[0] as (typeof b.units)[number];
+    const withUnit = (u: object): unknown => ({
+      ...good,
+      battle: { ...b, units: [u, ...b.units.slice(1)] },
+    });
+    expect(decodes(withUnit(without(unit, 'hits')))).toBe(false);
+    expect(decodes(withUnit({ ...unit, hits: -1 }))).toBe(false);
+    expect(decodes(withUnit({ ...unit, hits: 1.5 }))).toBe(false);
+    expect(decodes(withUnit({ ...unit, hits: 1000 }))).toBe(false);
+    expect(decodes(withUnit({ ...unit, kills: 1, hits: 0 }))).toBe(false);
+    expect(decodes(withUnit({ ...unit, kills: 1, hits: 1 }))).toBe(true);
+  });
+
+  it('rejects more hits than health the other side has lost', () => {
+    const marine = b.units.find((u) => u.id === 'm1') as (typeof b.units)[number];
+    const alien = b.units.find((u) => u.id.startsWith('a')) as (typeof b.units)[number];
+    const units = (hits: number, alienHp: number): typeof b.units =>
+      b.units.map((u) =>
+        u.id === marine.id ? { ...u, hits } : u.id === alien.id ? { ...u, hp: alienHp } : u,
+      );
+    expect(restoreBattle(ranked, { ...b, units: units(2, alien.hp - 2) })).not.toBeNull();
+    expect(restoreBattle(ranked, { ...b, units: units(3, alien.hp - 2) })).toBeNull();
+    expect(restoreBattle(ranked, { ...b, units: units(1, alien.hp) })).toBeNull();
+  });
+
+  it('still loads a version 2 save, with no hits', () => {
+    const v2 = {
+      v: 2,
+      campaign: good.campaign,
+      battle: { ...b, units: b.units.map((u) => without(u, 'hits')) },
+    };
+    const loaded = decodeSave(JSON.stringify(v2));
+    if (!loaded.ok || !loaded.save.battle) throw new Error('did not load');
+    expect(loaded.save.v).toBe(SAVE_VERSION);
+    expect(loaded.save.battle.units.every((u) => u.hits === 0)).toBe(true);
+    expect(loaded.save.battle.units.every((u) => typeof u.kills === 'number')).toBe(true);
+    // A version 2 save with version 3's field isn't one.
+    expect(decodes({ ...v2, battle: b })).toBe(false);
+  });
+
   it('rejects more kills than the other side has lost', () => {
     const marine = b.units.find((u) => u.id === 'm1') as (typeof b.units)[number];
     const alien = b.units.find((u) => u.id.startsWith('a')) as (typeof b.units)[number];
@@ -286,7 +331,7 @@ describe('save version 2: XP, kills and replays (M5.2)', () => {
       battle: {
         round: b.round,
         rng: b.rng,
-        units: b.units.map((u) => without(u, 'kills')),
+        units: b.units.map((u) => without(without(u, 'kills'), 'hits')),
       },
     };
     const loaded = decodeSave(JSON.stringify(v1));
@@ -298,5 +343,7 @@ describe('save version 2: XP, kills and replays (M5.2)', () => {
     // A version 1 save with version 2's fields isn't one.
     expect(decodes({ ...v1, campaign: good.campaign })).toBe(false);
     expect(decodes({ ...v1, battle: { ...v1.battle, replay: false } })).toBe(false);
+    expect(decodes({ ...v1, v: 0 })).toBe(false);
+    expect(decodes({ ...v1, v: SAVE_VERSION + 1, campaign: good.campaign, battle: b })).toBe(false);
   });
 });

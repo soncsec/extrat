@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { GRENADE, MAP_COLS, MAP_ROWS, RANKS, UNITS, XP } from '../../src/config/tuning';
 import {
   apply,
+  clipSize,
   createBattle,
   shotOdds,
   unitById,
@@ -57,7 +58,7 @@ describe('ranks', () => {
     expect(rankForXp(XP.max)).toBe(RANKS.length - 1);
   });
 
-  it('only ever add aim and health', () => {
+  it('only ever add aim, health, grenades and ammo', () => {
     for (let i = 1; i < RANKS.length; i++) {
       const [lower, higher] = [RANKS[i - 1], RANKS[i]] as [
         (typeof RANKS)[number],
@@ -66,7 +67,41 @@ describe('ranks', () => {
       expect(higher.xp).toBeGreaterThan(lower.xp);
       expect(higher.aim).toBeGreaterThanOrEqual(lower.aim);
       expect(higher.hp).toBeGreaterThanOrEqual(lower.hp);
+      expect(higher.grenades).toBeGreaterThanOrEqual(lower.grenades);
+      expect(higher.ammo).toBeGreaterThanOrEqual(lower.ammo);
     }
+    // Every promotion is felt: each rank adds something over the one before.
+    for (let i = 1; i < RANKS.length; i++) {
+      const [lower, higher] = [RANKS[i - 1], RANKS[i]] as [
+        (typeof RANKS)[number],
+        (typeof RANKS)[number],
+      ];
+      const sum = (r: (typeof RANKS)[number]): number => r.aim + r.hp + r.grenades + r.ammo;
+      expect(sum(higher)).toBeGreaterThan(sum(lower));
+    }
+  });
+
+  it('give marines their rank`s grenades and clip; a reload fills the bigger clip', () => {
+    const map = generateForest(3, MAP_COLS, MAP_ROWS);
+    const b = createBattle(map, map.seed, { ranks: [0, 2, 3, 4] });
+    const marines = b.units.filter((u) => u.side === 'marine');
+    expect(marines.map((u) => u.grenades)).toEqual(
+      [0, 2, 3, 4].map((r) => GRENADE.perMarine + (RANKS[r] as (typeof RANKS)[number]).grenades),
+    );
+    expect(marines.map((u) => u.ammo)).toEqual(
+      [0, 2, 3, 4].map((r) => UNITS.marine.ammo + (RANKS[r] as (typeof RANKS)[number]).ammo),
+    );
+    const lt = marines[3] as Unit;
+    expect(clipSize(lt)).toBe(UNITS.marine.ammo + (RANKS[4] as (typeof RANKS)[number]).ammo);
+    const empty = {
+      ...b,
+      turn: 'marine' as const,
+      units: b.units.map((u) => (u.id === lt.id ? { ...u, ammo: 0 } : u)),
+    };
+    expect(unitById(apply(empty, { type: 'reload', unitId: lt.id }), lt.id)?.ammo).toBe(
+      clipSize(lt),
+    );
+    expect(b.units.filter((u) => u.side === 'alien').every((u) => clipSize(u) === null)).toBe(true);
   });
 
   it('give marines their rank`s health in battle; aliens stay rank 0', () => {
@@ -87,6 +122,48 @@ describe('ranks', () => {
     const veteran = shotOdds(duel({ rank: top }, {}), 'm', 'a');
     expect(veteran?.aim).toBe((rookie?.aim ?? 0) + (RANKS[top]?.aim ?? 0));
     expect((veteran?.hit ?? 0) - (rookie?.hit ?? 0)).toBe(RANKS[top]?.aim);
+  });
+});
+
+describe('hits', () => {
+  it('count every shot that lands on an enemy, kills included; misses count nothing', () => {
+    const tough = duel({}, { hp: 9 });
+    expect(
+      unitById(
+        shootUntil(tough, (n) => n.lastShot?.hit === true),
+        'm',
+      ),
+    ).toMatchObject({
+      hits: 1,
+      kills: 0,
+    });
+    expect(
+      unitById(
+        shootUntil(tough, (n) => n.lastShot?.hit === false),
+        'm',
+      )?.hits,
+    ).toBe(0);
+    const weak = duel({}, { hp: 1 });
+    expect(
+      unitById(
+        shootUntil(weak, (n) => n.lastShot?.killed === true),
+        'm',
+      ),
+    ).toMatchObject({
+      hits: 1,
+      kills: 1,
+    });
+  });
+
+  it('count a grenade once per enemy it hits, not for squad mates', () => {
+    const s = duel({ x: 2, y: 3 }, { x: 6, y: 3, hp: 9 });
+    const mate = { ...(s.units[0] as Unit), id: 'm2', x: 6, y: 4 };
+    const next = apply(
+      { ...s, units: [...s.units, mate] },
+      { type: 'throw', unitId: 'm', at: { x: 6, y: 3 } },
+    );
+    expect(next.lastThrow?.hits).toHaveLength(2);
+    expect(unitById(next, 'm')).toMatchObject({ hits: 1, kills: 0 });
   });
 });
 
@@ -129,20 +206,22 @@ describe('kills', () => {
 describe('XP', () => {
   const c = newCampaign(4);
 
-  it('is earned per kill, plus the mission bonus for everyone on a win', () => {
+  it('is earned per hit and per kill, plus the mission bonus for everyone on a win', () => {
     const map = generateForest(c.mapSeed, MAP_COLS, MAP_ROWS);
     const b = createBattle(map, map.seed, { names: c.squad });
     const withKills = {
       ...b,
-      units: b.units.map((u) => (u.id === 'm2' ? { ...u, kills: 3 } : u)),
+      units: b.units.map((u) =>
+        u.id === 'm2' ? { ...u, kills: 3, hits: 5 } : u.id === 'm3' ? { ...u, hits: 2 } : u,
+      ),
     };
     expect(battleXp(withKills, true)).toEqual([
       XP.missionWon,
-      XP.missionWon + 3 * XP.kill,
-      XP.missionWon,
+      XP.missionWon + 3 * XP.kill + 5 * XP.hit,
+      XP.missionWon + 2 * XP.hit,
       XP.missionWon,
     ]);
-    expect(battleXp(withKills, false)).toEqual([0, 3 * XP.kill, 0, 0]);
+    expect(battleXp(withKills, false)).toEqual([0, 3 * XP.kill + 5 * XP.hit, 2 * XP.hit, 0]);
   });
 
   it('adds up, promotes, and is capped', () => {

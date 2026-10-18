@@ -27,12 +27,13 @@ import { generateMap, isWalkable } from './map';
  * checked. Anything unexpected (wrong version, an extra field, a number out of range,
  * a unit standing in a tree) rejects the whole save.
  */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 /**
- * Version 1 (M5.5) had no XP, kills or replay flag. Its saves still load, checked just
- * as strictly, with no XP, no kills and no replay.
+ * Older saves still load, checked just as strictly, with the fields they lack at their
+ * starting values. Version 1 (M5.5) had no XP, kills or replay flag; version 2 (M5.2)
+ * had no hit counts.
  */
-const OLD_VERSION = 1;
+const OLDEST_VERSION = 1;
 /** A save larger than this isn't ours: it is rejected before parsing. */
 export const MAX_SAVE_LENGTH = 16_384;
 
@@ -51,6 +52,7 @@ export interface SavedUnit {
   poison: number;
   facing: 1 | -1;
   kills: number;
+  hits: number;
 }
 
 /** A battle saved at the start of the squad's turn. */
@@ -101,6 +103,7 @@ export function encodeSave(campaign: Campaign, battle: BattleState | null, repla
             poison: u.poison,
             facing: u.facing,
             kills: u.kills,
+            hits: u.hits,
           })),
           replay,
         }
@@ -122,12 +125,12 @@ export function decodeSave(text: string): LoadResult {
     return fail('not valid JSON');
   }
   if (!isRecord(data) || !hasOnly(data, ['v', 'campaign', 'battle'])) return fail('bad shape');
-  if (data.v !== SAVE_VERSION && data.v !== OLD_VERSION) return fail('unknown version');
-  const old = data.v === OLD_VERSION;
-  const campaign = checkCampaign(data.campaign, old);
+  const v = data.v;
+  if (!isInt(v, OLDEST_VERSION, SAVE_VERSION)) return fail('unknown version');
+  const campaign = checkCampaign(data.campaign, v);
   if (!campaign) return fail('bad campaign');
   if (data.battle === null) return { ok: true, save: { v: SAVE_VERSION, campaign, battle: null } };
-  const battle = checkBattleShape(data.battle, old);
+  const battle = checkBattleShape(data.battle, v);
   if (!battle) return fail('bad battle');
   return { ok: true, save: { v: SAVE_VERSION, campaign, battle } };
 }
@@ -179,6 +182,10 @@ export function restoreBattle(campaign: Campaign, saved: SavedBattle): BattleSta
   const dead = (u: Unit): number => (u.hp <= 0 ? 1 : 0);
   if (count('marine', (u) => u.kills) > count('alien', dead)) return null;
   if (count('alien', (u) => u.kills) > count('marine', dead)) return null;
+  // Every hit took at least a point of health off the other side.
+  const lost = (u: Unit): number => u.maxHp - u.hp;
+  if (count('marine', (u) => u.hits) > count('alien', lost)) return null;
+  if (count('alien', (u) => u.hits) > count('marine', lost)) return null;
   const state: BattleState = {
     ...fresh,
     units,
@@ -216,7 +223,8 @@ function isInt(v: unknown, min: number, max: number): v is number {
 
 const CAMPAIGN_KEYS = ['seed', 'mission', 'attempt', 'mapSeed', 'squad'] as const;
 
-function checkCampaign(v: unknown, old: boolean): Campaign | null {
+function checkCampaign(v: unknown, version: number): Campaign | null {
+  const old = version < 2;
   if (!isRecord(v) || !hasOnly(v, old ? CAMPAIGN_KEYS : [...CAMPAIGN_KEYS, 'xp'])) return null;
   const { seed, mission, attempt, mapSeed, squad } = v;
   const xp = old ? noXp() : v.xp;
@@ -262,7 +270,8 @@ const UNIT_KEYS = [
   'facing',
 ] as const;
 
-function checkBattleShape(v: unknown, old: boolean): SavedBattle | null {
+function checkBattleShape(v: unknown, version: number): SavedBattle | null {
+  const old = version < 2;
   if (
     !isRecord(v) ||
     !hasOnly(v, old ? ['round', 'rng', 'units'] : ['round', 'rng', 'units', 'replay'])
@@ -276,10 +285,18 @@ function checkBattleShape(v: unknown, old: boolean): SavedBattle | null {
   if (!Array.isArray(units) || units.length === 0 || units.length > 64) return null;
   const out: SavedUnit[] = [];
   for (const u of units) {
-    if (!isRecord(u) || !hasOnly(u, old ? UNIT_KEYS : [...UNIT_KEYS, 'kills'])) return null;
+    const keys = old
+      ? UNIT_KEYS
+      : version < 3
+        ? [...UNIT_KEYS, 'kills']
+        : [...UNIT_KEYS, 'kills', 'hits'];
+    if (!isRecord(u) || !hasOnly(u, keys)) return null;
     const { id, x, y, hp, ap, ammo, overwatch, grenades, exposed, dormant, poison, facing } = u;
     const kills = old ? 0 : u.kills;
-    if (!isInt(kills, 0, 64)) return null;
+    const hits = version < 3 ? 0 : u.hits;
+    if (!isInt(kills, 0, 64) || !isInt(hits, 0, 999)) return null;
+    // Every kill was a hit. A version 2 save's hits are lost: they start again at 0.
+    if (version >= 3 && hits < kills) return null;
     if (typeof id !== 'string' || !/^[am][0-9]{1,2}$/.test(id)) return null;
     if (!isInt(x, 0, 255) || !isInt(y, 0, 255) || !isInt(hp, 0, 99)) return null;
     if (!isInt(ap, 0, ACTION_POINTS) || !isInt(grenades, 0, 9)) return null;
@@ -302,6 +319,7 @@ function checkBattleShape(v: unknown, old: boolean): SavedBattle | null {
       poison,
       facing,
       kills,
+      hits,
     });
   }
   return { round, rng, units: out, replay };
