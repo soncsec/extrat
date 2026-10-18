@@ -1,5 +1,5 @@
-import { MISSIONS, SKIRMISH } from '../config/tuning';
-import { MARINE_NAMES } from './battle';
+import { MISSIONS, RANKS, SKIRMISH, XP } from '../config/tuning';
+import { MARINE_NAMES, type BattleState } from './battle';
 import { createRng, rngStep } from './rng';
 
 /**
@@ -17,6 +17,8 @@ export interface Campaign {
   mapSeed: number;
   /** The squad's names, kept from mission to mission. */
   squad: string[];
+  /** Each marine's XP, in squad order (M5.2). */
+  xp: number[];
 }
 
 /** What the player picked on the debrief. */
@@ -35,6 +37,7 @@ export function newCampaign(seed: number): Campaign {
     attempt: 0,
     mapSeed: mapSeedFor(seed, 0, 0),
     squad: names.slice(0, SKIRMISH.marines),
+    xp: Array.from({ length: SKIRMISH.marines }, () => 0),
   };
 }
 
@@ -74,4 +77,54 @@ export function afterBattle(c: Campaign, won: boolean, choice: DebriefChoice): C
     return { ...c, attempt, mapSeed: mapSeedFor(c.seed, c.mission, attempt) };
   }
   return c;
+}
+
+/** The highest rank this much XP has earned (an index into RANKS). */
+export function rankForXp(xp: number): number {
+  let rank = 0;
+  RANKS.forEach((r, i) => {
+    if (xp >= r.xp) rank = i;
+  });
+  return rank;
+}
+
+/** Each marine's rank, in squad order. */
+export function squadRanks(c: Campaign): number[] {
+  return c.xp.map(rankForXp);
+}
+
+/** A marine who went up a rank. */
+export interface Promotion {
+  name: string;
+  rank: number;
+}
+
+/**
+ * The XP each marine (in squad order) earned in a finished battle: their kills, and
+ * the mission bonus if the squad won. Fallen marines keep what they earned and get
+ * the bonus too: they come back next mission (no permadeath).
+ */
+export function battleXp(battle: BattleState, won: boolean): number[] {
+  return Array.from({ length: SKIRMISH.marines }, (_, i) => {
+    const marine = battle.units.find((u) => u.id === `m${i + 1}`);
+    return (marine?.kills ?? 0) * XP.kill + (won ? XP.missionWon : 0);
+  });
+}
+
+/**
+ * The campaign with a battle's XP added (capped at XP.max), and who was promoted.
+ * Scenes don't call this for a battle started with REPLAY: replays earn no XP.
+ */
+export function awardXp(
+  c: Campaign,
+  gained: readonly number[],
+): { campaign: Campaign; promotions: Promotion[] } {
+  const xp = c.xp.map((x, i) => Math.min(XP.max, x + Math.max(0, gained[i] ?? 0)));
+  const promotions: Promotion[] = [];
+  xp.forEach((x, i) => {
+    const before = rankForXp(c.xp[i] ?? 0);
+    const after = rankForXp(x);
+    if (after > before) promotions.push({ name: c.squad[i] ?? '', rank: after });
+  });
+  return { campaign: { ...c, xp }, promotions };
 }

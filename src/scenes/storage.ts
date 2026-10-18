@@ -25,9 +25,9 @@ export function readSave(): StoredSave {
   return { status: 'bad' };
 }
 
-export function writeSave(campaign: Campaign, battle: BattleState | null): void {
+export function writeSave(campaign: Campaign, battle: BattleState | null, replay = false): void {
   try {
-    window.localStorage.setItem(KEY, encodeSave(campaign, battle));
+    window.localStorage.setItem(KEY, encodeSave(campaign, battle, replay));
   } catch {
     // No storage: the campaign still plays, it just won't resume.
   }

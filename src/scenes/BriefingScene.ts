@@ -1,9 +1,10 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH, MISSIONS, TILE } from '../config/tuning';
-import { currentMission, isComplete, type Campaign } from '../logic/campaign';
+import { rankOf } from '../logic/battle';
+import { currentMission, isComplete, squadRanks, type Campaign } from '../logic/campaign';
 import { LANDSCAPES } from '../logic/landscapes';
 import { FOREST_SHEET } from './art';
-import { pixelButton, pixelText } from './pixelFont';
+import { PixelText, pixelButton, pixelText } from './pixelFont';
 import { clearSave, writeSave } from './storage';
 
 /**
@@ -36,7 +37,7 @@ export class BriefingScene extends Phaser.Scene {
           'The aliens are gone from Earth...',
           'for now.',
           '',
-          `Squad: ${campaign.squad.join(', ')}`,
+          ...squadLines(campaign),
         ].join('\n'),
         0xdfe4ec,
       );
@@ -50,23 +51,24 @@ export class BriefingScene extends Phaser.Scene {
     const mission = currentMission(campaign);
     const { count, size } = mission.pods;
     pixelText(this, cx, 40, `MISSION ${campaign.mission + 1} OF ${MISSIONS.length}`, 0xf2a33a, 2);
-    pixelText(this, cx, 62, LANDSCAPES[mission.landscape].name.toUpperCase(), 0xdfe4ec);
-    const retry = campaign.attempt > 0 ? [`Try ${campaign.attempt + 1}: a new map.`, ''] : [];
-    pixelText(
+    // A retry says so beside the landscape: 'TOWN   TRY 2: A NEW MAP'.
+    const where = LANDSCAPES[mission.landscape].name.toUpperCase();
+    const retry = campaign.attempt > 0 ? `   Try ${campaign.attempt + 1}: a new map` : '';
+    pixelText(this, cx, 62, `${where}${retry}`, 0xdfe4ec);
+    new PixelText(
       this,
       cx,
-      112,
+      76,
       [
-        ...retry,
         'Find the aliens hiding in the fog',
         'and wipe them out.',
         '',
         `Intel: ${count} groups of ${size}.`,
         'They wait until they see you.',
         '',
-        `Squad: ${campaign.squad.join(', ')}`,
+        ...squadLines(campaign),
       ].join('\n'),
-      0xc8d0dc,
+      { color: 0xc8d0dc, valign: 'top' },
     );
     pixelButton(this, cx - 30, 176, 'START MISSION', () => this.start(campaign));
     pixelButton(this, cx + 52, 176, 'TITLE', () => this.toTitle(), false);
@@ -93,4 +95,13 @@ export class BriefingScene extends Phaser.Scene {
   private toTitle(): void {
     this.scene.start('Title');
   }
+}
+
+/** The squad with their ranks, two to a line, e.g. 'Squad: SQD Vasquez, RKE Okafor,'. */
+function squadLines(c: Campaign): string[] {
+  const ranks = squadRanks(c);
+  const names = c.squad.map((n, i) => `${rankOf(ranks[i] ?? 0).short} ${n}`);
+  const first = names.slice(0, 2).join(', ');
+  const rest = names.slice(2).join(', ');
+  return rest ? [`Squad: ${first},`, rest] : [`Squad: ${first}`];
 }
