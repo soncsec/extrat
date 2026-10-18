@@ -380,6 +380,22 @@ test('effect sprites are reused, not made new for every shot and hit', async ({ 
   expect(s.fxUses).toBeGreaterThan(s.fxSprites);
 });
 
+test('holding G down enters grenade mode once, without flickering back out', async ({ page }) => {
+  await openGame(page, '?seed=42');
+  const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
+  if (!marine) throw new Error('no marine');
+  await clickTile(page, marine.x, marine.y);
+  // A second keydown without a keyup is a key repeat, as when G is held. (Two, not
+  // three: an odd number of toggles would end in grenade mode anyway.)
+  await page.keyboard.down('g');
+  await page.keyboard.down('g');
+  await page.keyboard.up('g');
+  await expect.poll(async () => (await snapshot(page)).mode).toBe('grenade');
+  await page.waitForTimeout(200);
+  expect((await snapshot(page)).mode).toBe('grenade');
+  expect((await snapshot(page)).selected).toBe(marine.id);
+});
+
 test('G enters grenade mode and Esc leaves it', async ({ page }) => {
   await openGame(page, '?seed=42');
   const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
