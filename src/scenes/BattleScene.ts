@@ -76,7 +76,7 @@ import {
   FxPool,
 } from './fx';
 import type { BattleResult } from './ResultScene';
-import { PixelButton, PixelText } from './pixelFont';
+import { CELL_W, PixelButton, PixelText } from './pixelFont';
 import { initialSeed, urlWord } from './seed';
 import { clearSave, writeSave } from './storage';
 
@@ -231,6 +231,8 @@ export class BattleScene extends Phaser.Scene {
   /** Locked target: the next click on it, or Enter, fires. */
   private aimTarget: string | null = null;
   private mapText!: PixelText;
+  /** The map line, longest first: the longest that fits beside the buttons is shown. */
+  private mapLines: string[] = [];
   private unitText!: PixelText;
   private endTurnButton!: PixelButton;
   private reloadButton!: PixelButton;
@@ -1425,11 +1427,15 @@ export class BattleScene extends Phaser.Scene {
     this.refreshVision();
     this.updateHidden();
     const where = LANDSCAPES[this.landscape].name.toUpperCase();
-    this.mapText.setText(
-      c
-        ? `${where}  MISSION ${c.mission + 1}/${MISSIONS.length}  MAP ${map.seed}`
-        : `${where}  MAP ${map.seed}`,
-    );
+    const n = c ? `${c.mission + 1}/${MISSIONS.length}` : '';
+    this.mapLines = c
+      ? [
+          `${where}  MISSION ${n}  MAP ${map.seed}`,
+          `MISSION ${n}  MAP ${map.seed}`,
+          `M${n}  MAP ${map.seed}`,
+        ]
+      : [`${where}  MAP ${map.seed}`, `MAP ${map.seed}`];
+    this.layoutButtons();
   }
 
   private drawMap(): void {
@@ -1636,7 +1642,10 @@ export class BattleScene extends Phaser.Scene {
     this.layoutButtons();
   }
 
-  /** Lines up the visible buttons from the right edge of the info bar. */
+  /**
+   * Lines up the visible buttons from the right edge of the info bar, then shows the
+   * longest map line that fits to their left.
+   */
   private layoutButtons(): void {
     let right = GAME_WIDTH - 6;
     for (const b of [
@@ -1651,5 +1660,8 @@ export class BattleScene extends Phaser.Scene {
       b.setX(Math.round(right - b.buttonWidth / 2));
       right -= b.buttonWidth + 4;
     }
+    const room = right - this.mapText.x;
+    const fits = this.mapLines.find((line) => line.length * CELL_W <= room);
+    this.mapText.setText(fits ?? this.mapLines[this.mapLines.length - 1] ?? '');
   }
 }
