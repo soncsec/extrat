@@ -25,9 +25,11 @@ import {
   livingUnits,
   moveCost,
   moveRange,
+  nextReadyMarine,
   pathFor,
   shotBlock,
   shotOdds,
+  shootableTargets,
   unitAt,
   unitById,
   type Action,
@@ -236,6 +238,27 @@ export class BattleScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-R', () => this.reload());
     this.input.keyboard?.on('keydown-O', () => this.overwatch());
     this.input.keyboard?.on('keydown-G', () => this.toggleGrenade());
+    // Selection shortcuts: Tab / Shift+Tab cycle through marines that can still act,
+    // 1-4 pick one directly, F aims at the best target and then the next. They use a
+    // plain browser listener so they run in the order pressed: through Phaser's key
+    // queue Firefox sometimes lost Shift, and mixing the two reordered quick presses.
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Tab') e.preventDefault(); // keep the browser's focus where it is
+      if (this.busy || this.state.turn !== 'marine') return;
+      if (e.key === 'Tab') {
+        const next = nextReadyMarine(this.state, this.state.selected, e.shiftKey ? -1 : 1);
+        if (next) this.selectMarine(next);
+      } else if (['1', '2', '3', '4'].includes(e.key)) {
+        const marine = this.state.units.filter((u) => u.side === 'marine')[Number(e.key) - 1];
+        if (marine) this.selectMarine(marine.id);
+      } else if (e.key === 'f' || e.key === 'F') {
+        this.cycleTarget();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () =>
+      window.removeEventListener('keydown', onKey),
+    );
     this.input.keyboard?.on('keydown-N', () => {
       // Not in the middle of an animation, the alien turn, or the result screen.
       if (!this.busy) this.startBattle(this.seeds.int(1, 999_999));
@@ -351,10 +374,7 @@ export class BattleScene extends Phaser.Scene {
     }
     const unit = this.unitUnderPointer(x, y);
     if (unit?.side === 'marine') {
-      this.aimTarget = null;
-      this.mode = 'move';
-      this.dispatch({ type: 'select', unitId: unit.id });
-      this.drawSelection();
+      this.selectMarine(unit.id);
       return;
     }
     if (unit?.side === 'alien') {
@@ -465,6 +485,29 @@ export class BattleScene extends Phaser.Scene {
     this.aimTarget = null;
     this.drawAim(null);
     void this.run(() => this.playShot(shot));
+  }
+
+  /** Selects a marine (if the rules allow), leaving any aim or grenade mode. */
+  private selectMarine(unitId: string): void {
+    this.aimTarget = null;
+    this.mode = 'move';
+    this.pathLayer.clear();
+    this.coverLayer.clear();
+    this.dispatch({ type: 'select', unitId });
+    this.drawSelection();
+  }
+
+  /** Aims at the best shootable alien, or the next one if already aiming. */
+  private cycleTarget(): void {
+    const id = this.state.selected;
+    if (!id || this.busy) return;
+    const targets = shootableTargets(this.state, id);
+    if (targets.length === 0) return;
+    const at = this.aimTarget ? targets.indexOf(this.aimTarget) : -1;
+    this.aimTarget = targets[(at + 1) % targets.length] ?? null;
+    this.mode = 'move';
+    this.pathLayer.clear();
+    this.drawSelection();
   }
 
   /** Switches the selected marine between moving and aiming a grenade. */
@@ -626,8 +669,18 @@ export class BattleScene extends Phaser.Scene {
     this.updateHidden();
     this.drawSelection();
     if (this.checkEnd()) return;
-    // Like XCOM, the turn ends by itself once no marine can do anything.
-    if (this.state.turn === 'marine' && !canAct(this.state, 'marine')) void this.endTurn();
+    // Like XCOM, the turn ends by itself once no marine can do anything; otherwise a
+    // marine who has run out of actions hands over to the next one who hasn't.
+    if (this.state.turn !== 'marine') return;
+    if (!canAct(this.state, 'marine')) {
+      void this.endTurn();
+      return;
+    }
+    const sel = this.state.selected ? unitById(this.state, this.state.selected) : undefined;
+    if (sel && sel.ap <= 0) {
+      const next = nextReadyMarine(this.state, sel.id);
+      if (next) this.selectMarine(next);
+    }
   }
 
   /** Ends the marines' turn, plays every alien's actions, then starts the next round. */
@@ -669,6 +722,8 @@ export class BattleScene extends Phaser.Scene {
     this.endWatch('marine');
     await this.banner(`TURN ${this.state.round}`, '#f2a33a');
     this.busy = false;
+    const first = nextReadyMarine(this.state, null);
+    if (first) this.selectMarine(first);
     this.updateHidden();
     this.drawSelection();
   }

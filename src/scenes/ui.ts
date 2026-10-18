@@ -42,6 +42,9 @@ export function label(
   color: string,
   bold = false,
 ): Phaser.GameObjects.Text {
+  // Thin strokes like '-' can vanish when small text is scaled down pixel-sharp; an
+  // outline in the text's own colour thickens them (see the odds panel).
+  const outline = size <= 10 ? { stroke: color, strokeThickness: 1 } : {};
   return scene.add
     .text(x, y, text, {
       fontFamily: FONT,
@@ -49,6 +52,7 @@ export function label(
       fontStyle: bold ? 'bold' : 'normal',
       color,
       align: 'center',
+      ...outline,
     })
     .setOrigin(0.5)
     .setResolution(4);

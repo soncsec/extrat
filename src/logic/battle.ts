@@ -522,6 +522,36 @@ export function canReload(state: BattleState, unitId: string): boolean {
   return clip !== null && unit.ammo !== null && unit.ammo < clip;
 }
 
+/**
+ * The next marine after `currentId` (in squad order, wrapping round) that still has
+ * action points, or null if none does. `step` -1 goes backwards.
+ */
+export function nextReadyMarine(
+  state: BattleState,
+  currentId: string | null,
+  step: 1 | -1 = 1,
+): string | null {
+  const squad = state.units.filter((u) => u.side === 'marine');
+  const n = squad.length;
+  const start = squad.findIndex((u) => u.id === currentId);
+  for (let i = 1; i <= n; i++) {
+    // With no current marine, start just before the first (or after the last, going back).
+    const from = start === -1 ? (step === 1 ? -1 : n) : start;
+    const u = squad[(((from + i * step) % n) + n) % n] as Unit;
+    if (u.hp > 0 && u.ap > 0) return u.id;
+  }
+  return null;
+}
+
+/** Enemies the unit could shoot now, best hit chance first (ties in unit order). */
+export function shootableTargets(state: BattleState, shooterId: string): string[] {
+  return state.units
+    .map((u) => ({ id: u.id, chance: hitChance(state, shooterId, u.id) }))
+    .filter((t): t is { id: string; chance: number } => t.chance !== null)
+    .sort((a, b) => b.chance - a.chance)
+    .map((t) => t.id);
+}
+
 /** Living units on one side. */
 export function livingUnits(state: BattleState, side: Side): Unit[] {
   return state.units.filter((u) => u.side === side && u.hp > 0);
