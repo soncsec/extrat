@@ -9,7 +9,7 @@ The order follows the risks: first prove the core fight is fun and readable with
 | M0 Setup | Done |
 | M1 Walking skeleton | Built; owner: "looks great so far" (2026-10-17), full play-test notes pending |
 | M2 Tactical core | Built; waiting for the owner's play-test |
-| M3 Aliens and ambush | Not started |
+| M3 Aliens and ambush | In progress |
 | M4 Maps and landscapes | Not started |
 | M5 Campaign | Not started |
 | M6 Polish and release | Not started |
@@ -64,7 +64,7 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 
 ## M3 — Aliens and ambush
 
-- [ ] M3.1 Fog of war from the squad's sight; hidden tiles darkened, aliens there not drawn
+- [x] M3.1 Fog of war from the squad's sight; hidden tiles darkened, aliens there not drawn
 - [ ] M3.2 Alien groups dormant until spotted, then scamper to cover (the ambush)
 - [ ] M3.3 Utility AI: scores tiles for cover, flanking and hit chance (ADR-E4)
 - [ ] M3.4 Alien types with their own stats and one ability each: walker (melee), flyer (ignores cover from below), lizard (tongue pull), snake (poison)

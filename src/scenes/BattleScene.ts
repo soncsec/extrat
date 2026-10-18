@@ -30,8 +30,10 @@ import {
   shotBlock,
   shotOdds,
   shootableTargets,
+  tilesSeenFrom,
   unitAt,
   unitById,
+  visibleTiles,
   type Action,
   type BattleState,
   type MoveResult,
@@ -92,6 +94,8 @@ export interface GameSnapshot {
     overwatch: boolean;
     grenades: number;
     exposed: boolean;
+    /** The squad can see this unit now (aliens in the fog are false). */
+    seen: boolean;
     hidden: boolean;
   }[];
   selected: string | null;
@@ -122,6 +126,7 @@ const DEPTH = {
   marker: 3,
   path: 4,
   standing: 10,
+  fog: 800,
   ghost: 900,
   overlay: 950,
   fx: 960,
@@ -177,6 +182,10 @@ export class BattleScene extends Phaser.Scene {
   private reloadButton!: Phaser.GameObjects.Text;
   private overwatchButton!: Phaser.GameObjects.Text;
   private grenadeButton!: Phaser.GameObjects.Text;
+  private fogLayer!: Phaser.GameObjects.Graphics;
+  /** Tiles the squad sees now, and every tile it has ever seen this battle. */
+  private vision = new Set<number>();
+  private explored = new Set<number>();
   /** What a click on the map does for the selected marine. */
   private mode: 'move' | 'grenade' = 'move';
   /** Set when one side has been wiped out; only a new map can follow. */
@@ -194,6 +203,7 @@ export class BattleScene extends Phaser.Scene {
     this.rangeLayer = this.add.graphics().setDepth(DEPTH.range);
     this.pathLayer = this.add.graphics().setDepth(DEPTH.path);
     this.coverLayer = this.add.graphics().setDepth(DEPTH.overlay + 1);
+    this.fogLayer = this.add.graphics().setDepth(DEPTH.fog);
     this.chevron = this.add.graphics().setDepth(DEPTH.overlay + 1);
     this.pips = this.add.graphics().setDepth(DEPTH.overlay);
     this.aimLayer = this.add.graphics().setDepth(DEPTH.overlay + 2);
@@ -279,7 +289,7 @@ export class BattleScene extends Phaser.Scene {
     this.pips.clear();
     for (const u of this.state.units) {
       const v = this.views.get(u.id);
-      if (!v || v.shownHp <= 0) continue;
+      if (!v || v.shownHp <= 0 || !v.sprite.visible) continue;
       const top = v.sprite.y - SHEETS[u.kind].height - 5;
       const color = u.side === 'marine' ? 0x8bf06a : 0xff6a5a;
       drawPips(this.pips, v.sprite.x, top, v.shownHp, u.maxHp, color);
@@ -325,6 +335,7 @@ export class BattleScene extends Phaser.Scene {
         overwatch: u.overwatch,
         grenades: u.grenades,
         exposed: u.exposed,
+        seen: this.isSeen(u),
         hidden: this.views.get(u.id)?.hidden ?? false,
       })),
       selected,
@@ -399,11 +410,15 @@ export class BattleScene extends Phaser.Scene {
    * move to that tile, in which case the tile wins (so squadmates don't block it).
    */
   private unitUnderPointer(x: number, y: number): Unit | undefined {
-    const here = unitAt(this.state, x, y);
+    const seenAt = (px: number, py: number): Unit | undefined => {
+      const u = unitAt(this.state, px, py);
+      return u && this.isSeen(u) ? u : undefined;
+    };
+    const here = seenAt(x, y);
     if (here) return here;
     const selected = this.state.selected;
     if (selected && pathFor(this.state, selected, { x, y })) return undefined;
-    return unitAt(this.state, x, y + 1);
+    return seenAt(x, y + 1);
   }
 
   private onEscape(): void {
@@ -485,6 +500,52 @@ export class BattleScene extends Phaser.Scene {
     this.aimTarget = null;
     this.drawAim(null);
     void this.run(() => this.playShot(shot));
+  }
+
+  /**
+   * Works out what the squad sees (from where the marines stand, or from `eyes` while
+   * one is part-way along a run), then redraws the fog and shows or hides aliens.
+   */
+  private refreshVision(eyes?: Point[]): void {
+    this.vision = eyes ? tilesSeenFrom(this.state.map, eyes) : visibleTiles(this.state, 'marine');
+    for (const k of this.vision) this.explored.add(k);
+    const { cols, rows } = this.state.map;
+    const g = this.fogLayer.clear();
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const k = y * cols + x;
+        if (this.vision.has(k)) continue;
+        // Seen before: dimmed. Never seen: darker.
+        g.fillStyle(0x05070f, this.explored.has(k) ? 0.45 : 0.72).fillRect(
+          x * TILE,
+          y * TILE,
+          TILE,
+          TILE,
+        );
+      }
+    }
+    this.updateAlienVisibility();
+  }
+
+  /** Aliens are drawn only while they stand on a tile the squad can see. */
+  private updateAlienVisibility(): void {
+    const cols = this.state.map.cols;
+    for (const u of this.state.units) {
+      if (u.side !== 'alien') continue;
+      const v = this.views.get(u.id);
+      if (!v) continue;
+      // Where the sprite is now (it may be part-way along a move).
+      const x = Math.floor(v.sprite.x / TILE);
+      const y = Math.round(v.sprite.y / TILE) - 1;
+      const seen = this.vision.has(y * cols + x);
+      v.sprite.setVisible(seen);
+      if (!seen) v.ghost.setVisible(false);
+    }
+  }
+
+  /** True if the squad can see this unit now (marines always see themselves). */
+  private isSeen(unit: Unit): boolean {
+    return unit.side === 'marine' || this.vision.has(unit.y * this.state.map.cols + unit.x);
   }
 
   /** Selects a marine (if the rules allow), leaving any aim or grenade mode. */
@@ -666,6 +727,7 @@ export class BattleScene extends Phaser.Scene {
     this.drawSelection();
     await animation();
     this.busy = false;
+    this.refreshVision();
     this.updateHidden();
     this.drawSelection();
     if (this.checkEnd()) return;
@@ -713,6 +775,7 @@ export class BattleScene extends Phaser.Scene {
         } else if (action.type === 'overwatch') {
           await this.playOverwatch(alien.id);
         }
+        this.updateAlienVisibility();
         this.updateHidden();
       }
     }
@@ -720,6 +783,7 @@ export class BattleScene extends Phaser.Scene {
     if (this.checkEnd()) return;
     this.state = apply(this.state, { type: 'endTurn' });
     this.endWatch('marine');
+    this.refreshVision();
     await this.banner(`TURN ${this.state.round}`, '#f2a33a');
     this.busy = false;
     const first = nextReadyMarine(this.state, null);
@@ -775,6 +839,7 @@ export class BattleScene extends Phaser.Scene {
       v.shownHp = hp;
       if (hp <= 0) v.sprite.setAlpha(0);
     }
+    this.refreshVision();
     if (!this.busy) this.checkEnd();
   }
 
@@ -842,6 +907,13 @@ export class BattleScene extends Phaser.Scene {
         }),
       );
       from = p;
+      if (unit.side === 'marine') {
+        // The squad's sight moves with the runner.
+        const eyes = livingUnits(this.state, 'marine').map((m) => (m.id === unit.id ? p : m));
+        this.refreshVision(eyes);
+      } else {
+        this.updateAlienVisibility();
+      }
       const reactions = moved.reactions.filter((r) => r.step === i);
       if (reactions.length === 0) continue;
       this.playAnim(view, unit.kind, 'idle', facing);
@@ -1028,6 +1100,9 @@ export class BattleScene extends Phaser.Scene {
     for (const u of this.state.units) this.views.set(u.id, this.drawUnit(u));
     this.updateHidden();
     this.drawSelection();
+    this.explored.clear();
+    this.refreshVision();
+    this.updateHidden();
     this.mapText.setText(`FOREST  map ${map.seed}`);
   }
 
@@ -1107,7 +1182,7 @@ export class BattleScene extends Phaser.Scene {
         const overlap = Phaser.Geom.Rectangle.Intersection(body, p.getBounds());
         return overlap.width * overlap.height >= area * HIDDEN_OVERLAP;
       });
-      v.ghost.setVisible(v.hidden);
+      v.ghost.setVisible(v.hidden && v.sprite.visible);
     }
   }
 
