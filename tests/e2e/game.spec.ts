@@ -235,6 +235,33 @@ test('aliens start hidden and dormant; spotting one wakes its whole pod', async 
   expect(asleep.every((u) => !u.seen)).toBe(true);
 });
 
+test('a move cut short by a sighting leaves its unused squares as a free move', async ({
+  page,
+}) => {
+  await openGame(page, SHOT_SEED);
+  const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
+  if (!marine) throw new Error('no marine');
+  await clickTile(page, marine.x, marine.y);
+  // Map 33: a dash north to (4,4) spots a pod after 8 squares, at (4,6). Both points are
+  // spent, and the 2 squares not walked are left as a free move.
+  const dash = { x: 4, y: 4 };
+  await clickTile(page, dash.x, dash.y);
+  await expect.poll(async () => (await snapshot(page)).busy, { timeout: 20_000 }).toBe(false);
+  const stopped = await snapshot(page);
+  const m = stopped.units.find((u) => u.id === marine.id);
+  if (!m) throw new Error('marine gone');
+  expect(m).toMatchObject({ x: 4, y: 6, ap: 0, freeSteps: 2 });
+  // The marine stays selected, and its free squares cost nothing.
+  expect(stopped.selected).toBe(marine.id);
+  const free = stopped.reachable.filter((t) => t.cost === 0);
+  expect(free.length).toBeGreaterThan(0);
+  const back = free.reduce((a, b) => (b.y > a.y ? b : a));
+  await clickTile(page, back.x, back.y);
+  await expect.poll(async () => (await snapshot(page)).busy, { timeout: 20_000 }).toBe(false);
+  const after = (await snapshot(page)).units.find((u) => u.id === marine.id);
+  expect(after).toMatchObject({ x: back.x, y: back.y, ap: m.ap, freeSteps: 0 });
+});
+
 test('a marine aims at an alien, fires, and the shot is resolved', async ({ page }) => {
   await openGame(page, SHOT_SEED);
   const { marineId, alien } = await moveEastForAShot(page);
