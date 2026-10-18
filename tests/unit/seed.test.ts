@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { initialSeed, urlNumber } from '../../src/scenes/seed';
+import { initialSeed, urlNumber, urlWord } from '../../src/scenes/seed';
+import { landscapeId } from '../../src/logic/landscapes';
 
 describe('initialSeed', () => {
   it('uses ?seed= from the URL', () => {
@@ -31,5 +32,13 @@ describe('urlNumber', () => {
     expect(urlNumber('campaign', '?seed=12')).toBeNull();
     expect(urlNumber('campaign', '?campaign=<script>')).toBeNull();
     expect(urlNumber('seed', '')).toBeNull();
+  });
+});
+
+describe('the debrief map link', () => {
+  it('opens the same map and landscape when typed as shown, in capitals', () => {
+    const link = '?SEED=128886&LANDSCAPE=TOWN';
+    expect(initialSeed(link)).toBe(128886);
+    expect(landscapeId(urlWord('landscape', link))).toBe('town');
   });
 });

@@ -17,7 +17,7 @@ describe('pixel font glyphs', () => {
   });
 
   it('cover A-Z, 0-9 and the punctuation the screens use', () => {
-    for (const ch of "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,:!?-'()/%+[]>=") {
+    for (const ch of "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,:!?-'()/%+[]>=&") {
       expect(GLYPH_CHARS, `missing ${ch}`).toContain(ch);
     }
   });
@@ -34,5 +34,11 @@ describe('pixel font glyphs', () => {
     expect(toFontText('Tab or 1-4: marine')).toBe('TAB OR 1-4: MARINE');
     expect(toFontText('a\nb')).toBe('A\nB');
     expect(toFontText('é~')).toBe('??');
+  });
+
+  it('shows a debrief map link as it must be typed, with its &', () => {
+    expect(toFontText('Link: ?seed=128886&landscape=town')).toBe(
+      'LINK: ?SEED=128886&LANDSCAPE=TOWN',
+    );
   });
 });
