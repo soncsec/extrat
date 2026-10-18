@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { FOREST, MAP_COLS, MAP_ROWS } from '../../src/config/tuning';
-import { chunkCell, FOREST_CHUNKS, type Chunk } from '../../src/logic/chunks';
+import { chunkCell, FOREST_CHUNKS, TOWN_CHUNKS, type Chunk } from '../../src/logic/chunks';
+import { landscapeId } from '../../src/logic/landscapes';
 import {
   generateForest,
+  generateMap,
   isWalkable,
   PROPS,
   spawnZone,
@@ -271,5 +273,86 @@ describe('map chunks (ADR-E3)', () => {
 
   it('rejects a typo in a chunk picture', () => {
     expect(() => chunkCell('x')).toThrow(/unknown chunk character/);
+  });
+});
+
+describe('town landscape (M4.3)', () => {
+  const town = (seed: number): BattleMap => generateMap(seed, MAP_COLS, MAP_ROWS, 'town');
+  const all = [...TOWN_CHUNKS.spawn, ...TOWN_CHUNKS.field];
+
+  it('makes a valid town map for 1,000 seeds', () => {
+    for (let seed = 1; seed <= 1000; seed++) {
+      const map = town(seed);
+      expect(map.landscape).toBe('town');
+      expect(validateMap(map), `seed ${seed}`).toEqual([]);
+    }
+  });
+
+  it('has chunks of the right size whose houses fill exactly their 5 x 3 footprint', () => {
+    for (const c of all) {
+      expect(c.rows, c.name).toHaveLength(FOREST.chunk.height);
+      const cells = c.rows.map((row) => [...row]);
+      const covered = new Set<string>();
+      cells.forEach((row, j) => {
+        expect(row, c.name).toHaveLength(FOREST.chunk.width);
+        row.forEach((ch, i) => {
+          expect(() => chunkCell(ch), `${c.name}: '${ch}'`).not.toThrow();
+          if (ch !== 'H') return;
+          expect(c.upright, `${c.name} has a house, so it must stay upright`).toBe(true);
+          for (let dy = 0; dy < PROPS.house.height; dy++) {
+            for (let dx = 0; dx < PROPS.house.width; dx++) {
+              expect(cells[j - dy]?.[i + dx], `${c.name} footprint`).toBe(dx || dy ? '=' : 'H');
+              covered.add(`${i + dx},${j - dy}`);
+            }
+          }
+        });
+      });
+      // Every '=' belongs to a house.
+      cells.forEach((row, j) =>
+        row.forEach((ch, i) => {
+          if (ch === '=') expect(covered.has(`${i},${j}`), `${c.name} stray '='`).toBe(true);
+        }),
+      );
+    }
+  });
+
+  it('keeps trees and houses out of the spawn chunks', () => {
+    for (const c of TOWN_CHUNKS.spawn) expect(c.rows.join(''), c.name).not.toMatch(/[acH#]/);
+  });
+
+  it('keeps every house whole and upright on 300 maps', () => {
+    let houses = 0;
+    for (let seed = 1; seed <= 300; seed++) {
+      const map = town(seed);
+      map.tiles.forEach((t, i) => {
+        if (t.prop !== 'house' || !t.anchor) return;
+        houses++;
+        const x = i % map.cols;
+        const y = Math.floor(i / map.cols);
+        for (let dy = 0; dy < PROPS.house.height; dy++) {
+          for (let dx = 0; dx < PROPS.house.width; dx++) {
+            expect(tileAt(map, x + dx, y - dy)?.prop, `seed ${seed}`).toBe('house');
+          }
+        }
+      });
+      const anchors = map.tiles.filter((t) => t.prop === 'house' && t.anchor).length;
+      const tiles = map.tiles.filter((t) => t.prop === 'house').length;
+      expect(tiles).toBe(anchors * PROPS.house.width * PROPS.house.height);
+    }
+    expect(houses).toBeGreaterThan(100); // houses do show up
+  });
+
+  it('leaves forest maps exactly as they were', () => {
+    const map = gen(1234);
+    expect(map.landscape).toBeUndefined();
+    expect(generateMap(1234, MAP_COLS, MAP_ROWS, 'forest')).toEqual(map);
+  });
+
+  it('only accepts known landscape names from the URL', () => {
+    expect(landscapeId('town')).toBe('town');
+    expect(landscapeId('forest')).toBe('forest');
+    for (const bad of [null, '', 'moon', '__proto__', 'constructor', 'toString']) {
+      expect(landscapeId(bad), String(bad)).toBeNull();
+    }
   });
 });

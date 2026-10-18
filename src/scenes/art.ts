@@ -1,5 +1,6 @@
 import type Phaser from 'phaser';
 import type { UnitKind } from '../logic/battle';
+import type { LandscapeId } from '../logic/landscapes';
 import type { PropKind } from '../logic/map';
 
 /** Where each piece of art sits in its sheet. Pixel rectangles measured from the files. */
@@ -19,13 +20,63 @@ export const FOREST_SHEET = {
   },
 } as const;
 
-export type ForestFrame = keyof typeof FOREST_SHEET.frames;
+/** The Tiny RPG town tileset (M4.3): autumn trees, a cottage, garden walls, shrubs. */
+export const TOWN_SHEET = {
+  key: 'town',
+  url: 'assets/town/top-down-town-tileset.png',
+  frames: {
+    townGrass: [288, 16, 16, 16],
+    townGrassB: [304, 16, 16, 16],
+    townTuft: [320, 16, 16, 16],
+    townFlowers: [336, 16, 16, 16],
+    autumn: [118, 16, 54, 63],
+    cypress: [33, 96, 15, 31],
+    stump: [64, 99, 32, 29],
+    shrubA: [113, 96, 14, 16],
+    shrubB: [145, 96, 14, 16],
+    stone: [37, 167, 25, 25],
+    ledge: [112, 160, 16, 16],
+    house: [192, 25, 80, 127],
+    path: [320, 80, 48, 48],
+  },
+} as const;
 
-/** The frame drawn for a prop. Bushes alternate between two pictures by position. */
-export function propFrame(kind: PropKind, x: number, y: number): ForestFrame {
-  if (kind === 'bush') return (x * 31 + y * 17) % 2 === 0 ? 'bushA' : 'bushB';
-  return kind;
+/** How a landscape is drawn: its sheet, ground, decals and the picture for each prop. */
+export interface LandscapeArt {
+  key: string;
+  /** Ground tiles, picked by position for a little variety. */
+  ground: readonly string[];
+  /** Pictures for decal kinds 0 and 1 (walkable patches drawn on the ground). */
+  decals: readonly [string, string];
+  /** The frame for a prop at a tile. */
+  prop(kind: PropKind, x: number, y: number): string;
 }
+
+/** Two pictures alternating by position, so rows of the same prop don't look stamped. */
+const alternate = (a: string, b: string, x: number, y: number): string =>
+  (x * 31 + y * 17) % 2 === 0 ? a : b;
+
+export const LANDSCAPE_ART: Readonly<Record<LandscapeId, LandscapeArt>> = {
+  forest: {
+    key: FOREST_SHEET.key,
+    ground: ['grass'],
+    decals: ['dirt0', 'dirt1'],
+    prop: (kind, x, y) => (kind === 'bush' ? alternate('bushA', 'bushB', x, y) : kind),
+  },
+  town: {
+    key: TOWN_SHEET.key,
+    // Mostly plain grass; tufts and flowers now and then.
+    ground: [
+      ...Array<string>(6).fill('townGrass'),
+      ...Array<string>(5).fill('townGrassB'),
+      'townTuft',
+      'townTuft',
+      'townFlowers',
+    ],
+    decals: ['path', 'townFlowers'],
+    prop: (kind, x, y) => (kind === 'shrub' ? alternate('shrubA', 'shrubB', x, y) : kind),
+  },
+};
 
 /** Adds the named frames to a loaded sheet's texture. */
 export function addFrames(

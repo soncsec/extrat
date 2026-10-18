@@ -9,7 +9,7 @@ import {
   newCampaign,
   type Campaign,
 } from '../../src/logic/campaign';
-import { generateForest } from '../../src/logic/map';
+import { generateForest, generateMap } from '../../src/logic/map';
 
 describe('newCampaign', () => {
   it('starts at mission 1 with a squad of distinct names', () => {
@@ -78,7 +78,8 @@ describe('missions', () => {
   it('fit every mission`s alien groups on 200 maps', () => {
     for (const m of MISSIONS) {
       for (let seed = 1; seed <= 200; seed++) {
-        const map = generateForest(seed, MAP_COLS, MAP_ROWS);
+        const map = generateMap(seed, MAP_COLS, MAP_ROWS, m.landscape);
+        expect(map.landscape ?? 'forest').toBe(m.landscape);
         const b = createBattle(map, map.seed, { pods: m.pods });
         const aliens = b.units.filter((u) => u.side === 'alien');
         expect(aliens, `seed ${seed}`).toHaveLength(m.pods.count * m.pods.size);
@@ -90,6 +91,10 @@ describe('missions', () => {
         }
       }
     }
+  });
+
+  it('include the town as mission 2', () => {
+    expect(MISSIONS[1]?.landscape).toBe('town');
   });
 
   it('use the campaign squad`s names in a battle', () => {
