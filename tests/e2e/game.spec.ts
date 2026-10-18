@@ -185,10 +185,11 @@ test('clicking a tile out of range does not move the marine', async ({ page }) =
 });
 
 /**
- * Map 1: once the first marine moves as far east as it can, an alien is in range
- * and in sight. Selects that marine, moves it, and returns it with a target it can shoot.
+ * Map 23: once the first marine moves as far east as a normal move allows, one alien is
+ * in range and in sight, and the other is still hidden in the fog. Selects that marine,
+ * moves it, and returns it with a target it can shoot.
  */
-const SHOT_SEED = '?seed=1';
+const SHOT_SEED = '?seed=23';
 
 async function moveEastForAShot(
   page: Page,
@@ -207,6 +208,19 @@ async function moveEastForAShot(
     throw new Error(`no shootable alien on ${SHOT_SEED} (the map generator may have changed)`);
   return { marineId: marine.id, alien };
 }
+
+test('aliens start hidden in the fog and are spotted when a marine gets close', async ({
+  page,
+}) => {
+  await openGame(page, SHOT_SEED);
+  const start = await snapshot(page);
+  expect(start.units.filter((u) => u.side === 'alien').every((u) => !u.seen)).toBe(true);
+  expect(start.units.filter((u) => u.side === 'marine').every((u) => u.seen)).toBe(true);
+  const { alien } = await moveEastForAShot(page);
+  const after = await snapshot(page);
+  expect(after.units.find((u) => u.id === alien.id)?.seen).toBe(true);
+  expect(after.units.filter((u) => u.side === 'alien' && !u.seen)).toHaveLength(1);
+});
 
 test('a marine aims at an alien, fires, and the shot is resolved', async ({ page }) => {
   await openGame(page, SHOT_SEED);
@@ -243,7 +257,9 @@ test('Esc cancels aiming before the shot', async ({ page }) => {
   expect(after.lastShot).toBeNull();
 });
 
-test('an alien behind a tree or out of range cannot be aimed at', async ({ page }) => {
+test('an alien the marine cannot shoot (in the fog, behind trees, out of range) cannot be aimed at', async ({
+  page,
+}) => {
   await openGame(page, SHOT_SEED);
   const { alien } = await moveEastForAShot(page);
   const s = await snapshot(page);

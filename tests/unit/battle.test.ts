@@ -6,6 +6,7 @@ import {
   MAP_ROWS,
   OVERWATCH,
   SHOOTING,
+  SIGHT,
   SKIRMISH,
   UNITS,
 } from '../../src/config/tuning';
@@ -22,6 +23,7 @@ import {
   createBattle,
   hitChance,
   inThrowRange,
+  isVisibleTo,
   livingUnits,
   moveCost,
   moveRange,
@@ -31,8 +33,10 @@ import {
   shotBlock,
   shotOdds,
   shootableTargets,
+  tilesSeenFrom,
   unitAt,
   unitById,
+  visibleTiles,
   type BattleState,
   type Unit,
 } from '../../src/logic/battle';
@@ -673,8 +677,8 @@ describe('ammo and reloading', () => {
 
 describe('overwatch', () => {
   /**
-   * A 20 x 5 field: marine 'm' at (2,2) on overwatch, alien 'a' at (17,2), 15 tiles away
-   * (just inside the marine's range of 16). It's the aliens' turn.
+   * A 20 x 5 field: marine 'm' at (2,2) on overwatch, alien 'a' at (15,2), 13 tiles away:
+   * just beyond sight (12), so its first step west brings it into view. It's the aliens' turn.
    */
   function watch(rows?: string[], rng = 1): BattleState {
     const pic = rows ?? Array(5).fill('.'.repeat(20));
@@ -687,7 +691,7 @@ describe('overwatch', () => {
       turn: 'alien',
       units: [
         { ...m, id: 'm', x: 2, y: 2, ap: 0, overwatch: true },
-        { ...a, id: 'a', x: 17, y: 2, ap: ACTION_POINTS },
+        { ...a, id: 'a', x: 15, y: 2, ap: ACTION_POINTS },
       ],
     };
   }
@@ -709,11 +713,11 @@ describe('overwatch', () => {
 
   it('fires once when an enemy moves within sight, then stops watching', () => {
     const s = watch();
-    const next = apply(s, { type: 'move', unitId: 'a', to: { x: 14, y: 2 } });
+    const next = apply(s, { type: 'move', unitId: 'a', to: { x: 11, y: 2 } });
     const moved = must(next.lastMove ?? undefined);
     expect(moved.reactions).toHaveLength(1);
     const { step, shot } = must(moved.reactions[0]);
-    expect(step).toBe(0); // the first tile it stepped onto was already in sight
+    expect(step).toBe(0); // its first step, to (14,2), brings it into sight
     expect(shot).toMatchObject({ shooterId: 'm', targetId: 'a', reaction: true, crit: false });
     expect(unitById(next, 'm')).toMatchObject({ overwatch: false, ammo: UNITS.marine.ammo - 1 });
     expect(unitById(next, 'a')?.hp).toBe(shot.hpAfter);
@@ -727,7 +731,7 @@ describe('overwatch', () => {
     expect(odds.hit).toBe(UNITS.marine.aim - OVERWATCH.aimPenalty);
     expect(odds.crit).toBe(0);
     for (let rng = 1; rng <= 100; rng++) {
-      const next = apply(watch(undefined, rng), { type: 'move', unitId: 'a', to: { x: 14, y: 2 } });
+      const next = apply(watch(undefined, rng), { type: 'move', unitId: 'a', to: { x: 11, y: 2 } });
       for (const r of next.lastMove?.reactions ?? []) expect(r.shot.crit).toBe(false);
     }
   });
@@ -736,10 +740,10 @@ describe('overwatch', () => {
     for (let rng = 1; rng <= 300; rng++) {
       const s = watch(undefined, rng);
       const weak = { ...s, units: s.units.map((u) => (u.id === 'a' ? { ...u, hp: 1 } : u)) };
-      const next = apply(weak, { type: 'move', unitId: 'a', to: { x: 14, y: 2 } });
+      const next = apply(weak, { type: 'move', unitId: 'a', to: { x: 11, y: 2 } });
       if (!next.lastMove?.reactions[0]?.shot.killed) continue;
-      expect(next.lastMove.path).toEqual([{ x: 16, y: 2 }]);
-      expect(unitById(next, 'a')).toMatchObject({ x: 16, y: 2, hp: 0 });
+      expect(next.lastMove.path).toEqual([{ x: 14, y: 2 }]);
+      expect(unitById(next, 'a')).toMatchObject({ x: 14, y: 2, hp: 0 });
       return;
     }
     throw new Error('no killing reaction shot in 300 random states');
@@ -748,7 +752,7 @@ describe('overwatch', () => {
   it('does not fire at moves it cannot see, or out of range', () => {
     // A wall of pines between them.
     const rows = Array(5).fill('..........#.........');
-    const blind = apply(watch(rows), { type: 'move', unitId: 'a', to: { x: 14, y: 2 } });
+    const blind = apply(watch(rows), { type: 'move', unitId: 'a', to: { x: 11, y: 2 } });
     expect(blind.lastMove?.reactions).toEqual([]);
     expect(unitById(blind, 'm')?.overwatch).toBe(true);
     // Moving away, staying beyond 16 tiles.
@@ -910,5 +914,66 @@ describe('shortcut helpers', () => {
     };
     expect(shootableTargets(state, 'm')).toEqual(['a2', 'a1']);
     expect(shootableTargets(state, 'nobody')).toEqual([]);
+  });
+});
+
+describe('sight and fog of war', () => {
+  /** Marines and aliens at given spots on a map picture. */
+  function place(rows: string[], marines: Point[], aliens: Point[]): BattleState {
+    const s = createBattle(openMap(rows.map((r) => '.'.repeat(r.length))), 1);
+    const m = must(s.units.find((u) => u.side === 'marine'));
+    const a = must(s.units.find((u) => u.side === 'alien'));
+    return {
+      ...s,
+      map: openMap(rows),
+      units: [
+        ...marines.map((p, i) => ({ ...m, id: `m${i}`, ...p })),
+        ...aliens.map((p, i) => ({ ...a, id: `a${i}`, ...p })),
+      ],
+    };
+  }
+  const row = (n: number): string => '.'.repeat(n);
+
+  it('sees up to the sight radius, not beyond', () => {
+    const s = place([row(30)], [{ x: 0, y: 0 }], []);
+    const seen = visibleTiles(s, 'marine');
+    expect(seen.has(SIGHT.radius)).toBe(true);
+    expect(seen.has(SIGHT.radius + 1)).toBe(false);
+    expect(isVisibleTo(s, 'marine', { x: SIGHT.radius, y: 0 })).toBe(true);
+    expect(isVisibleTo(s, 'marine', { x: SIGHT.radius + 1, y: 0 })).toBe(false);
+  });
+
+  it('sees the tree but not what is behind it', () => {
+    const s = place(['....#.....'], [{ x: 0, y: 0 }], []);
+    const seen = visibleTiles(s, 'marine');
+    expect(seen.has(4)).toBe(true);
+    expect(seen.has(5)).toBe(false);
+  });
+
+  it('adds up what every squad member sees', () => {
+    const map = openMap(['....#....#....']);
+    expect(tilesSeenFrom(map, [{ x: 0, y: 0 }]).has(7)).toBe(false);
+    expect(
+      tilesSeenFrom(map, [
+        { x: 0, y: 0 },
+        { x: 6, y: 0 },
+      ]).has(7),
+    ).toBe(true);
+    expect(tilesSeenFrom(map, []).size).toBe(0);
+  });
+
+  it('needs the target spotted: a long shot works only if a squadmate sees it', () => {
+    // 14 tiles: inside rifle range (16), outside sight (12).
+    const alone = place([row(20)], [{ x: 0, y: 0 }], [{ x: 14, y: 0 }]);
+    expect(shotBlock(alone, 'm0', 'a0')).toBe('sight');
+    const spotted = place(
+      [row(20)],
+      [
+        { x: 0, y: 0 },
+        { x: 8, y: 0 },
+      ],
+      [{ x: 14, y: 0 }],
+    );
+    expect(shotBlock(spotted, 'm0', 'a0')).toBeNull();
   });
 });

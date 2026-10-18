@@ -70,6 +70,11 @@ export const SHOOTING = {
   critDamage: 2,
 } as const;
 
+/** How far units see, in tiles. Trees and boulders block sight (the same line as shots). */
+export const SIGHT = {
+  radius: 12,
+} as const;
+
 /** Reaction shots from overwatch, taken when an enemy moves into sight. */
 export const OVERWATCH = {
   /** Percent taken off the hit chance: snap shots at a moving target. */

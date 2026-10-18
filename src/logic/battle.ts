@@ -1,4 +1,12 @@
-import { ACTION_POINTS, GRENADE, OVERWATCH, SHOOTING, SKIRMISH, UNITS } from '../config/tuning';
+import {
+  ACTION_POINTS,
+  GRENADE,
+  OVERWATCH,
+  SHOOTING,
+  SIGHT,
+  SKIRMISH,
+  UNITS,
+} from '../config/tuning';
 import { findPath, hasLineOfSight, reachable, type Point } from './grid';
 import {
   blocksSight,
@@ -223,6 +231,38 @@ export function canSee(map: BattleMap, a: Point, b: Point): boolean {
   return hasLineOfSight(a, b, (x, y) => blocksSight(map, x, y));
 }
 
+/**
+ * The tiles a side can see now, keyed by `y * cols + x`: every tile within sight
+ * radius of one of its living units with nothing blocking the line.
+ */
+export function visibleTiles(state: BattleState, side: Side): Set<number> {
+  return tilesSeenFrom(state.map, livingUnits(state, side));
+}
+
+/** The tiles seen from these spots (for working out sight part-way through a move). */
+export function tilesSeenFrom(map: BattleMap, eyes: readonly Point[]): Set<number> {
+  const seen = new Set<number>();
+  const r = SIGHT.radius;
+  for (const eye of eyes) {
+    for (let y = Math.max(0, eye.y - r); y <= Math.min(map.rows - 1, eye.y + r); y++) {
+      for (let x = Math.max(0, eye.x - r); x <= Math.min(map.cols - 1, eye.x + r); x++) {
+        const key = y * map.cols + x;
+        if (seen.has(key) || Math.hypot(x - eye.x, y - eye.y) > r) continue;
+        if (canSee(map, eye, { x, y })) seen.add(key);
+      }
+    }
+  }
+  return seen;
+}
+
+/** True if any living unit on `side` can see the point. */
+export function isVisibleTo(state: BattleState, side: Side, p: Point): boolean {
+  const r = SIGHT.radius;
+  return livingUnits(state, side).some(
+    (u) => Math.hypot(u.x - p.x, u.y - p.y) <= r && canSee(state.map, u, p),
+  );
+}
+
 /** Why a shot isn't possible right now, or null if it is. */
 export type ShotBlock = 'range' | 'sight' | 'ammo' | 'other';
 
@@ -239,6 +279,8 @@ export function shotBlock(
   const dist = Math.hypot(target.x - shooter.x, target.y - shooter.y);
   if (dist > UNITS[shooter.kind].range) return 'range';
   if (!canSee(state.map, shooter, target)) return 'sight';
+  // The squad must have spotted the target: any of the shooter's side within sight counts.
+  if (!isVisibleTo(state, shooter.side, target)) return 'sight';
   return null;
 }
 
@@ -298,6 +340,7 @@ export function reactionOdds(
   if (Math.hypot(target.x - shooter.x, target.y - shooter.y) > UNITS[shooter.kind].range)
     return null;
   if (!canSee(state.map, shooter, target)) return null;
+  if (!isVisibleTo(state, shooter.side, target)) return null;
   return oddsBetween(state, shooter, target, true);
 }
 
