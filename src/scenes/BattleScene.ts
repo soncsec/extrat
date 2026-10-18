@@ -49,7 +49,7 @@ import {
   type UnitKind,
 } from '../logic/battle';
 import { planAlienAction } from '../logic/ai';
-import { currentMission, type Campaign } from '../logic/campaign';
+import { afterBattle, currentMission, isComplete, type Campaign } from '../logic/campaign';
 import { generateForest, PROPS, tileAt } from '../logic/map';
 import { createRng, type Rng } from '../logic/rng';
 import {
@@ -78,6 +78,7 @@ import {
 import type { BattleResult } from './ResultScene';
 import { PixelButton, PixelText } from './pixelFont';
 import { initialSeed } from './seed';
+import { clearSave, writeSave } from './storage';
 
 /** A tile a unit can move to, and the action points that costs (2 means a dash). */
 export interface MoveTile extends Point {
@@ -235,7 +236,7 @@ export class BattleScene extends Phaser.Scene {
     super('Battle');
   }
 
-  create(data: { seed?: number; campaign?: Campaign }): void {
+  create(data: { seed?: number; campaign?: Campaign; resume?: BattleState }): void {
     this.fx = new FxPool(this);
     this.campaign = data.campaign ?? null;
     this.seed = this.campaign?.mapSeed ?? data.seed ?? initialSeed();
@@ -322,7 +323,7 @@ export class BattleScene extends Phaser.Scene {
       this.events.off('replay');
     });
 
-    this.startBattle(this.seed);
+    this.startBattle(this.seed, data.resume);
   }
 
   override update(): void {
@@ -857,6 +858,7 @@ export class BattleScene extends Phaser.Scene {
     this.refreshVision();
     await this.banner(`TURN ${this.state.round}`, '#f2a33a');
     await this.playPoison();
+    if (this.campaign) writeSave(this.campaign, this.state);
     this.busy = false;
     const first = nextReadyMarine(this.state, null);
     if (first) this.selectMarine(first);
@@ -884,6 +886,13 @@ export class BattleScene extends Phaser.Scene {
       mapSeed: this.state.map.seed,
       campaign: this.campaign,
     };
+    if (this.campaign) {
+      // Closing the browser on the debrief picks up at the next briefing: the next
+      // mission after a win, a new map after a loss. A finished campaign isn't kept.
+      const next = afterBattle(this.campaign, won, won ? 'next' : 'retry');
+      if (isComplete(next)) clearSave();
+      else writeSave(next, null);
+    }
     // Let the last death animation play first.
     this.time.delayedCall(700, () => this.scene.launch('Result', result));
     return true;
@@ -1355,7 +1364,8 @@ export class BattleScene extends Phaser.Scene {
     this.oddsPanel.setPosition(x, 2 * TILE + 6).setVisible(true);
   }
 
-  private startBattle(seed: number): void {
+  /** Starts a battle on the map from `seed`, or picks up a saved one (`resume`). */
+  private startBattle(seed: number, resume?: BattleState): void {
     for (const o of this.mapObjects) o.destroy();
     for (const v of this.views.values()) {
       v.sprite.destroy();
@@ -1372,11 +1382,11 @@ export class BattleScene extends Phaser.Scene {
     const map = generateForest(seed, MAP_COLS, MAP_ROWS);
     const c = this.campaign;
     const mission = c ? currentMission(c) : null;
-    this.state = createBattle(
-      map,
-      map.seed,
-      c && mission ? { names: c.squad, pods: mission.pods } : {},
-    );
+    this.state =
+      resume ??
+      createBattle(map, map.seed, c && mission ? { names: c.squad, pods: mission.pods } : {});
+    // A campaign saves as each of the squad's turns begins, this first one included.
+    if (c) writeSave(c, this.state);
     this.drawMap();
     for (const u of this.state.units) this.views.set(u.id, this.drawUnit(u));
     this.updateHidden();

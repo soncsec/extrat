@@ -1,9 +1,12 @@
 import Phaser from 'phaser';
-import { GAME_HEIGHT, GAME_WIDTH, TILE } from '../config/tuning';
+import { GAME_HEIGHT, GAME_WIDTH, MAP_COLS, MAP_ROWS, TILE } from '../config/tuning';
 import { FOREST_SHEET, MARINE_SHEET, WALKER_SHEET } from './art';
 import { newCampaign } from '../logic/campaign';
+import { generateForest } from '../logic/map';
+import { restoreBattle, type Save } from '../logic/save';
+import { clearSave, readSave } from './storage';
 import { randomSeed, urlNumber } from './seed';
-import { pixelButton, pixelText } from './pixelFont';
+import { PixelText, pixelButton, pixelText } from './pixelFont';
 
 /** Where the games portal lives, relative to this game's folder (games.soncrant.com/extrat/). */
 export const PORTAL_URL = '../';
@@ -13,7 +16,7 @@ export class TitleScene extends Phaser.Scene {
     super('Title');
   }
 
-  create(): void {
+  create(data: { damaged?: boolean } = {}): void {
     const cols = Math.ceil(GAME_WIDTH / TILE);
     const rows = Math.ceil(GAME_HEIGHT / TILE);
     for (let y = 0; y < rows; y++) {
@@ -58,13 +61,31 @@ export class TitleScene extends Phaser.Scene {
       ].join('\n'),
       0xc8d0dc,
     );
-    // ?seed=N plays that one map as a skirmish (bug reports, tests); otherwise a campaign.
+    // ?seed=N plays that one map as a skirmish (bug reports, tests) and ?campaign=N a
+    // given campaign; otherwise the saved campaign can be continued, or a new one begun.
     const skirmish = urlNumber('seed') !== null;
-    pixelButton(this, cx, 172, skirmish ? 'START MISSION' : 'START CAMPAIGN', () => this.start());
-    pixelButton(this, cx, 194, 'BACK TO GAMES', () => window.location.assign(PORTAL_URL), false);
-    pixelText(this, cx, 214, 'Enter: start', 0xa3adbd);
-
-    this.input.keyboard?.once('keydown-ENTER', () => this.start());
+    const stored = skirmish || urlNumber('campaign') !== null ? null : readSave();
+    if (stored?.status === 'bad' || data.damaged) {
+      new PixelText(this, cx, 236, 'Saved campaign was damaged, so it was cleared.', {
+        color: 0xff6a5a,
+        background: 0x05070f,
+        padding: 3,
+      }).setDepth(1);
+    }
+    if (stored?.status === 'ok') {
+      const save = stored.save;
+      pixelButton(this, cx, 166, 'CONTINUE', () => this.continue(save));
+      pixelButton(this, cx, 186, 'NEW CAMPAIGN', () => this.start(), false);
+      pixelButton(this, cx, 206, 'BACK TO GAMES', () => window.location.assign(PORTAL_URL), false);
+      pixelText(this, cx, 226, 'Enter: continue   N: new campaign', 0xa3adbd);
+      this.input.keyboard?.once('keydown-ENTER', () => this.continue(save));
+      this.input.keyboard?.once('keydown-N', () => this.start());
+    } else {
+      pixelButton(this, cx, 172, skirmish ? 'START MISSION' : 'START CAMPAIGN', () => this.start());
+      pixelButton(this, cx, 194, 'BACK TO GAMES', () => window.location.assign(PORTAL_URL), false);
+      pixelText(this, cx, 214, 'Enter: start', 0xa3adbd);
+      this.input.keyboard?.once('keydown-ENTER', () => this.start());
+    }
   }
 
   private start(): void {
@@ -73,8 +94,27 @@ export class TitleScene extends Phaser.Scene {
       this.scene.start('Battle', { seed });
       return;
     }
-    // ?campaign=N replays a whole campaign (bug reports); otherwise a new one.
+    // ?campaign=N replays a whole campaign (bug reports); otherwise a new one. It
+    // replaces any saved campaign when its briefing saves.
     const campaign = newCampaign(urlNumber('campaign') ?? randomSeed());
     this.scene.start('Briefing', { campaign });
+  }
+
+  /** Back to where the save left off: the battle in progress, or the next briefing. */
+  private continue(save: Save): void {
+    if (!save.battle) {
+      this.scene.start('Briefing', { campaign: save.campaign });
+      return;
+    }
+    const resume = restoreBattle(save.campaign, save.battle, (mapSeed) =>
+      generateForest(mapSeed, MAP_COLS, MAP_ROWS),
+    );
+    if (!resume) {
+      // It passed the shape checks but doesn't fit its map: not ours. Clear it and say so.
+      clearSave();
+      this.scene.restart({ damaged: true });
+      return;
+    }
+    this.scene.start('Battle', { campaign: save.campaign, resume });
   }
 }
