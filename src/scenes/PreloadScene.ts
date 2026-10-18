@@ -6,13 +6,32 @@ import {
   addFrames,
   BULLET,
   EFFECTS,
+  FLYER_SHEET,
   FOREST_SHEET,
+  LIZARD_SHEET,
+  LIZARD_TONGUE_SHEET,
+  LIZARD_WALK_SHEET,
   MARINE_SHEET,
+  SNAKE_SHEET,
+  SNAKE_SHOOT_SHEET,
+  SNAKE_WALK_SHEET,
+  SPIT,
   WALKER_SHEET,
   WALKER_WALK_SHEET,
 } from './art';
 
-export const CHARACTER_SHEETS = [MARINE_SHEET, WALKER_SHEET, WALKER_WALK_SHEET];
+export const CHARACTER_SHEETS = [
+  MARINE_SHEET,
+  WALKER_SHEET,
+  WALKER_WALK_SHEET,
+  FLYER_SHEET,
+  LIZARD_SHEET,
+  LIZARD_WALK_SHEET,
+  LIZARD_TONGUE_SHEET,
+  SNAKE_SHEET,
+  SNAKE_WALK_SHEET,
+  SNAKE_SHOOT_SHEET,
+];
 
 /** Loads every image once, registers frames and animations, then opens the title. */
 export class PreloadScene extends Phaser.Scene {
@@ -35,6 +54,8 @@ export class PreloadScene extends Phaser.Scene {
       this.load.spritesheet(e.key, e.url, { frameWidth: e.frameWidth, frameHeight: e.frameHeight });
     }
     this.load.image(BULLET.key, BULLET.url);
+    const [frameWidth, frameHeight] = SPIT.size;
+    this.load.spritesheet(SPIT.key, SPIT.url, { frameWidth, frameHeight });
   }
 
   create(): void {

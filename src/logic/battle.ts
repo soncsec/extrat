@@ -1,5 +1,7 @@
 import {
+  ABILITIES,
   ACTION_POINTS,
+  ALIEN_KINDS,
   GRENADE,
   OVERWATCH,
   PODS,
@@ -26,7 +28,8 @@ import { createRng, rngStep, type Rng } from './rng';
  */
 
 export type Side = 'marine' | 'alien';
-export type UnitKind = 'marine' | 'walker';
+export type UnitKind = keyof typeof UNITS;
+export type AlienKind = (typeof ALIEN_KINDS)[number];
 
 export interface Unit extends Point {
   id: string;
@@ -53,6 +56,15 @@ export interface Unit extends Point {
   pod: number | null;
   /** A pod member that hasn't been spotted yet: it waits and doesn't act. */
   dormant: boolean;
+  /** Turns of poison left: it loses health at the start of each of its side's turns. */
+  poison: number;
+}
+
+/** Health lost to poison at the start of a side's turn. */
+export interface PoisonTick {
+  unitId: string;
+  damage: number;
+  hpAfter: number;
 }
 
 export interface BattleState {
@@ -72,6 +84,8 @@ export interface BattleState {
   lastMove: MoveResult | null;
   /** What the most recent grenade did. */
   lastThrow: ThrowResult | null;
+  /** Poison damage taken when the current turn began. */
+  lastPoison: PoisonTick[];
 }
 
 export interface ThrowResult {
@@ -115,6 +129,10 @@ export interface ShotResult {
   killed: boolean;
   /** An overwatch reaction shot rather than an aimed one. */
   reaction: boolean;
+  /** A lizard's tongue dragged the target here (null: it wasn't moved). */
+  pulledTo: Point | null;
+  /** A snake's venom poisoned the target. */
+  poisoned: boolean;
 }
 
 export type Action =
@@ -128,6 +146,12 @@ export type Action =
   | { type: 'endTurn' };
 
 const MARINE_NAMES = ['Vasquez', 'Okafor', 'Lindqvist', 'Moreau', 'Tanaka', 'Reyes'];
+const ALIEN_NAMES: Record<AlienKind, string> = {
+  walker: 'Walker',
+  flyer: 'Flyer',
+  lizard: 'Lizard',
+  snake: 'Snake',
+};
 
 /** A new skirmish: marines deploy in the west spawn zone, aliens in the east. */
 export function createBattle(map: BattleMap, seed: number): BattleState {
@@ -150,25 +174,32 @@ export function createBattle(map: BattleMap, seed: number): BattleState {
     exposed: false,
     pod: null,
     dormant: false,
+    poison: 0,
   }));
-  const aliens = deployPods(map, rng, marines).map(({ pod, ...p }, i): Unit => ({
-    ...p,
-    id: `a${i + 1}`,
-    side: 'alien',
-    kind: 'walker',
-    name: 'Walker',
-    hp: UNITS.walker.hp,
-    maxHp: UNITS.walker.hp,
-    facing: -1,
-    ap: ACTION_POINTS,
-    move: UNITS.walker.move,
-    ammo: UNITS.walker.ammo,
-    overwatch: false,
-    grenades: 0,
-    exposed: false,
-    pod,
-    dormant: true,
-  }));
+  // Kinds come from their own generator, so the draw doesn't move where anyone stands.
+  const kindRng = createRng((seed ^ 0x5bd1e995) >>> 0);
+  const aliens = deployPods(map, rng, marines).map(({ pod, ...p }, i): Unit => {
+    const kind = kindRng.pick(ALIEN_KINDS);
+    return {
+      ...p,
+      id: `a${i + 1}`,
+      side: 'alien',
+      kind,
+      name: ALIEN_NAMES[kind],
+      hp: UNITS[kind].hp,
+      maxHp: UNITS[kind].hp,
+      facing: -1,
+      ap: ACTION_POINTS,
+      move: UNITS[kind].move,
+      ammo: UNITS[kind].ammo,
+      overwatch: false,
+      grenades: 0,
+      exposed: false,
+      pod,
+      dormant: true,
+      poison: 0,
+    };
+  });
   return {
     map,
     units: [...marines, ...aliens],
@@ -179,6 +210,7 @@ export function createBattle(map: BattleMap, seed: number): BattleState {
     lastShot: null,
     lastMove: null,
     lastThrow: null,
+    lastPoison: [],
   };
 }
 
@@ -214,12 +246,19 @@ export function apply(state: BattleState, action: Action): BattleState {
       const turn: Side = state.turn === 'marine' ? 'alien' : 'marine';
       // Their overwatch ends: it only lasts through the other side's turn. The other
       // side's exposure ends too: it lasted until this side's turn came round again.
+      const lastPoison: PoisonTick[] = [];
       const units = state.units.map((u) => {
         if (u.side !== turn) return u.exposed ? { ...u, exposed: false } : u;
-        return u.hp > 0 ? { ...u, ap: ACTION_POINTS, overwatch: false } : u;
+        if (u.hp <= 0) return u;
+        const fresh = { ...u, ap: ACTION_POINTS, overwatch: false };
+        if (u.poison <= 0) return fresh;
+        // Poison bites as the turn begins, but never takes the last point of health.
+        const hp = Math.max(Math.min(u.hp, 1), u.hp - ABILITIES.poison.damage);
+        lastPoison.push({ unitId: u.id, damage: u.hp - hp, hpAfter: hp });
+        return { ...fresh, hp, poison: u.poison - 1 };
       });
       const round = turn === 'marine' ? state.round + 1 : state.round;
-      return { ...state, units, turn, round, selected: null };
+      return { ...state, units, turn, round, selected: null, lastPoison };
     }
   }
 }
@@ -378,10 +417,15 @@ export function oddsBetween(
   const stats = UNITS[shooter.kind];
   const dist = Math.hypot(target.x - shooter.x, target.y - shooter.y);
   const range = -Math.max(0, Math.floor(dist) - SHOOTING.closeRange) * SHOOTING.penaltyPerTile;
-  // A unit caught by a grenade has no cover to hide behind.
-  const cover = target.exposed ? null : coverAgainst(state.map, target, shooter);
+  const ability = stats.ability;
+  // A unit caught by a grenade has no cover to hide behind; claws reach round cover;
+  // shots from above make cover count one step less.
+  const melee = ability === 'melee';
+  const facingCover = target.exposed || melee ? null : coverAgainst(state.map, target, shooter);
+  const cover = ability === 'fromAbove' ? lowerCover(facingCover) : facingCover;
   const coverPenalty = cover ? SHOOTING.cover[cover] : 0;
-  const flanked = cover === null;
+  // Flanking is about getting round cover with a gun; a claw gets no crit bonus for it.
+  const flanked = cover === null && !melee;
   const reactionPenalty = reaction ? OVERWATCH.aimPenalty : 0;
   const hit = Math.min(
     SHOOTING.maxChance,
@@ -401,6 +445,10 @@ export function oddsBetween(
     hit,
     crit,
   };
+}
+
+function lowerCover(cover: Cover | null): Cover | null {
+  return cover === 'full' ? 'half' : null;
 }
 
 /** True if the unit can throw a grenade now: its turn, an action point, and a grenade. */
@@ -460,7 +508,8 @@ function throwGrenade(state: BattleState, unitId: string, at: Point): BattleStat
 export function canOverwatch(state: BattleState, unitId: string): boolean {
   const unit = unitById(state, unitId);
   if (!unit || unit.hp <= 0 || unit.ap <= 0 || unit.side !== state.turn) return false;
-  return unit.ammo !== 0 && !unit.overwatch;
+  // Watching means shooting at movement: claws can't.
+  return unit.ammo !== 0 && !unit.overwatch && UNITS[unit.kind].ability !== 'melee';
 }
 
 function shoot(state: BattleState, shooterId: string, targetId: string): BattleState {
@@ -503,6 +552,24 @@ function rollShot(
   const ammo = shooter.ammo === null ? null : shooter.ammo - 1;
   let next = replaceUnit(state, { ...shooter, facing, ammo });
   next = replaceUnit(next, { ...target, hp });
+  // Abilities ride on aimed hits that leave the target standing, not on reactions.
+  let pulledTo: Point | null = null;
+  let poisoned = false;
+  const ability = UNITS[shooter.kind].ability;
+  if (hit && hp > 0 && !reaction) {
+    if (ability === 'pull') pulledTo = pullSpot(next, shooter, target);
+    if (pulledTo) {
+      // Dragged out of position: off overwatch, and wherever the tongue drops it.
+      next = replaceUnit(next, { ...target, hp, ...pulledTo, overwatch: false });
+    }
+    if (ability === 'poison') {
+      poisoned = true;
+      next = replaceUnit(next, {
+        ...(unitById(next, target.id) as Unit),
+        poison: ABILITIES.poison.turns,
+      });
+    }
+  }
   const shot: ShotResult = {
     shooterId: shooter.id,
     targetId: target.id,
@@ -513,9 +580,43 @@ function rollShot(
     hpAfter: hp,
     killed: hp === 0,
     reaction,
+    pulledTo,
+    poisoned,
   };
   return { state: { ...next, rng }, shot };
 }
+
+/**
+ * Where a lizard's tongue drops a marine: the free tile next to the lizard nearest the
+ * marine, or null if the marine is already next to it or there's no room.
+ */
+function pullSpot(state: BattleState, lizard: Unit, target: Unit): Point | null {
+  if (Math.hypot(target.x - lizard.x, target.y - lizard.y) <= 1.5) return null;
+  let best: Point | null = null;
+  let bestDist = Infinity;
+  for (const [dx, dy] of NEIGHBOURS) {
+    const p = { x: lizard.x + dx, y: lizard.y + dy };
+    if (!isWalkable(state.map, p.x, p.y) || unitAt(state, p.x, p.y)) continue;
+    const d = Math.hypot(target.x - p.x, target.y - p.y);
+    if (d < bestDist) {
+      best = p;
+      bestDist = d;
+    }
+  }
+  return best;
+}
+
+/** The 8 tiles around a tile. */
+const NEIGHBOURS = [
+  [-1, -1],
+  [0, -1],
+  [1, -1],
+  [-1, 0],
+  [1, 0],
+  [-1, 1],
+  [0, 1],
+  [1, 1],
+] as const;
 
 /**
  * Moves a unit along its path. At each tile, every enemy on overwatch that can now

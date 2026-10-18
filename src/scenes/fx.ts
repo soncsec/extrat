@@ -156,3 +156,13 @@ export function drawExposed(g: Phaser.GameObjects.Graphics, x: number, y: number
     });
   });
 }
+
+/** A small green venom drop (5 x 7) with its top-left at (x, y): poisoned. */
+export function drawPoison(g: Phaser.GameObjects.Graphics, x: number, y: number): void {
+  const rows = ['..#..', '..#..', '.###.', '#####', '##.##', '#####', '.###.'];
+  rows.forEach((row, j) => {
+    [...row].forEach((c, i) => {
+      if (c === '#') g.fillStyle(0x7ad84a, 1).fillRect(x + i, y + j, 1, 1);
+    });
+  });
+}

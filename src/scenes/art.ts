@@ -43,7 +43,10 @@ export interface CharacterSheet {
   url: string;
   frameWidth: number;
   frameHeight: number;
-  /** Feet position as a fraction of the frame, for a sprite facing right. */
+  /**
+   * Feet position as a fraction of the frame, as drawn in the sheet. A flyer's "feet"
+   * are below it: the point over its tile, so it hovers.
+   */
   originX: number;
   originY: number;
   /** Height of the character above its feet, in pixels (for markers over its head). */
@@ -52,6 +55,8 @@ export interface CharacterSheet {
   muzzle: { x: number; y: number };
   /** Animations: first frame index and frame count. */
   anims: Readonly<Record<string, { start: number; count: number; fps: number }>>;
+  /** The sheet draws the character facing left (the others face right). */
+  facesLeft?: boolean;
 }
 
 /** The marine atlas has 10 columns; each row is one animation. */
@@ -98,12 +103,102 @@ export const WALKER_WALK_SHEET: CharacterSheet = {
   anims: { run: { start: 0, count: 6, fps: 10 } },
 };
 
+/** The flyer flaps the same way whether it hovers or moves. Measured: body 24-77 wide, 1-57 tall. */
+export const FLYER_SHEET: CharacterSheet = {
+  key: 'flyer',
+  url: 'assets/alien-flyer/alien-flyer.png',
+  frameWidth: 83,
+  frameHeight: 64,
+  originX: 40 / 83,
+  // It hovers 8 pixels above the ground.
+  originY: 66 / 64,
+  height: 62,
+  muzzle: { x: 12, y: 36 },
+  anims: { idle: { start: 0, count: 8, fps: 12 }, run: { start: 0, count: 8, fps: 16 } },
+  facesLeft: true,
+};
+
+/** Lizard frames are 64 x 32 with the body in the left 26 pixels (room for the tongue). */
+export const LIZARD_SHEET: CharacterSheet = {
+  key: 'lizard',
+  url: 'assets/lizard/lizard-idle.png',
+  frameWidth: 64,
+  frameHeight: 32,
+  originX: 14 / 64,
+  originY: 32 / 32,
+  height: 12,
+  muzzle: { x: 11, y: 7 },
+  anims: { idle: { start: 0, count: 4, fps: 6 } },
+};
+
+export const LIZARD_WALK_SHEET: CharacterSheet = {
+  ...LIZARD_SHEET,
+  key: 'lizard-walk',
+  url: 'assets/lizard/lizard-walk.png',
+  anims: { run: { start: 0, count: 6, fps: 12 } },
+};
+
+export const LIZARD_TONGUE_SHEET: CharacterSheet = {
+  ...LIZARD_SHEET,
+  key: 'lizard-tongue',
+  url: 'assets/lizard/lizard-tongue.png',
+  // Only the opening frames: the scene draws the tongue itself, toward any target.
+  anims: { shoot: { start: 0, count: 2, fps: 10 } },
+};
+
+export const SNAKE_SHEET: CharacterSheet = {
+  key: 'snake',
+  url: 'assets/snake/snake-idle.png',
+  frameWidth: 20,
+  frameHeight: 20,
+  originX: 9 / 20,
+  originY: 20 / 20,
+  height: 17,
+  muzzle: { x: 11, y: 14 },
+  anims: { idle: { start: 0, count: 4, fps: 6 } },
+};
+
+export const SNAKE_WALK_SHEET: CharacterSheet = {
+  ...SNAKE_SHEET,
+  key: 'snake-walk',
+  url: 'assets/snake/snake-walk.png',
+  frameWidth: 27,
+  originX: 12 / 27,
+  anims: { run: { start: 0, count: 4, fps: 10 } },
+};
+
+export const SNAKE_SHOOT_SHEET: CharacterSheet = {
+  ...SNAKE_SHEET,
+  key: 'snake-shoot',
+  url: 'assets/snake/snake-shoot.png',
+  frameWidth: 27,
+  frameHeight: 21,
+  originX: 9 / 27,
+  originY: 21 / 21,
+  anims: { shoot: { start: 0, count: 4, fps: 12 } },
+};
+
+/** The snake's venom blob: two 7 x 5 frames. */
+export const SPIT = { key: 'fx-spit', url: 'assets/snake/snake-spit.png', size: [7, 5] } as const;
+
 export type AnimName = 'idle' | 'run' | 'die' | 'shoot';
 
 /** Which sheet holds each unit kind's animations. A missing one means the kind has none. */
 export const UNIT_ANIMS: Readonly<Record<UnitKind, Partial<Record<AnimName, CharacterSheet>>>> = {
   marine: { idle: MARINE_SHEET, run: MARINE_SHEET, die: MARINE_SHEET, shoot: MARINE_SHEET },
   walker: { idle: WALKER_SHEET, run: WALKER_WALK_SHEET },
+  flyer: { idle: FLYER_SHEET, run: FLYER_SHEET },
+  lizard: { idle: LIZARD_SHEET, run: LIZARD_WALK_SHEET, shoot: LIZARD_TONGUE_SHEET },
+  snake: { idle: SNAKE_SHEET, run: SNAKE_WALK_SHEET, shoot: SNAKE_SHOOT_SHEET },
+};
+
+/** The sheet that sets each kind's size: its height and muzzle. */
+export const BASE_SHEETS: Readonly<Record<UnitKind, CharacterSheet>> = {
+  marine: MARINE_SHEET,
+  walker: WALKER_SHEET,
+  flyer: FLYER_SHEET,
+  lizard: LIZARD_SHEET,
+  snake: SNAKE_SHEET,
 };
 
 /** Registers a sheet's animations as `<key>-<name>`, once. */

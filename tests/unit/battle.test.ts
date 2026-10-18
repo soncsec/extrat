@@ -127,7 +127,7 @@ describe('createBattle', () => {
     expect(s.turn).toBe('marine');
     expect(s.selected).toBeNull();
     for (const u of s.units) {
-      const hp = u.side === 'marine' ? UNITS.marine.hp : UNITS.walker.hp;
+      const hp = UNITS[u.kind].hp;
       expect(u).toMatchObject({ hp, maxHp: hp, facing: u.side === 'marine' ? 1 : -1 });
     }
   });
@@ -351,9 +351,9 @@ describe('shooting', () => {
     const s = range(6);
     const sharp = {
       ...s,
-      units: s.units.map((u) => (u.id === 'm' ? { ...u, kind: 'walker' as const } : u)),
+      units: s.units.map((u) => (u.id === 'm' ? { ...u, kind: 'snake' as const } : u)),
     };
-    // A walker shooting at a marine from the edge of its range still has at least minChance.
+    // A weak shooter (a snake) at the edge of its range still has at least minChance.
     expect(hitChance(sharp, 'm', 'a')).toBeGreaterThanOrEqual(SHOOTING.minChance);
     expect(hitChance(range(3), 'm', 'a')).toBeLessThanOrEqual(SHOOTING.maxChance);
   });
@@ -374,7 +374,9 @@ describe('shooting', () => {
     let hits = 0;
     let misses = 0;
     for (let rng = 1; rng <= 200; rng++) {
-      const next = apply(range(8, { rng }), { type: 'shoot', unitId: 'm', targetId: 'a' });
+      const before = range(8, { rng });
+      const start = must(unitById(before, 'a')).hp;
+      const next = apply(before, { type: 'shoot', unitId: 'm', targetId: 'a' });
       const shot = must(next.lastShot ?? undefined);
       const hp = must(unitById(next, 'a')).hp;
       if (shot.hit) {
@@ -383,13 +385,13 @@ describe('shooting', () => {
         const bonus = shot.crit ? SHOOTING.critDamage : 0;
         expect(shot.damage).toBeGreaterThanOrEqual(UNITS.marine.damage.min + bonus);
         expect(shot.damage).toBeLessThanOrEqual(UNITS.marine.damage.max + bonus);
-        expect(hp).toBe(Math.max(0, UNITS.walker.hp - shot.damage));
+        expect(hp).toBe(Math.max(0, start - shot.damage));
         expect(shot.killed).toBe(hp === 0);
       } else {
         misses++;
         expect(shot.crit).toBe(false);
         expect(shot.damage).toBe(0);
-        expect(hp).toBe(UNITS.walker.hp);
+        expect(hp).toBe(start);
       }
     }
     // About 70% should hit at this range.
@@ -824,7 +826,7 @@ describe('grenades', () => {
     expect(thrown.hits.map((h) => h.unitId).sort()).toEqual(['a1', 'a2']);
     for (const id of ['a1', 'a2']) {
       expect(unitById(next, id)).toMatchObject({
-        hp: UNITS.walker.hp - GRENADE.damage,
+        hp: must(unitById(s, id)).hp - GRENADE.damage,
         exposed: true,
       });
     }

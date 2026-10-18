@@ -9,6 +9,7 @@ import {
   MAP_COLS,
   MAP_ROWS,
   TILE,
+  UNITS,
 } from '../config/tuning';
 import type { Point } from '../logic/grid';
 import {
@@ -50,13 +51,14 @@ import { planAlienAction } from '../logic/ai';
 import { generateForest, PROPS, tileAt } from '../logic/map';
 import { createRng, type Rng } from '../logic/rng';
 import {
+  BASE_SHEETS,
   BULLET,
   EFFECTS,
   FOREST_SHEET,
   MARINE_SHEET,
   propFrame,
+  SPIT,
   UNIT_ANIMS,
-  WALKER_SHEET,
   type AnimName,
   type CharacterSheet,
 } from './art';
@@ -64,6 +66,7 @@ import {
   drawExposed,
   drawEye,
   drawPips,
+  drawPoison,
   drawReticle,
   drawShield,
   flash,
@@ -96,6 +99,9 @@ export interface GameSnapshot {
     overwatch: boolean;
     grenades: number;
     exposed: boolean;
+    kind: UnitKind;
+    /** Turns of poison left. */
+    poison: number;
     /** The squad can see this unit now (aliens in the fog are false). */
     seen: boolean;
     /** An alien whose pod hasn't been spotted yet. */
@@ -138,7 +144,15 @@ const DEPTH = {
 } as const;
 
 /** Each kind's main sheet: its idle pose, height and muzzle. */
-const SHEETS: Record<UnitKind, CharacterSheet> = { marine: MARINE_SHEET, walker: WALKER_SHEET };
+const SHEETS = BASE_SHEETS;
+
+/** The tongue as drawn, and how long its parts take. */
+const TONGUE = { color: 0xd8326e, tip: 0xff7aa8, outMs: 160, dragMs: 260 } as const;
+
+/** True when a sprite drawn from `sheet` must be mirrored to face `facing`. */
+function mirrored(sheet: CharacterSheet, facing: 1 | -1): boolean {
+  return (facing === -1) !== (sheet.facesLeft ?? false);
+}
 const GHOST_COLOR = { marine: 0x7fd4ff, alien: 0xff6a5a } as const;
 /** A unit counts as hidden when a standing object in front covers this much of its body. */
 const HIDDEN_OVERLAP = 0.3;
@@ -157,6 +171,8 @@ interface UnitView {
   watching: boolean;
   /** Exposure as drawn: it starts when the blast is shown. */
   exposed: boolean;
+  /** Poison as drawn: it starts when the venom lands. */
+  poisoned: boolean;
 }
 
 export class BattleScene extends Phaser.Scene {
@@ -293,6 +309,11 @@ export class BattleScene extends Phaser.Scene {
         const width = u.maxHp * 4 - 1;
         drawEye(this.pips, Math.round(v.sprite.x - width / 2) - 10, top - 2);
       }
+      if (v.poisoned) {
+        // Left of the pips, past the overwatch eye if there is one.
+        const width = u.maxHp * 4 - 1;
+        drawPoison(this.pips, Math.round(v.sprite.x - width / 2) - (v.watching ? 17 : 7), top - 3);
+      }
       if (u.side === 'marine' && !v.moving) {
         // Cover against the nearest alien, shown next to the pips.
         const enemy = livingUnits(this.state, 'alien').reduce<Unit | null>(
@@ -327,6 +348,8 @@ export class BattleScene extends Phaser.Scene {
         overwatch: u.overwatch,
         grenades: u.grenades,
         exposed: u.exposed,
+        kind: u.kind,
+        poison: u.poison,
         seen: this.isSeen(u),
         dormant: u.dormant,
         hidden: this.views.get(u.id)?.hidden ?? false,
@@ -790,6 +813,7 @@ export class BattleScene extends Phaser.Scene {
     this.endWatch('marine');
     this.refreshVision();
     await this.banner(`TURN ${this.state.round}`, '#f2a33a');
+    await this.playPoison();
     this.busy = false;
     const first = nextReadyMarine(this.state, null);
     if (first) this.selectMarine(first);
@@ -912,7 +936,7 @@ export class BattleScene extends Phaser.Scene {
     if (!unit || !view) return;
     view.ghost.setVisible(false);
     view.moving = true;
-    let facing: 1 | -1 = view.sprite.flipX ? -1 : 1;
+    let facing: 1 | -1 = mirrored(view.sheet, 1) === view.sprite.flipX ? 1 : -1;
     this.playAnim(view, unit.kind, 'run', facing);
     const stepMs = 1000 / ANIMATION.runSpeed;
     let from: Point = {
@@ -957,14 +981,18 @@ export class BattleScene extends Phaser.Scene {
     view.ghost.setPosition(view.sprite.x, view.sprite.y);
   }
 
-  /** Plays a shot that the state already holds: turn, muzzle, bullet, then hit or miss. */
-  private playShot(shot: ShotResult): Promise<void> {
+  /**
+   * Plays an attack that the state already holds: turn, then the attack itself (a
+   * bullet, a claw lunge, a tongue or a venom spit), then hit or miss and any effect.
+   */
+  private async playShot(shot: ShotResult): Promise<void> {
     const shooter = unitById(this.state, shot.shooterId);
     const target = unitById(this.state, shot.targetId);
     const sv = this.views.get(shot.shooterId);
     const tv = this.views.get(shot.targetId);
-    if (!shooter || !target || !sv || !tv) return Promise.resolve();
+    if (!shooter || !target || !sv || !tv) return;
     const sheet = SHEETS[shooter.kind];
+    const ability = UNITS[shooter.kind].ability;
     if (shot.reaction) sv.watching = false;
     this.playAnim(sv, shooter.kind, 'shoot', shooter.facing);
     this.face(sv, shooter.facing);
@@ -978,29 +1006,142 @@ export class BattleScene extends Phaser.Scene {
     const to = shot.hit
       ? { x: tv.sprite.x, y: aimY }
       : { x: tv.sprite.x + shooter.facing * 24, y: aimY + (from.y < aimY ? 14 : -14) };
-    const bullet = this.add
-      .image(from.x, from.y, BULLET.key)
-      .setDepth(DEPTH.fx)
-      .setRotation(Math.atan2(to.y - from.y, to.x - from.x));
-    // Alien shots are green.
-    if (shooter.side === 'alien') bullet.setTint(0x8bf06a);
-    const dist = Math.hypot(to.x - from.x, to.y - from.y);
+
+    if (ability === 'melee') {
+      await this.lunge(sv.sprite, tv.sprite.x - sv.sprite.x, tv.sprite.y - sv.sprite.y);
+      this.showImpact(shot, tv, target);
+    } else if (ability === 'pull') {
+      await this.tongue(shot, from, to, tv, target);
+    } else if (ability === 'poison') {
+      const blob = this.add.sprite(from.x, from.y, SPIT.key, 0).setDepth(DEPTH.fx);
+      await this.fly(blob, to);
+      this.showImpact(shot, tv, target);
+    } else {
+      const bullet = this.add
+        .image(from.x, from.y, BULLET.key)
+        .setDepth(DEPTH.fx)
+        .setRotation(Math.atan2(to.y - from.y, to.x - from.x));
+      // Alien shots are green.
+      if (shooter.side === 'alien') bullet.setTint(0x8bf06a);
+      await this.fly(bullet, to);
+      this.showImpact(shot, tv, target);
+    }
+    if (shot.poisoned) {
+      tv.poisoned = true;
+      const headY = tv.sprite.y - SHEETS[target.kind].height;
+      this.time.delayedCall(250, () =>
+        floatText(this, tv.sprite.x, headY - 14, 'POISONED', '#7ad84a', DEPTH.fx),
+      );
+    }
+    await new Promise<void>((resolve) => this.time.delayedCall(650, () => resolve()));
+    this.playAnim(sv, shooter.kind, 'idle', shooter.facing);
+  }
+
+  /** Moves a projectile to `to`, then removes it. */
+  private fly(
+    shot: Phaser.GameObjects.Image | Phaser.GameObjects.Sprite,
+    to: Point,
+  ): Promise<void> {
+    const dist = Math.hypot(to.x - shot.x, to.y - shot.y);
     return new Promise((resolve) => {
       this.tweens.add({
-        targets: bullet,
+        targets: shot,
         x: to.x,
         y: to.y,
         duration: Math.max(120, dist * 2.5),
         onComplete: () => {
-          bullet.destroy();
-          this.showImpact(shot, tv, target);
-          this.time.delayedCall(650, () => {
-            this.playAnim(sv, shooter.kind, 'idle', shooter.facing);
-            resolve();
-          });
+          shot.destroy();
+          resolve();
         },
       });
     });
+  }
+
+  /** A quick lunge part of the way toward (dx, dy) and back: a claw attack. */
+  private lunge(sprite: Phaser.GameObjects.Sprite, dx: number, dy: number): Promise<void> {
+    const len = Math.hypot(dx, dy) || 1;
+    const reach = 6;
+    return new Promise((resolve) => {
+      this.tweens.add({
+        targets: sprite,
+        x: sprite.x + (dx / len) * reach,
+        y: sprite.y + (dy / len) * reach,
+        duration: 90,
+        yoyo: true,
+        onComplete: () => resolve(),
+      });
+    });
+  }
+
+  /**
+   * The lizard's tongue: it shoots out to `to`, the hit lands, and a pulled marine is
+   * dragged to the tile next to the lizard as the tongue comes back.
+   */
+  private async tongue(
+    shot: ShotResult,
+    from: Point,
+    to: Point,
+    tv: UnitView,
+    target: Unit,
+  ): Promise<void> {
+    const g = this.add.graphics().setDepth(DEPTH.fx);
+    const draw = (tip: Point): void => {
+      g.clear().lineStyle(2, TONGUE.color, 1).lineBetween(from.x, from.y, tip.x, tip.y);
+      g.fillStyle(TONGUE.tip, 1).fillRect(Math.round(tip.x) - 1, Math.round(tip.y) - 1, 3, 3);
+    };
+    const reach = (ms: number, tipAt: (t: number) => Point): Promise<void> =>
+      new Promise((resolve) => {
+        this.tweens.addCounter({
+          from: 0,
+          to: 1,
+          duration: ms,
+          onUpdate: (tw) => draw(tipAt(tw.getValue() ?? 1)),
+          onComplete: () => resolve(),
+        });
+      });
+    const lerp = (a: Point, b: Point, t: number): Point => ({
+      x: a.x + (b.x - a.x) * t,
+      y: a.y + (b.y - a.y) * t,
+    });
+    await reach(TONGUE.outMs, (t) => lerp(from, to, t));
+    this.showImpact(shot, tv, target);
+    const dest = shot.pulledTo;
+    if (dest) {
+      tv.watching = false;
+      const end = { x: dest.x * TILE + TILE / 2, y: (dest.y + 1) * TILE };
+      const start = { x: tv.sprite.x, y: tv.sprite.y };
+      const grip = { x: to.x - start.x, y: to.y - start.y };
+      await reach(TONGUE.dragMs, (t) => {
+        const p = lerp(start, end, t);
+        tv.sprite.setPosition(p.x, p.y).setDepth(DEPTH.standing + p.y + 0.5);
+        return { x: p.x + grip.x, y: p.y + grip.y };
+      });
+      tv.ghost.setPosition(end.x, end.y);
+      // The squad's sight moved with the marine.
+      this.refreshVision();
+      this.updateHidden();
+    }
+    await reach(TONGUE.outMs, (t) => lerp(dest ? from : to, from, t));
+    g.destroy();
+  }
+
+  /** Poison biting the squad as their turn begins. */
+  private async playPoison(): Promise<void> {
+    const ticks = this.state.lastPoison;
+    for (const tick of ticks) {
+      const unit = unitById(this.state, tick.unitId);
+      const view = this.views.get(tick.unitId);
+      if (!unit || !view) continue;
+      view.poisoned = unit.poison > 0;
+      if (tick.damage === 0) continue;
+      view.shownHp = tick.hpAfter;
+      flash(this, view.sprite);
+      const headY = view.sprite.y - SHEETS[unit.kind].height;
+      floatText(this, view.sprite.x, headY - 6, `-${tick.damage} POISON`, '#7ad84a', DEPTH.fx);
+    }
+    if (ticks.some((t) => t.damage > 0)) {
+      await new Promise<void>((resolve) => this.time.delayedCall(700, () => resolve()));
+    }
   }
 
   private showImpact(shot: ShotResult, tv: UnitView, target: Unit): void {
@@ -1051,7 +1192,7 @@ export class BattleScene extends Phaser.Scene {
 
   /** Turns a unit's sprite (and its ghost) to face left or right. */
   private face(view: UnitView, facing: 1 | -1): void {
-    const flip = facing === -1;
+    const flip = mirrored(view.sheet, facing);
     const { originX, originY } = view.sheet;
     for (const s of [view.sprite, view.ghost]) {
       s.setFlipX(flip).setOrigin(flip ? 1 - originX : originX, originY);
@@ -1082,7 +1223,11 @@ export class BattleScene extends Phaser.Scene {
       this.drawOdds(odds, view.sprite.x);
     }
     this.aimText
-      .setText(odds ? `${odds.hit}%${odds.flanked ? ' FLANKED' : ''}` : (why as string))
+      .setText(
+        odds
+          ? `${target.name.toUpperCase()} ${odds.hit}%${odds.flanked ? ' FLANKED' : ''}`
+          : (why as string),
+      )
       .setColor(odds ? (odds.flanked ? 0xffd23a : 0xf2a33a) : 0xa3adbd);
     // Keep the label on screen for units near the edges.
     const half = this.aimText.textWidth / 2 + 3;
@@ -1160,7 +1305,7 @@ export class BattleScene extends Phaser.Scene {
 
   private drawUnit(u: Unit): UnitView {
     const sheet = SHEETS[u.kind];
-    const flip = u.facing === -1;
+    const flip = mirrored(sheet, u.facing);
     const bottom = (u.y + 1) * TILE;
     const make = (): Phaser.GameObjects.Sprite =>
       this.add
@@ -1184,6 +1329,7 @@ export class BattleScene extends Phaser.Scene {
       moving: false,
       watching: u.overwatch,
       exposed: u.exposed,
+      poisoned: u.poison > 0,
     };
   }
 
@@ -1295,8 +1441,9 @@ export class BattleScene extends Phaser.Scene {
     const status = aimed === null ? ap : `SHOOT ${aimed}%  Enter: fire`;
     const clip = clipSize(unit);
     const ammo = clip === null || unit.ammo === null ? '' : `  AMMO ${unit.ammo}/${clip}`;
+    const poison = unit.poison > 0 ? '  POISONED' : '';
     this.unitText.setText(
-      `PVT ${unit.name.toUpperCase()}  HP ${unit.hp}/${unit.maxHp}  ${status}${ammo}`,
+      `PVT ${unit.name.toUpperCase()}  HP ${unit.hp}/${unit.maxHp}  ${status}${ammo}${poison}`,
     );
   }
 
