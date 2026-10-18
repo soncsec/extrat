@@ -396,6 +396,43 @@ test('holding G down enters grenade mode once, without flickering back out', asy
   expect((await snapshot(page)).selected).toBe(marine.id);
 });
 
+test('H opens the help over a paused battle; keys go to the help until it closes', async ({
+  page,
+}) => {
+  await openGame(page, '?seed=42');
+  const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
+  if (!marine) throw new Error('no marine');
+  await clickTile(page, marine.x, marine.y);
+  await page.keyboard.press('h');
+  await expect.poll(() => activeScenes(page)).toContain('Help');
+  await page.waitForTimeout(300);
+  expect(await activeScenes(page)).toContain('Help'); // the opening press didn't close it
+  // E and Esc while the help is open don't reach the battle.
+  await page.keyboard.press('e');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Escape');
+  await expect.poll(() => activeScenes(page)).not.toContain('Help');
+  const s = await snapshot(page);
+  expect(s.turn).toBe('marine');
+  expect(s.selected).toBe(marine.id);
+  // H opens it again, and H closes it.
+  await page.keyboard.press('h');
+  await expect.poll(() => activeScenes(page)).toContain('Help');
+  await page.waitForTimeout(200);
+  await page.keyboard.press('h');
+  await expect.poll(() => activeScenes(page)).not.toContain('Help');
+});
+
+test('H on the title shows the help; Esc goes back to the title', async ({ page }) => {
+  await page.goto('./');
+  await waitForScene(page, 'Title');
+  await page.keyboard.press('h');
+  await expect.poll(() => activeScenes(page)).toContain('Help');
+  await page.waitForTimeout(200);
+  await page.keyboard.press('Escape');
+  await expect.poll(() => activeScenes(page)).toEqual(['Title']);
+});
+
 test('G enters grenade mode and Esc leaves it', async ({ page }) => {
   await openGame(page, '?seed=42');
   const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
