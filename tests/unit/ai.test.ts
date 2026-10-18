@@ -6,8 +6,9 @@ import {
   canSee,
   coverAgainst,
   createBattle,
-  livingUnits,
   hitChance,
+  livingUnits,
+  oddsBetween,
   type BattleState,
   type Unit,
   type UnitKind,
@@ -232,7 +233,11 @@ describe('utility scoring (ADR-E4)', () => {
     const a = unit(s, 'a');
     const hidden = scoreTile(s, a, marinesOf(s), { x: 11, y: 2 }, 2);
     const exposed = scoreTile(s, a, marinesOf(s), { x: 11, y: 4 }, 2);
-    expect(hidden).toBeGreaterThan(exposed + 10);
+    // Both are 10 steps' walk from the marine, so the gap is the danger at (11,4): the
+    // marine's 61% shot (8 tiles away, no cover), less at most the random nudge.
+    const danger = oddsBetween(s, unit(s, 'm0'), { ...a, x: 11, y: 4 }, false).hit;
+    expect(danger).toBe(61);
+    expect(hidden - exposed).toBeGreaterThan(AI.threatCost * danger - AI.noise);
   });
 
   it('keeps pod mates together', () => {

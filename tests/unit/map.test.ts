@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FOREST, MAP_COLS, MAP_ROWS } from '../../src/config/tuning';
+import { chunkCell, FOREST_CHUNKS, type Chunk } from '../../src/logic/chunks';
 import {
   generateForest,
   isWalkable,
@@ -136,5 +137,89 @@ describe('validateMap', () => {
     expect(isWalkable(map, -1, 0)).toBe(false);
     expect(isWalkable(map, 0, 2)).toBe(false);
     expect(isWalkable(map, 1, 1)).toBe(true);
+  });
+});
+
+describe('map chunks (ADR-E3)', () => {
+  const all = [...FOREST_CHUNKS.spawn, ...FOREST_CHUNKS.field];
+
+  it('are all the chunk size, in the legend, with whole boulders', () => {
+    for (const c of all) {
+      expect(c.rows, c.name).toHaveLength(FOREST.chunk.height);
+      for (const row of c.rows) {
+        expect(row, c.name).toHaveLength(FOREST.chunk.width);
+        for (const ch of row) expect(() => chunkCell(ch), `${c.name}: '${ch}'`).not.toThrow();
+        // A boulder is 'B-': two tiles, so every 'B' has a '-' after it and nothing else does.
+        expect(row.replace(/B-/g, ''), c.name).not.toMatch(/[B-]/);
+      }
+    }
+  });
+
+  it('keep trees out of the spawn chunks', () => {
+    for (const c of FOREST_CHUNKS.spawn) expect(c.rows.join(''), c.name).not.toMatch(/[po#B]/);
+  });
+
+  /** The fixed props of a chunk, as (dx, dy, kind), mirrored as asked. */
+  function fixed(c: Chunk, flipX: boolean, flipY: boolean): string[] {
+    const w = FOREST.chunk.width;
+    const h = FOREST.chunk.height;
+    const out: string[] = [];
+    c.rows.forEach((row, j) =>
+      [...row].forEach((ch, i) => {
+        const cell = chunkCell(ch);
+        if (cell.kind !== 'prop') return;
+        const x = cell.prop === 'boulder' && flipX ? w - 2 - i : flipX ? w - 1 - i : i;
+        out.push(`${x},${flipY ? h - 1 - j : j},${cell.prop}`);
+      }),
+    );
+    return out;
+  }
+
+  it('builds every slot of the field from a chunk, mirrored or not', () => {
+    const { width: w, height: h } = FOREST.chunk;
+    for (let seed = 1; seed <= 100; seed++) {
+      const map = gen(seed);
+      for (let cy = 0; FOREST.treeLineRows + (cy + 1) * h <= MAP_ROWS; cy++) {
+        for (let cx = 0; (cx + 1) * w <= MAP_COLS; cx++) {
+          const x0 = cx * w;
+          const y0 = FOREST.treeLineRows + cy * h;
+          const anchorAt = (dx: number, dy: number): string | null => {
+            const t = tileAt(map, x0 + dx, y0 + dy);
+            return t?.prop && t.anchor ? t.prop : null;
+          };
+          // Some chunk, in some mirroring, has all its fixed props in this slot.
+          const fits = all.some((c) =>
+            [false, true].some((fx) =>
+              [false, true].some((fy) =>
+                fixed(c, fx, fy).every((f) => {
+                  const [dx, dy, kind] = f.split(',');
+                  return anchorAt(Number(dx), Number(dy)) === kind;
+                }),
+              ),
+            ),
+          );
+          expect(fits, `seed ${map.seed} slot ${cx},${cy}`).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('keeps every boulder whole on 200 maps, mirrored or not', () => {
+    for (let seed = 1; seed <= 200; seed++) {
+      const map = gen(seed);
+      map.tiles.forEach((t, i) => {
+        if (t.prop !== 'boulder' || !t.anchor) return;
+        expect(tileAt(map, (i % map.cols) + 1, Math.floor(i / map.cols))).toEqual({
+          prop: 'boulder',
+          anchor: false,
+        });
+      });
+      const anchors = map.tiles.filter((t) => t.prop === 'boulder' && t.anchor).length;
+      expect(map.tiles.filter((t) => t.prop === 'boulder').length).toBe(anchors * 2);
+    }
+  });
+
+  it('rejects a typo in a chunk picture', () => {
+    expect(() => chunkCell('x')).toThrow(/unknown chunk character/);
   });
 });
