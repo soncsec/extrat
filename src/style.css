@@ -17,3 +17,37 @@ body {
 canvas {
   image-rendering: pixelated;
 }
+
+/* Touchscreens: taps go to the game, not to scrolling, zooming or text selection. */
+canvas {
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+body {
+  overscroll-behavior: none;
+}
+
+/* Landscape only on touchscreens (owner decision 2026-10-18): held upright, a notice
+   covers the game until the device is turned. */
+#rotate {
+  display: none;
+}
+
+@media (orientation: portrait) and (pointer: coarse) {
+  #rotate {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: #11141b;
+    color: #f2a33a;
+    font: bold 20px/1.4 monospace;
+    text-align: center;
+    text-transform: uppercase;
+  }
+}

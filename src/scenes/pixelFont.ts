@@ -184,6 +184,15 @@ export class PixelButton extends Phaser.GameObjects.Container {
     this.setLabel(label);
   }
 
+  /**
+   * Also runs `onRelease` when the press ends on the button. Browsers allow some things
+   * (like fullscreen) only from a release, not a press.
+   */
+  onRelease(onRelease: () => void): this {
+    this.box.on('pointerup', onRelease);
+    return this;
+  }
+
   /** Width of the button in game pixels. */
   get buttonWidth(): number {
     return this.box.width;

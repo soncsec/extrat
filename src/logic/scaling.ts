@@ -13,3 +13,20 @@ export function integerZoom(
   const fit = Math.min(viewWidth / gameWidth, viewHeight / gameHeight);
   return Number.isFinite(fit) ? Math.max(1, Math.floor(fit)) : 1;
 }
+
+/**
+ * The zoom (in CSS pixels) that shows the game as large as fits while every art pixel
+ * covers a whole number of the screen's own pixels. Phones and high-density screens
+ * have several device pixels per CSS pixel (`devicePixelRatio`), so they can show the
+ * game at, say, 4/3 and still be crisp. With a ratio of 1 this is integerZoom.
+ */
+export function pixelZoom(
+  viewWidth: number,
+  viewHeight: number,
+  gameWidth: number,
+  gameHeight: number,
+  devicePixelRatio: number,
+): number {
+  const ratio = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
+  return integerZoom(viewWidth * ratio, viewHeight * ratio, gameWidth, gameHeight) / ratio;
+}

@@ -103,6 +103,8 @@ export interface GameSnapshot {
   campaign: { mission: number; attempt: number; xp: number[] } | null;
   /** This battle was started with REPLAY (it earns no XP). */
   replaying: boolean;
+  /** Touch: the tile tapped once, whose preview shows until it is tapped again. */
+  pending: Point | null;
   /** One character per tile, row by row: '.' free, or the first letter of the prop. */
   layout: string;
   units: {
@@ -270,6 +272,8 @@ export class BattleScene extends Phaser.Scene {
   private landscape: LandscapeId = 'forest';
   /** The campaign this battle is a mission of, or null for a one-off skirmish (?seed=). */
   private campaign: Campaign | null = null;
+  /** Touch: the tile tapped once, whose preview is showing; tapping it again acts. */
+  private pending: Point | null = null;
   /** This battle was started with REPLAY: it earns no XP. */
   private replaying = false;
 
@@ -292,6 +296,11 @@ export class BattleScene extends Phaser.Scene {
       : (landscapeId(urlWord('landscape')) ?? 'forest');
     this.seeds = createRng(this.seed);
     this.createHud();
+    // Help for touchscreens, which have no H key. The top-right corner is always the
+    // tree line, never a tile to move to.
+    new PixelButton(this, GAME_WIDTH - 10, 10, '?', () => this.openHelp(), false).setDepth(
+      DEPTH.hud,
+    );
     this.marker = this.add.graphics().setDepth(DEPTH.marker);
     this.rangeLayer = this.add.graphics().setDepth(DEPTH.range);
     this.pathLayer = this.add.graphics().setDepth(DEPTH.path);
@@ -319,7 +328,13 @@ export class BattleScene extends Phaser.Scene {
     this.tweens.add({ targets: this.chevron, y: -2, duration: 450, yoyo: true, repeat: -1 });
     this.tweens.add({ targets: this.marker, alpha: 0.45, duration: 450, yoyo: true, repeat: -1 });
 
-    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => this.onClick(p.worldX, p.worldY));
+    this.input.on(
+      'pointerdown',
+      (p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
+        // A press on a button (the ? over the map) is the button's, not the map's.
+        if (over.length === 0) this.onClick(p.worldX, p.worldY, p.wasTouch);
+      },
+    );
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.onHover(p.worldX, p.worldY));
     this.input.keyboard?.on('keydown-ENTER', () => {
       if (this.aimTarget && !this.busy) this.fire(this.aimTarget);
@@ -337,9 +352,8 @@ export class BattleScene extends Phaser.Scene {
       if (e.key === 'Tab') e.preventDefault(); // keep the browser's focus where it is
       // Paused under the help screen (or stopped): keys belong to whatever is on top.
       if (!this.scene.isActive()) return;
-      if ((e.key === 'h' || e.key === 'H') && !e.repeat && !this.over) {
-        this.scene.pause();
-        this.scene.launch('Help', { from: 'Battle' });
+      if ((e.key === 'h' || e.key === 'H') && !e.repeat) {
+        this.openHelp();
         return;
       }
       if (e.key === 'Escape') {
@@ -442,6 +456,7 @@ export class BattleScene extends Phaser.Scene {
           }
         : null,
       replaying: this.replaying,
+      pending: this.pending,
       mapSeed: map.seed,
       layout: map.tiles.map((t) => (t.prop ? t.prop[0] : '.')).join(''),
       units: units.map((u) => ({
@@ -504,12 +519,20 @@ export class BattleScene extends Phaser.Scene {
     this.drawSelection();
   }
 
-  private onClick(px: number, py: number): void {
+  /**
+   * A click or tap on the map. A mouse click acts at once. A tap on a touchscreen,
+   * which has no hover, first shows what a click would do there (the path, its cost and
+   * the cover, or the grenade's blast); tapping the same tile again does it.
+   */
+  private onClick(px: number, py: number, touch = false): void {
     const x = Math.floor(px / TILE);
     const y = Math.floor(py / TILE);
     if (y >= MAP_ROWS || this.busy) return;
+    const previewed = this.pending?.x === x && this.pending.y === y;
+    this.pending = null;
     if (this.mode === 'grenade') {
-      this.throwAt({ x, y });
+      if (touch && !previewed) this.preview(px, py);
+      else this.throwAt({ x, y });
       return;
     }
     const unit = this.unitUnderPointer(x, y);
@@ -529,8 +552,26 @@ export class BattleScene extends Phaser.Scene {
     const selected = this.state.selected;
     if (selected && !unitAt(this.state, x, y)) {
       this.aimTarget = null;
+      if (touch && !previewed) {
+        this.drawSelection();
+        this.preview(px, py);
+        return;
+      }
       this.moveUnit(selected, { x, y });
     }
+  }
+
+  /** Touch: shows what tapping (px, py) again would do, and remembers the tile. */
+  private preview(px: number, py: number): void {
+    this.onHover(px, py);
+    this.pending = { x: Math.floor(px / TILE), y: Math.floor(py / TILE) };
+  }
+
+  /** The help screen over the paused battle (H, or the ? button). */
+  private openHelp(): void {
+    if (this.over || !this.scene.isActive()) return;
+    this.scene.pause();
+    this.scene.launch('Help', { from: 'Battle' });
   }
 
   /**
@@ -552,6 +593,7 @@ export class BattleScene extends Phaser.Scene {
 
   private onEscape(): void {
     if (this.busy) return;
+    this.pending = null;
     if (this.mode === 'grenade') {
       this.mode = 'move';
       this.pathLayer.clear();
@@ -690,6 +732,7 @@ export class BattleScene extends Phaser.Scene {
 
   /** Selects a marine (if the rules allow), leaving any aim or grenade mode. */
   private selectMarine(unitId: string): void {
+    this.pending = null;
     this.aimTarget = null;
     this.mode = 'move';
     this.pathLayer.clear();
@@ -717,6 +760,7 @@ export class BattleScene extends Phaser.Scene {
     if (this.busy || !id) return;
     if (this.mode === 'grenade') this.mode = 'move';
     else if (canThrow(this.state, id)) this.mode = 'grenade';
+    this.pending = null;
     this.aimTarget = null;
     this.drawAim(null);
     this.pathLayer.clear();
@@ -890,6 +934,7 @@ export class BattleScene extends Phaser.Scene {
   private async endTurn(): Promise<void> {
     if (this.busy || this.state.turn !== 'marine') return;
     this.mode = 'move';
+    this.pending = null;
     this.aimTarget = null;
     this.drawAim(null);
     this.state = apply(this.state, { type: 'endTurn' });
@@ -1461,6 +1506,7 @@ export class BattleScene extends Phaser.Scene {
     this.views.clear();
     this.aimTarget = null;
     this.mode = 'move';
+    this.pending = null;
     this.busy = false;
     this.over = false;
 
