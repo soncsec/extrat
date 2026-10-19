@@ -1,15 +1,17 @@
 import {
+  blastArea,
+  canCharge,
   canOverwatch,
-  canSee,
   hitChance,
-  isVisibleTo,
   livingUnits,
   moveCost,
   moveRange,
   oddsBetween,
   pathFor,
   reactionOdds,
+  sightLine,
   unitById,
+  unitVisibleTo,
   type Action,
   type BattleState,
   type ShotOdds,
@@ -39,6 +41,13 @@ export function planAlienAction(state: BattleState, alienId: string): Action | n
   if (state.turn !== 'alien') return null;
   const marines = livingUnits(state, 'marine');
   if (marines.length === 0) return null;
+
+  // The boss (M5.6): a charged blast goes off as its turn begins; once hurt enough, it
+  // charges the next one at the marine with the most squad mates around.
+  if (alien.charging) return { type: 'blast', unitId: alien.id };
+  if (canCharge(state, alien.id)) {
+    return { type: 'charge', unitId: alien.id, at: blastTarget(state, marines) };
+  }
 
   const shot = bestShotNow(state, alien, marines);
   const shoot: Action | null = shot ? { type: 'shoot', unitId: alien.id, targetId: shot } : null;
@@ -77,7 +86,7 @@ export function scoreTile(
   const at: Unit = { ...alien, x: p.x, y: p.y };
   const apLeft = steps === 0 ? alien.ap : alien.ap - moveCost(alien, steps);
   const range = UNITS[alien.kind].range;
-  const inReach = marines.filter((m) => dist(p, m) <= range && canSee(state.map, p, m));
+  const inReach = marines.filter((m) => (sightLine(state.map, at, m)?.dist ?? Infinity) <= range);
 
   let score: number;
   if (inReach.length > 0 && apLeft > 0) {
@@ -99,6 +108,23 @@ export function scoreTile(
     AI.stepCost * steps +
     AI.noise * nudge(state, alien, p)
   );
+}
+
+/**
+ * Where the boss aims its charged blast: the marine with the most of the squad within
+ * the blast around them (the first such marine, in squad order, on a tie).
+ */
+function blastTarget(state: BattleState, marines: readonly Unit[]): Point {
+  let best = marines[0] as Unit;
+  let bestCount = -1;
+  for (const m of marines) {
+    const count = blastArea(state, m).filter((u) => u.side === 'marine').length;
+    if (count > bestCount) {
+      best = m;
+      bestCount = count;
+    }
+  }
+  return { x: best.x, y: best.y };
 }
 
 /** The marine worth shooting most from where the alien stands, if it can shoot now. */
@@ -131,10 +157,10 @@ function shotValue(odds: ShotOdds, shooter: Unit, target: Unit): number {
  * next turn. None if the squad couldn't see it there.
  */
 function threatAt(state: BattleState, at: Unit, marines: readonly Unit[]): number {
-  if (!isVisibleTo(state, 'marine', at)) return 0;
+  if (!unitVisibleTo(state, 'marine', at)) return 0;
   let total = 0;
   for (const m of marines) {
-    if (dist(m, at) > UNITS[m.kind].range || !canSee(state.map, m, at)) continue;
+    if ((sightLine(state.map, m, at)?.dist ?? Infinity) > UNITS[m.kind].range) continue;
     total += oddsBetween(state, m, at, false).hit;
   }
   return total;

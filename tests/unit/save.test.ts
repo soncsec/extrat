@@ -36,6 +36,12 @@ function raw(campaign: Campaign, battle: BattleState | null): Save {
 
 const decodes = (data: unknown): boolean => decodeSave(JSON.stringify(data)).ok;
 
+/** A unit as saved before version 5: without the boss's fields (M5.6). */
+const preBoss = <T extends object>(u: T): Partial<T> =>
+  Object.fromEntries(
+    Object.entries(u).filter(([k]) => !['front', 'charging', 'cooldown'].includes(k)),
+  ) as Partial<T>;
+
 /** A copy of `o` without `key`. */
 function without<T extends object>(o: T, key: keyof T): Partial<T> {
   return Object.fromEntries(Object.entries(o).filter(([k]) => k !== key)) as Partial<T>;
@@ -311,8 +317,55 @@ describe('save version 2: XP, kills and replays (M5.2)', () => {
     expect(decodes({ ...good, campaign: { ...c, deaths: [0, 0, 0, 100_001] } })).toBe(false);
   });
 
+  it('checks the boss fields of version 5, and keeps them off everyone but the boss (M5.6)', () => {
+    const unit = b.units[0] as (typeof b.units)[number];
+    expect(unit).toMatchObject({ front: 0, charging: null, cooldown: 0 });
+    const withUnit = (u: object): unknown => ({
+      ...good,
+      battle: { ...b, units: [u, ...b.units.slice(1)] },
+    });
+    for (const bad of [
+      { front: 2 },
+      { front: '1' },
+      { cooldown: -1 },
+      { cooldown: 99 },
+      { cooldown: 0.5 },
+      { charging: { x: 1 } },
+      { charging: { x: 1, y: 2, z: 3 } },
+      { charging: { x: -1, y: 2 } },
+      { charging: 'here' },
+    ]) {
+      expect(decodes(withUnit({ ...unit, ...bad })), JSON.stringify(bad)).toBe(false);
+    }
+    for (const field of ['front', 'charging', 'cooldown'] as const) {
+      expect(decodes(withUnit(without(unit, field))), field).toBe(false);
+    }
+    // Well-formed, but a marine has no front, charge or rest: the battle won't restore.
+    for (const odd of [{ front: 1 }, { charging: { x: 1, y: 1 } }, { cooldown: 1 }]) {
+      const units = [{ ...unit, ...odd }, ...b.units.slice(1)];
+      expect(restoreBattle(ranked, { ...b, units } as typeof b), JSON.stringify(odd)).toBeNull();
+    }
+  });
+
+  it('still loads a version 4 save, with no boss fields', () => {
+    const v4 = { v: 4, campaign: good.campaign, battle: { ...b, units: b.units.map(preBoss) } };
+    const loaded = decodeSave(JSON.stringify(v4));
+    if (!loaded.ok || !loaded.save.battle) throw new Error('did not load');
+    expect(loaded.save.v).toBe(SAVE_VERSION);
+    const back = restoreBattle(loaded.save.campaign, loaded.save.battle);
+    expect(back?.units.every((u) => u.front === 0 && u.charging === null && u.cooldown === 0)).toBe(
+      true,
+    );
+    // A version 4 save carrying version 5's fields isn't one.
+    expect(decodes({ ...v4, battle: b })).toBe(false);
+  });
+
   it('still loads a version 3 save, with no deaths', () => {
-    const v3 = { v: 3, campaign: without(good.campaign, 'deaths'), battle: b };
+    const v3 = {
+      v: 3,
+      campaign: without(good.campaign, 'deaths'),
+      battle: { ...b, units: b.units.map(preBoss) },
+    };
     const loaded = decodeSave(JSON.stringify(v3));
     if (!loaded.ok) throw new Error('did not load');
     expect(loaded.save.v).toBe(SAVE_VERSION);
@@ -324,7 +377,7 @@ describe('save version 2: XP, kills and replays (M5.2)', () => {
     const v2 = {
       v: 2,
       campaign: without(good.campaign, 'deaths'),
-      battle: { ...b, units: b.units.map((u) => without(u, 'hits')) },
+      battle: { ...b, units: b.units.map((u) => without(preBoss(u), 'hits')) },
     };
     const loaded = decodeSave(JSON.stringify(v2));
     if (!loaded.ok || !loaded.save.battle) throw new Error('did not load');
@@ -354,7 +407,7 @@ describe('save version 2: XP, kills and replays (M5.2)', () => {
       battle: {
         round: b.round,
         rng: b.rng,
-        units: b.units.map((u) => without(without(u, 'kills'), 'hits')),
+        units: b.units.map((u) => without(without(preBoss(u), 'kills'), 'hits')),
       },
     };
     const loaded = decodeSave(JSON.stringify(v1));

@@ -2,6 +2,7 @@ import {
   ABILITIES,
   ACTION_POINTS,
   ALIEN_KINDS,
+  BOSS,
   GRENADE,
   OVERWATCH,
   PODS,
@@ -71,6 +72,15 @@ export interface Unit extends Point {
   kills: number;
   /** Shots and grenades of this unit that hit an enemy (kills included); marines earn XP for them. */
   hits: number;
+  /**
+   * The boss's armoured front (M5.6): 1 east, -1 west, set toward the nearest marine as
+   * each alien turn begins. 0 for every other unit.
+   */
+  front: -1 | 0 | 1;
+  /** The tile at the centre of the boss's charged blast, fired on its next turn (null: none). */
+  charging: Point | null;
+  /** Alien turns before the boss may charge again (0: it may). */
+  cooldown: number;
 }
 
 /** Health lost to poison at the start of a side's turn. */
@@ -97,6 +107,8 @@ export interface BattleState {
   lastMove: MoveResult | null;
   /** What the most recent grenade did. */
   lastThrow: ThrowResult | null;
+  /** What the boss's most recent blast did (M5.6). */
+  lastBlast: BlastResult | null;
   /** Poison damage taken when the current turn began. */
   lastPoison: PoisonTick[];
 }
@@ -108,6 +120,14 @@ export interface ThrowResult {
   hits: { unitId: string; damage: number; hpAfter: number; killed: boolean }[];
   /** A blast wakes a hidden pod: its survivors scramble to cover. */
   scampers: Scamper[];
+}
+
+/** The boss's charged blast going off (M5.6). */
+export interface BlastResult {
+  unitId: string;
+  at: Point;
+  /** Everyone caught in it (friend or foe), in unit order. */
+  hits: { unitId: string; damage: number; hpAfter: number; killed: boolean }[];
 }
 
 export interface MoveResult {
@@ -156,6 +176,8 @@ export type Action =
   | { type: 'reload'; unitId: string }
   | { type: 'overwatch'; unitId: string }
   | { type: 'throw'; unitId: string; at: Point }
+  | { type: 'charge'; unitId: string; at: Point }
+  | { type: 'blast'; unitId: string }
   | { type: 'endTurn' };
 
 export const MARINE_NAMES = ['Vasquez', 'Okafor', 'Lindqvist', 'Moreau', 'Tanaka', 'Reyes'];
@@ -179,6 +201,8 @@ export interface BattleSetup {
    * mission's new kind, and at least one alien is always of that kind (M5.8).
    */
   kinds?: readonly AlienKind[];
+  /** The final mission's boss (M5.6) stands among the alien groups, in its own group. */
+  boss?: boolean;
 }
 
 /** A new battle: marines deploy in the west spawn zone, aliens in the east. */
@@ -211,12 +235,24 @@ export function createBattle(map: BattleMap, seed: number, setup: BattleSetup = 
       rank,
       kills: 0,
       hits: 0,
+      front: 0,
+      charging: null,
+      cooldown: 0,
     };
   });
+  // The boss stands somewhere the squad can't see, placed by its own generator so a
+  // battle without one deploys exactly as before; the pods keep off its tiles.
+  const bossAt = setup.boss ? placeBoss(map, seed, marines) : null;
   // Kinds come from their own generator, so the draw doesn't move where anyone stands.
   const kindRng = createRng((seed ^ 0x5bd1e995) >>> 0);
   const allowed = setup.kinds && setup.kinds.length > 0 ? setup.kinds : ALIEN_KINDS;
-  const places = deployPods(map, rng, marines, setup.pods ?? PODS);
+  const places = deployPods(
+    map,
+    rng,
+    marines,
+    setup.pods ?? PODS,
+    bossAt ? footprintAt(bossAt, BOSS.size) : [],
+  );
   const kinds = places.map(() => kindRng.pick(allowed));
   // The mission's new kind must show up, so the briefing's warning is never a lie.
   const newest = allowed[allowed.length - 1] as AlienKind;
@@ -245,8 +281,12 @@ export function createBattle(map: BattleMap, seed: number, setup: BattleSetup = 
       rank: 0,
       kills: 0,
       hits: 0,
+      front: 0,
+      charging: null,
+      cooldown: 0,
     };
   });
+  if (bossAt) aliens.push(makeBoss(bossAt, `a${aliens.length + 1}`, (setup.pods ?? PODS).count));
   return {
     map,
     units: [...marines, ...aliens],
@@ -257,8 +297,133 @@ export function createBattle(map: BattleMap, seed: number, setup: BattleSetup = 
     lastShot: null,
     lastMove: null,
     lastThrow: null,
+    lastBlast: null,
     lastPoison: [],
   };
+}
+
+/** The Overseer (M5.6), dormant in a group of its own, its armoured front to the west. */
+function makeBoss(at: Point, id: string, pod: number): Unit {
+  const stats = UNITS.overseer;
+  return {
+    ...at,
+    id,
+    side: 'alien',
+    kind: 'overseer',
+    name: 'Overseer',
+    hp: stats.hp,
+    maxHp: stats.hp,
+    facing: -1,
+    ap: ACTION_POINTS,
+    move: stats.move,
+    ammo: stats.ammo,
+    overwatch: false,
+    grenades: 0,
+    exposed: false,
+    pod,
+    dormant: true,
+    poison: 0,
+    freeSteps: 0,
+    rank: 0,
+    kills: 0,
+    hits: 0,
+    front: -1,
+    charging: null,
+    cooldown: 0,
+  };
+}
+
+/**
+ * Where the boss stands: the bottom-left tile of a free BOSS.size square in the east,
+ * out of the squad's sight if the map allows it.
+ */
+function placeBoss(map: BattleMap, seed: number, marines: readonly Point[]): Point {
+  const rng = createRng((seed ^ 0x2545f491) >>> 0);
+  const [eastStart, eastEdge] = spawnZone(map.cols, 'east');
+  const westmost = Math.min(PODS.westmostColumn, eastStart);
+  const seen = tilesSeenFrom(map, marines);
+  const spots: { p: Point; r: number; hidden: boolean }[] = [];
+  for (let y = BOSS.size - 1; y < map.rows; y++) {
+    for (let x = westmost; x + BOSS.size - 1 <= eastEdge; x++) {
+      const tiles = footprintAt({ x, y }, BOSS.size);
+      if (!tiles.every((t) => isWalkable(map, t.x, t.y))) continue;
+      const hidden = tiles.every((t) => !seen.has(t.y * map.cols + t.x));
+      spots.push({ p: { x, y }, r: rng.next(), hidden });
+    }
+  }
+  spots.sort((a, b) => Number(b.hidden) - Number(a.hidden) || a.r - b.r);
+  const best = spots[0];
+  if (!best) throw new Error('no room for the boss');
+  return best.p;
+}
+
+/** The tiles of a square footprint whose bottom-left tile is `at` (it grows right and up). */
+function footprintAt(at: Point, size: number): Point[] {
+  const tiles: Point[] = [];
+  for (let j = 0; j < size; j++) {
+    for (let i = 0; i < size; i++) tiles.push({ x: at.x + i, y: at.y - j });
+  }
+  return tiles;
+}
+
+/** How many tiles wide (and tall) a unit stands: the boss is BOSS.size, everyone else 1. */
+export function unitSize(unit: Pick<Unit, 'kind'>): number {
+  return unit.kind === 'overseer' ? BOSS.size : 1;
+}
+
+/** The tiles a unit stands on, its own tile first (M5.6: the boss stands on four). */
+export function footprint(unit: Pick<Unit, 'kind' | 'x' | 'y'>): Point[] {
+  return footprintAt(unit, unitSize(unit));
+}
+
+/**
+ * The closest pair of tiles, one from each unit's footprint, with a clear line between
+ * them; null if no tile of one can see a tile of the other. For one-tile units it is
+ * just their own tiles.
+ */
+export function sightLine(
+  map: BattleMap,
+  from: Pick<Unit, 'kind' | 'x' | 'y'>,
+  to: Pick<Unit, 'kind' | 'x' | 'y'>,
+): { from: Point; to: Point; dist: number } | null {
+  let best: { from: Point; to: Point; dist: number } | null = null;
+  for (const a of footprint(from)) {
+    for (const b of footprint(to)) {
+      const dist = Math.hypot(b.x - a.x, b.y - a.y);
+      if (best && dist >= best.dist) continue;
+      if (canSee(map, a, b)) best = { from: a, to: b, dist };
+    }
+  }
+  return best;
+}
+
+/** True if any living unit on `side` can see any tile the unit stands on. */
+export function unitVisibleTo(state: BattleState, side: Side, unit: Unit): boolean {
+  return footprint(unit).some((p) => isVisibleTo(state, side, p));
+}
+
+/**
+ * The boss's front sits on the side of the nearest living marine (by column; a marine
+ * in the boss's own columns leaves it as it was).
+ */
+function frontToward(state: BattleState, boss: Unit): -1 | 1 {
+  const marines = livingUnits(state, 'marine');
+  const old: -1 | 1 = boss.front === 0 ? boss.facing : boss.front;
+  if (marines.length === 0) return old;
+  const centre = { x: boss.x + (BOSS.size - 1) / 2, y: boss.y - (BOSS.size - 1) / 2 };
+  const nearest = marines.reduce((a, b) =>
+    Math.hypot(b.x - centre.x, b.y - centre.y) < Math.hypot(a.x - centre.x, a.y - centre.y) ? b : a,
+  );
+  if (nearest.x > boss.x + BOSS.size - 1) return 1;
+  if (nearest.x < boss.x) return -1;
+  return old;
+}
+
+/** True if a shot from `shooter` at the boss comes from in front of its armour. */
+export function fromTheFront(boss: Unit, shooter: Point): boolean {
+  if (boss.front === 1) return shooter.x > boss.x + unitSize(boss) - 1;
+  if (boss.front === -1) return shooter.x < boss.x;
+  return false;
 }
 
 /** Applies one action. Invalid actions return the same state object, unchanged. */
@@ -283,6 +448,14 @@ export function apply(state: BattleState, action: Action): BattleState {
       return shoot(state, action.unitId, action.targetId);
     case 'throw':
       return throwGrenade(state, action.unitId, action.at);
+    case 'charge': {
+      const unit = unitById(state, action.unitId);
+      if (!unit || !canCharge(state, unit.id) || !onMap(state.map, action.at)) return state;
+      const at = { x: action.at.x, y: action.at.y };
+      return replaceUnit(state, { ...unit, charging: at, ap: 0, freeSteps: 0 });
+    }
+    case 'blast':
+      return fireBlast(state, action.unitId);
     case 'reload': {
       const unit = unitById(state, action.unitId);
       if (!unit || !canReload(state, unit.id)) return state;
@@ -295,9 +468,15 @@ export function apply(state: BattleState, action: Action): BattleState {
       // side's exposure ends too: it lasted until this side's turn came round again.
       const lastPoison: PoisonTick[] = [];
       const units = state.units.map((u) => {
-        if (u.side !== turn) return { ...u, exposed: false, freeSteps: 0 };
+        // The boss's rest counts down as each alien turn ends (M5.6).
+        const cooldown =
+          u.side !== turn && turn === 'marine' ? Math.max(0, u.cooldown - 1) : u.cooldown;
+        if (u.side !== turn) return { ...u, exposed: false, freeSteps: 0, cooldown };
         if (u.hp <= 0) return u;
-        const fresh = { ...u, ap: ACTION_POINTS, overwatch: false, freeSteps: 0 };
+        // The boss turns its armoured front toward the nearest marine as its turn begins.
+        const front: Unit['front'] = u.front === 0 ? 0 : frontToward(state, u);
+        const facing = front === 0 ? u.facing : front;
+        const fresh = { ...u, ap: ACTION_POINTS, overwatch: false, freeSteps: 0, front, facing };
         if (u.poison <= 0) return fresh;
         // Poison bites as the turn begins, but never takes the last point of health.
         const hp = Math.max(Math.min(u.hp, 1), u.hp - ABILITIES.poison.damage);
@@ -383,11 +562,18 @@ export function shotBlock(
   if (!shooter || !target || shooter.hp <= 0 || target.hp <= 0) return 'other';
   if (shooter.side === target.side || shooter.ap <= 0) return 'other';
   if (shooter.ammo === 0) return 'ammo';
-  const dist = Math.hypot(target.x - shooter.x, target.y - shooter.y);
-  if (dist > UNITS[shooter.kind].range) return 'range';
-  if (!canSee(state.map, shooter, target)) return 'sight';
+  // Measured between the nearest tiles that can see each other (the boss stands on four).
+  const line = sightLine(state.map, shooter, target);
+  const nearest = Math.min(
+    ...footprint(target).flatMap((b) =>
+      footprint(shooter).map((a) => Math.hypot(b.x - a.x, b.y - a.y)),
+    ),
+  );
+  if (nearest > UNITS[shooter.kind].range) return 'range';
+  if (!line) return 'sight';
+  if (line.dist > UNITS[shooter.kind].range) return 'range';
   // The squad must have spotted the target: any of the shooter's side within sight counts.
-  if (!isVisibleTo(state, shooter.side, target)) return 'sight';
+  if (!unitVisibleTo(state, shooter.side, target)) return 'sight';
   return null;
 }
 
@@ -415,6 +601,11 @@ export interface ShotOdds {
   reactionPenalty: number;
   /** The target was caught by a grenade: its cover doesn't count. */
   exposed: boolean;
+  /**
+   * The target is the boss and the shooter is in front of it: a hit does at most
+   * BOSS.armourCap damage (M5.6). False for every other target.
+   */
+  armoured: boolean;
   /** Final chances in percent. */
   hit: number;
   crit: number;
@@ -444,10 +635,9 @@ export function reactionOdds(
   const target = unitById(state, targetId);
   if (!shooter?.overwatch || !target || shooter.hp <= 0 || target.hp <= 0) return null;
   if (shooter.side === target.side || shooter.ammo === 0) return null;
-  if (Math.hypot(target.x - shooter.x, target.y - shooter.y) > UNITS[shooter.kind].range)
-    return null;
-  if (!canSee(state.map, shooter, target)) return null;
-  if (!isVisibleTo(state, shooter.side, target)) return null;
+  const line = sightLine(state.map, shooter, target);
+  if (!line || line.dist > UNITS[shooter.kind].range) return null;
+  if (!unitVisibleTo(state, shooter.side, target)) return null;
   return oddsBetween(state, shooter, target, true);
 }
 
@@ -463,17 +653,24 @@ export function oddsBetween(
 ): ShotOdds {
   const stats = UNITS[shooter.kind];
   const aim = stats.aim + rankOf(shooter.rank).aim;
-  const dist = Math.hypot(target.x - shooter.x, target.y - shooter.y);
+  // From the shooter's tile nearest the target that can see it, to that target tile.
+  const line = sightLine(state.map, shooter, target) ?? { from: shooter, to: target };
+  const dist = Math.hypot(line.to.x - line.from.x, line.to.y - line.from.y);
   const range = -Math.max(0, Math.floor(dist) - SHOOTING.closeRange) * SHOOTING.penaltyPerTile;
   const ability = stats.ability;
+  // The boss hides behind nothing: it has armour in front instead (M5.6).
+  const boss = target.kind === 'overseer';
+  const armoured = boss && fromTheFront(target, line.from);
   // A unit caught by a grenade has no cover to hide behind; claws reach round cover;
   // shots from above make cover count one step less.
   const melee = ability === 'melee';
-  const facingCover = target.exposed || melee ? null : coverAgainst(state.map, target, shooter);
+  const facingCover =
+    target.exposed || melee || boss ? null : coverAgainst(state.map, line.to, line.from);
   const cover = ability === 'fromAbove' ? lowerCover(facingCover) : facingCover;
   const coverPenalty = cover ? SHOOTING.cover[cover] : 0;
   // Flanking is about getting round cover with a gun; a claw gets no crit bonus for it.
-  const flanked = cover === null && !melee;
+  // The boss is flanked from behind or beside, never from its armoured front.
+  const flanked = cover === null && !melee && !armoured;
   const reactionPenalty = reaction ? OVERWATCH.aimPenalty : 0;
   const hit = Math.min(
     SHOOTING.maxChance,
@@ -490,6 +687,7 @@ export function oddsBetween(
     flanked,
     reactionPenalty,
     exposed,
+    armoured,
     hit,
     crit,
   };
@@ -517,7 +715,8 @@ export function inThrowRange(state: BattleState, unitId: string, at: Point): boo
 /** The living units a grenade landing on `at` would hit. */
 export function blastTargets(state: BattleState, at: Point): Unit[] {
   return state.units.filter(
-    (u) => u.hp > 0 && Math.hypot(u.x - at.x, u.y - at.y) <= GRENADE.radius,
+    (u) =>
+      u.hp > 0 && footprint(u).some((p) => Math.hypot(p.x - at.x, p.y - at.y) <= GRENADE.radius),
   );
 }
 
@@ -560,6 +759,79 @@ function throwGrenade(state: BattleState, unitId: string, at: Point): BattleStat
     ...next,
     lastThrow: { unitId, at: { x: at.x, y: at.y }, hits, scampers: woken.scampers },
   };
+}
+
+/**
+ * True if the boss can start charging its blast now (M5.6): its turn, an action point,
+ * hurt enough, not already charging, and rested since its last blast.
+ */
+export function canCharge(state: BattleState, unitId: string): boolean {
+  const unit = unitById(state, unitId);
+  if (!unit || unit.hp <= 0 || unit.ap <= 0 || unit.side !== state.turn) return false;
+  if (UNITS[unit.kind].ability !== 'blast' || unit.charging || unit.cooldown > 0) return false;
+  return unit.hp <= unit.maxHp * BOSS.chargeBelow;
+}
+
+/** The living units the boss's blast centred on `at` would hit: any tile of theirs in range. */
+export function blastArea(state: BattleState, at: Point): Unit[] {
+  return state.units.filter(
+    (u) =>
+      u.hp > 0 && footprint(u).some((p) => Math.hypot(p.x - at.x, p.y - at.y) <= BOSS.blast.radius),
+  );
+}
+
+/**
+ * The charged blast goes off (M5.6): fixed damage to everyone in the marked area, and
+ * survivors lose their cover for a turn, as with a grenade. The boss then rests.
+ */
+function fireBlast(state: BattleState, unitId: string): BattleState {
+  const boss = unitById(state, unitId);
+  if (!boss || boss.hp <= 0 || boss.ap <= 0 || boss.side !== state.turn || !boss.charging) {
+    return state;
+  }
+  const at = boss.charging;
+  const hits: BlastResult['hits'] = [];
+  let next = state;
+  for (const target of blastArea(state, at)) {
+    if (target.id === boss.id) continue;
+    const hp = Math.max(0, target.hp - BOSS.blast.damage);
+    hits.push({ unitId: target.id, damage: BOSS.blast.damage, hpAfter: hp, killed: hp === 0 });
+    next = replaceUnit(next, { ...target, hp, exposed: hp > 0, overwatch: false });
+  }
+  const after = unitById(next, unitId) as Unit;
+  const enemyHits = hits.filter((h) => unitById(state, h.unitId)?.side !== boss.side);
+  next = replaceUnit(next, {
+    ...after,
+    charging: null,
+    cooldown: BOSS.blast.cooldown,
+    ap: 0,
+    freeSteps: 0,
+    kills: after.kills + enemyHits.filter((h) => h.killed).length,
+    hits: after.hits + enemyHits.length,
+  });
+  return { ...next, lastBlast: { unitId, at: { x: at.x, y: at.y }, hits } };
+}
+
+/**
+ * How the battle stands: won when every alien is down, or the boss is (M5.6: its
+ * escorts don't matter then); lost when every marine is down; otherwise null.
+ */
+export function battleOutcome(state: BattleState): 'won' | 'lost' | null {
+  if (livingUnits(state, 'marine').length === 0) return 'lost';
+  const boss = state.units.find((u) => u.kind === 'overseer');
+  if (livingUnits(state, 'alien').length === 0 || (boss && boss.hp <= 0)) return 'won';
+  return null;
+}
+
+function onMap(map: BattleMap, p: Point): boolean {
+  return (
+    Number.isInteger(p.x) &&
+    Number.isInteger(p.y) &&
+    p.x >= 0 &&
+    p.y >= 0 &&
+    p.x < map.cols &&
+    p.y < map.rows
+  );
 }
 
 /** True if the unit can go on overwatch now: its turn, an action point, and ammo. */
@@ -608,6 +880,8 @@ function rollShot(
     rng = critRoll.state;
     crit = critRoll.value * 100 < odds.crit;
     damage = min + Math.floor(dmgRoll.value * (max - min + 1)) + (crit ? SHOOTING.critDamage : 0);
+    // The boss's front plate stops most of a shot from ahead (M5.6).
+    if (odds.armoured) damage = Math.min(damage, BOSS.armourCap);
   }
   const hp = Math.max(0, target.hp - damage);
   const facing = target.x === shooter.x ? shooter.facing : target.x > shooter.x ? 1 : -1;
@@ -702,7 +976,7 @@ function move(state: BattleState, unitId: string, to: Point): BattleState {
   for (const [step, p] of path.entries()) {
     // The path was planned around units the mover's side can see. A hidden one in the
     // way stops the move just before it.
-    if (unitAt(next, p.x, p.y)) break;
+    if (bumpsInto(next, unit, p)) break;
     // Face the way the last sideways step went; straight up or down keeps the old facing.
     if (p.x !== prev.x) facing = p.x > prev.x ? 1 : -1;
     prev = p;
@@ -750,7 +1024,8 @@ function move(state: BattleState, unitId: string, to: Point): BattleState {
 function spottedPods(state: BattleState): number[] {
   const pods = new Set<number>();
   for (const u of state.units) {
-    if (u.dormant && u.hp > 0 && u.pod !== null && isVisibleTo(state, 'marine', u)) pods.add(u.pod);
+    if (u.dormant && u.hp > 0 && u.pod !== null && unitVisibleTo(state, 'marine', u))
+      pods.add(u.pod);
   }
   return [...pods];
 }
@@ -760,7 +1035,17 @@ function spottedPods(state: BattleState): number[] {
  * move (no action points, no overwatch reactions) to the best cover nearby, facing
  * the nearest marine. The aliens' "scamper" in XCOM.
  */
-function wakePods(state: BattleState, pods: number[]): { state: BattleState; scampers: Scamper[] } {
+function wakePods(
+  state: BattleState,
+  spotted: number[],
+): { state: BattleState; scampers: Scamper[] } {
+  // The boss's escorts wake with it (M5.6).
+  const bossSpotted = state.units.some(
+    (u) => u.kind === 'overseer' && u.pod !== null && spotted.includes(u.pod),
+  );
+  const pods = bossSpotted
+    ? [...new Set(state.units.flatMap((u) => (u.pod === null ? [] : [u.pod])))]
+    : spotted;
   let next: BattleState = {
     ...state,
     units: state.units.map((u) =>
@@ -773,6 +1058,12 @@ function wakePods(state: BattleState, pods: number[]): { state: BattleState; sca
     const me = unitById(next, alien.id) as Unit;
     const marines = livingUnits(next, 'marine');
     if (marines.length === 0) break;
+    // The boss doesn't run for cover: it turns its armour toward the squad (M5.6).
+    if (me.kind === 'overseer') {
+      const front = frontToward(next, me);
+      next = replaceUnit(next, { ...me, front, facing: front });
+      continue;
+    }
     const nearestTo = (p: Point): Unit =>
       marines.reduce((a, b) =>
         Math.hypot(b.x - p.x, b.y - p.y) < Math.hypot(a.x - p.x, a.y - p.y) ? b : a,
@@ -785,7 +1076,7 @@ function wakePods(state: BattleState, pods: number[]): { state: BattleState; sca
     const cols = next.map.cols;
     let best: Point = me;
     let bestScore = score(me, 0);
-    const range = reachable(next.map.cols, next.map.rows, passableFor(next, 'alien'), me, me.move);
+    const range = reachable(next.map.cols, next.map.rows, passableFor(next, me), me, me.move);
     for (const [key, steps] of range) {
       const p = { x: key % cols, y: Math.floor(key / cols) };
       const sc = score(p, steps);
@@ -800,7 +1091,7 @@ function wakePods(state: BattleState, pods: number[]): { state: BattleState; sca
       next = replaceUnit(next, { ...me, facing });
       continue;
     }
-    const path = findPath(next.map.cols, next.map.rows, passableFor(next, 'alien'), me, best);
+    const path = findPath(next.map.cols, next.map.rows, passableFor(next, me), me, best);
     if (!path) continue;
     next = replaceUnit(next, { ...me, x: best.x, y: best.y, facing });
     scampers.push({ unitId: me.id, path });
@@ -813,13 +1104,7 @@ export function moveRange(state: BattleState, unitId: string): Map<number, numbe
   const unit = unitById(state, unitId);
   if (!unit || maxSteps(unit) <= 0) return new Map();
   const steps = maxSteps(unit);
-  const range = reachable(
-    state.map.cols,
-    state.map.rows,
-    passableFor(state, unit.side),
-    unit,
-    steps,
-  );
+  const range = reachable(state.map.cols, state.map.rows, passableFor(state, unit), unit, steps);
   range.delete(unit.y * state.map.cols + unit.x);
   return range;
 }
@@ -851,25 +1136,41 @@ export function pathFor(state: BattleState, unitId: string, to: Point): Point[] 
   const unit = unitById(state, unitId);
   if (!unit || maxSteps(unit) <= 0) return null;
   const { cols, rows } = state.map;
-  return findPath(cols, rows, passableFor(state, unit.side), unit, to, maxSteps(unit));
+  return findPath(cols, rows, passableFor(state, unit), unit, to, maxSteps(unit));
 }
 
-/** Units block movement (living ones only); so do props. */
 /**
- * What blocks a move for `side`: props, and living units, except that marines plan
- * around only the aliens they can see (a hidden one stops the move when reached).
- * Aliens still know where every marine is.
+ * Where `mover` may stand, as it plans a move: props block, and so do living units
+ * (every tile of theirs), except that marines plan around only the aliens they can see
+ * (a hidden one stops the move when reached). Aliens still know where every marine is.
+ * For the boss, a spot is its bottom-left tile and its whole square must be free.
  */
-function passableFor(state: BattleState, side: Side): (x: number, y: number) => boolean {
+function passableFor(state: BattleState, mover: Unit): (x: number, y: number) => boolean {
   const cols = state.map.cols;
+  const side = mover.side;
   const blocked = new Set(
     state.units
       .filter(
-        (u) => u.hp > 0 && (side === 'alien' || u.side === side || isVisibleTo(state, side, u)),
+        (u) =>
+          u.hp > 0 &&
+          u.id !== mover.id &&
+          (side === 'alien' || u.side === side || unitVisibleTo(state, side, u)),
       )
-      .map((u) => u.y * cols + u.x),
+      .flatMap((u) => footprint(u).map((p) => p.y * cols + p.x)),
   );
-  return (x, y) => isWalkable(state.map, x, y) && !blocked.has(y * cols + x);
+  const free = (x: number, y: number): boolean =>
+    isWalkable(state.map, x, y) && !blocked.has(y * cols + x);
+  const size = unitSize(mover);
+  if (size === 1) return free;
+  return (x, y) => footprintAt({ x, y }, size).every((p) => free(p.x, p.y));
+}
+
+/** True if another living unit stands on any tile `mover` would cover at `p`. */
+function bumpsInto(state: BattleState, mover: Unit, p: Point): boolean {
+  return footprintAt(p, unitSize(mover)).some((t) => {
+    const other = unitAt(state, t.x, t.y);
+    return other !== undefined && other.id !== mover.id;
+  });
 }
 
 function replaceUnit(state: BattleState, unit: Unit): BattleState {
@@ -935,7 +1236,7 @@ export function unitById(state: BattleState, id: string): Unit | undefined {
 }
 
 export function unitAt(state: BattleState, x: number, y: number): Unit | undefined {
-  return state.units.find((u) => u.x === x && u.y === y && u.hp > 0);
+  return state.units.find((u) => u.hp > 0 && footprint(u).some((p) => p.x === x && p.y === y));
 }
 
 /** True if the tile next to p, in direction dx, holds a prop (every prop gives cover). */
@@ -981,6 +1282,7 @@ function deployPods(
   rng: Rng,
   marines: readonly Point[],
   pods: { count: number; size: number },
+  reserved: readonly Point[] = [],
 ): (Point & { pod: number })[] {
   const [eastStart, eastEdge] = spawnZone(map.cols, 'east');
   // On small maps (tests) the east spawn zone may start west of westmostColumn.
@@ -993,7 +1295,9 @@ function deployPods(
   const order = free.map((p) => ({ p, r: rng.next() })).sort((a, b) => a.r - b.r);
   const dist = (a: Point, b: Point): number => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
   const placed: (Point & { pod: number })[] = [];
-  const taken = (p: Point): boolean => placed.some((q) => q.x === p.x && q.y === p.y);
+  const taken = (p: Point): boolean =>
+    placed.some((q) => q.x === p.x && q.y === p.y) ||
+    reserved.some((q) => q.x === p.x && q.y === p.y);
   for (const hideOnly of [true, false]) {
     for (const apart of [PODS.minApart, 1]) {
       for (let pod = placed.length / pods.size; pod < pods.count; pod++) {

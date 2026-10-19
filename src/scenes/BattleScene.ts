@@ -14,6 +14,7 @@ import {
 } from '../config/tuning';
 import type { Point } from '../logic/grid';
 import {
+  battleOutcome,
   apply,
   canAct,
   canOverwatch,
@@ -1032,8 +1033,10 @@ export class BattleScene extends Phaser.Scene {
 
   /** If one side is wiped out, locks the battle and opens the result screen. */
   private checkEnd(): boolean {
-    const won = livingUnits(this.state, 'alien').length === 0;
-    const lost = livingUnits(this.state, 'marine').length === 0;
+    // The rules decide (M5.6: the boss's death wins the battle, escorts or not).
+    const outcome = battleOutcome(this.state);
+    const won = outcome === 'won';
+    const lost = outcome === 'lost';
     if (!won && !lost) return false;
     this.over = true;
     this.busy = true;
