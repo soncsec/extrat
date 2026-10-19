@@ -2,7 +2,10 @@
 # Release Extrat to production (ADR-009). Run by the owner, or by
 # Claude only with the owner's approval for that release.
 #
-#   scripts/release.sh deploy [--dry-run]   check, build, upload, switch, smoke test
+#   scripts/release.sh deploy --dry-run     check and build only; records that it passed
+#   scripts/release.sh deploy               the same, then upload, switch, smoke test
+#                                           (refuses without a dry run of this commit
+#                                           in the last hour)
 #   scripts/release.sh rollback             switch back to the previous release
 #   scripts/release.sh activate <id>        switch to a specific release (e.g. forward after a rollback)
 #   scripts/release.sh status               list releases on the server
@@ -15,6 +18,9 @@ SITE_HOST=games.soncrant.com
 TITLE="Extrat"
 KEEP=5
 REQUIRED_CHECKS=("Repo checks" "Build and test" "CodeQL analysis" "ZAP baseline scan")
+# A passed dry run leaves its commit here (git-ignored); a deploy needs one this recent.
+DRY_RUN_MARKER="deploy/dry-run.$SLUG"
+DRY_RUN_MAX_AGE_MINUTES=60
 
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
@@ -108,11 +114,28 @@ build() {
   if grep -rq __game dist; then die "test hook found in dist/"; fi
 }
 
+# A real deploy needs a dry run of this exact commit, passed within the last hour, so
+# a failed dry run can't be skipped or chained past (owner review, 2026-10-18).
+require_dry_run() {
+  local sha
+  sha="$(git rev-parse HEAD)"
+  [[ -f "$DRY_RUN_MARKER" ]] ||
+    die "no dry run recorded; run 'scripts/release.sh deploy --dry-run' first"
+  [[ "$(cat "$DRY_RUN_MARKER")" == "$sha" ]] ||
+    die "the last dry run was of another commit; run 'scripts/release.sh deploy --dry-run' on $sha"
+  local age
+  age=$(( ($(date +%s) - $(stat -c %Y "$DRY_RUN_MARKER")) / 60 ))
+  [[ "$age" -le "$DRY_RUN_MAX_AGE_MINUTES" ]] ||
+    die "the last dry run is $age minutes old (limit $DRY_RUN_MAX_AGE_MINUTES); run it again"
+  echo "ok   dry run of $sha passed $age minutes ago"
+}
+
 cmd_deploy() {
   local dry_run=false
   [[ "${1:-}" == "--dry-run" ]] && dry_run=true
   load_env
   preflight
+  $dry_run || require_dry_run
   build
 
   local id
@@ -121,7 +144,8 @@ cmd_deploy() {
   echo "release id: $id"
 
   if $dry_run; then
-    step "Dry run: nothing uploaded. Current server state:"
+    git rev-parse HEAD >"$DRY_RUN_MARKER"
+    step "Dry run passed and recorded: nothing uploaded. Current server state:"
     remote status "$SLUG"
     return
   fi
