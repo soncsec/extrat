@@ -3,6 +3,7 @@ import { FOREST, MAP_COLS, MAP_ROWS } from '../../src/config/tuning';
 import {
   chunkCell,
   FOREST_CHUNKS,
+  HILLS_CHUNKS,
   COAST_CHUNKS,
   CRASH_CHUNKS,
   SHIP_CHUNKS,
@@ -578,5 +579,79 @@ describe('coast landscape (M4.3)', () => {
 
   it('is a known landscape name in the URL', () => {
     expect(landscapeId('coast')).toBe('coast');
+  });
+});
+
+describe('rocky hills landscape (M4.3)', () => {
+  const hills = (seed: number): BattleMap => generateMap(seed, MAP_COLS, MAP_ROWS, 'hills');
+  const all = [...HILLS_CHUNKS.spawn, ...HILLS_CHUNKS.field];
+
+  it('makes a valid rocky hills map for 1,000 seeds', () => {
+    for (let seed = 1; seed <= 1000; seed++) {
+      const map = hills(seed);
+      expect(map.landscape).toBe('hills');
+      expect(validateMap(map), `seed ${seed}`).toEqual([]);
+    }
+  }, 30_000);
+
+  it('has chunks of the right size, mines that fill their 3 x 2, and two-tile rocks', () => {
+    for (const c of all) {
+      expect(c.rows, c.name).toHaveLength(FOREST.chunk.height);
+      const cells = c.rows.map((row) => [...row]);
+      const covered = new Set<string>();
+      cells.forEach((row, j) => {
+        expect(row, c.name).toHaveLength(FOREST.chunk.width);
+        row.forEach((ch, i) => {
+          expect(() => chunkCell(ch), `${c.name}: '${ch}'`).not.toThrow();
+          if (ch === 'C' || ch === 'S') expect(row[i + 1], c.name).toBe('-');
+          if (ch !== 'M') return;
+          expect(c.upright, `${c.name} has a mine, so it must stay upright`).toBe(true);
+          for (let dy = 0; dy < PROPS.mine.height; dy++) {
+            for (let dx = 0; dx < PROPS.mine.width; dx++) {
+              expect(cells[j - dy]?.[i + dx], `${c.name} footprint`).toBe(dx || dy ? '=' : 'M');
+              covered.add(`${i + dx},${j - dy}`);
+            }
+          }
+        });
+      });
+      cells.forEach((row, j) =>
+        row.forEach((ch, i) => {
+          if (ch === '=') expect(covered.has(`${i},${j}`), `${c.name} stray '='`).toBe(true);
+        }),
+      );
+    }
+  });
+
+  it('keeps mines, crags and pines out of the spawn chunks', () => {
+    for (const c of HILLS_CHUNKS.spawn) expect(c.rows.join(''), c.name).not.toMatch(/[MCp#]/);
+  });
+
+  it('lines the top with cliff, drawn on every tile of its bottom row', () => {
+    const map = hills(7);
+    const top = FOREST.treeLineRows;
+    for (let y = 0; y < top; y++) {
+      for (let x = 0; x < map.cols; x++) {
+        expect(tileAt(map, x, y)).toEqual({ prop: 'cliff', anchor: y === top - 1 });
+      }
+    }
+  });
+
+  it('keeps every mine whole on 300 maps; mines and crags do show up', () => {
+    let mines = 0;
+    let crags = 0;
+    for (let seed = 1; seed <= 300; seed++) {
+      const map = hills(seed);
+      crags += map.tiles.filter((t) => t.prop === 'crag' && t.anchor).length;
+      const anchors = map.tiles.filter((t) => t.prop === 'mine' && t.anchor).length;
+      mines += anchors;
+      const tiles = map.tiles.filter((t) => t.prop === 'mine').length;
+      expect(tiles, `seed ${seed}`).toBe(anchors * PROPS.mine.width * PROPS.mine.height);
+    }
+    expect(mines).toBeGreaterThan(50);
+    expect(crags).toBeGreaterThan(300);
+  });
+
+  it('is a known landscape name in the URL', () => {
+    expect(landscapeId('hills')).toBe('hills');
   });
 });

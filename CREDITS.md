@@ -29,6 +29,7 @@ List every file copied into `public/assets/` here, one per line, as its path fro
 - `assets/snake/snake-hurt.png`: Warped, Grotto Escape 2 snake (hurt)
 - `assets/overseer/mech-unit.png`: Warped, Mech Unit (spritesheet): the final mission's boss
 - `assets/town/top-down-town-tileset.png`: TinyRPG, Top-Down Town (autumn trees, cottage, garden walls, shrubs, stumps, grass, cobble path)
+- `assets/hills/tiny-rpg-mountain-tileset.png`: TinyRPG, Tiny RPG Mountain (gravel, crags, slabs, scree, cliffs, mine entrance): the rocky hills
 - `assets/ship/tileset-top-down-sci-fi.png`: Warped, Top-Down Dungeon Sci-Fi (floor plates, grates, hull wall with consoles)
 - `assets/ship/tank-1.png`: Warped, Scifi Lab (specimen tank 1)
 - `assets/ship/tank-2.png`: Warped, Scifi Lab (specimen tank 2)
@@ -39,3 +40,5 @@ Drawn for Extrat in the Top-Down Dungeon Sci-Fi palette (no file; painted when t
 Drawn for Extrat in the same palette, with soot and ember colours (no file; painted when the game loads on top of the forest tileset, `src/scenes/crashArt.ts`): the crash site's hull wreck, scrap and scorch marks.
 
 Drawn for Extrat in the Tiny RPG overworld's sea and sand colours and the forest's grass (no file; painted when the game loads on top of the forest tileset, `src/scenes/coastArt.ts`): the coast's sea, sand, beach edge, driftwood and rowboat, and sand-coloured copies of the forest's rocks and boulder.
+
+Recoloured when the game loads (`src/scenes/hillsArt.ts`): the mountain props' gravel made clear, and copies of the forest's pine and bushes with gravel in place of their grass ring.

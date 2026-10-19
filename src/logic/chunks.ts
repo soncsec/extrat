@@ -27,6 +27,11 @@ import type { PropKind } from './map';
  *   d  driftwood (half)    R  rowboat: two tiles wide, 'R-' (full)
  *   Driftwood and boats only in the beach (shore) chunks, so they stay on the sand.
  *
+ * Rocky hills (M4.3), with the forest's pines:
+ *   C  crag: two tiles wide, 'C-' (full)     S  slab pile: two tiles wide, 'S-' (half)
+ *   q  scree (half)    M  mine entrance: its bottom-left tile, '=' on the rest of 3 x 2
+ *   *  scree or a bush    #  maybe a pine
+ *
  * All chunks of a landscape are the same size (CHUNK in tuning.ts). The generator may
  * mirror each one left to right, and top to bottom unless it's `upright` (a house).
  */
@@ -79,6 +84,10 @@ const LEGEND: Readonly<Record<string, ChunkCell>> = {
   j: { kind: 'prop', prop: 'scrap' },
   d: { kind: 'prop', prop: 'driftwood' },
   R: { kind: 'prop', prop: 'boat' },
+  C: { kind: 'prop', prop: 'crag' },
+  S: { kind: 'prop', prop: 'slabs' },
+  q: { kind: 'prop', prop: 'scree' },
+  M: { kind: 'prop', prop: 'mine' },
   '*': { kind: 'maybeCover' },
   '#': { kind: 'maybeTree' },
 };
@@ -206,5 +215,28 @@ export const COAST_CHUNKS: ChunkSet = {
     { name: 'rocky glade', rows: ['r...*.', '..o...', '......', '.r..b.'] },
     { name: 'lone oak', rows: ['......', '..o*..', '.*....', '....r.'] },
     { name: 'pines', rows: ['p...#.', 'o...pp', '.*....', '...b..'] },
+  ],
+};
+
+/**
+ * Rocky hills: a cliff along the top, crags, slab piles, scree, a few pines, and now
+ * and then an old mine entrance (full cover that blocks sight; its chunks stay
+ * upright). Spawn chunks stay light, as in the forest.
+ */
+export const HILLS_CHUNKS: ChunkSet = {
+  spawn: [
+    { name: 'scree slope', rows: ['......', '.q....', '....*.', '......'] },
+    { name: 'slabs', rows: ['..S-..', '......', '.*..q.', '......'] },
+    { name: 'stony ground', rows: ['....q.', '......', '.*....', '...q..'] },
+    { name: 'open ground', rows: ['......', '..*...', '......', '.q..*.'] },
+  ],
+  field: [
+    { name: 'crags', rows: ['.C-...', '......', '...*..', '*..C-.'] },
+    { name: 'old mine', rows: ['===...', 'M==.*.', '......', '.q..#.'], upright: true },
+    { name: 'slab field', rows: ['S-..q.', '......', '..S-..', '.*....'] },
+    { name: 'pines on the slope', rows: ['.p..#.', '..q...', '.#..p.', '...*..'] },
+    { name: 'boulder run', rows: ['C-....', '...*..', '..C-..', '....q.'] },
+    { name: 'gully', rows: ['q..q..', '.C-...', '....*.', '..S-..'] },
+    { name: 'lone pine', rows: ['......', '..p*..', '.*....', '....q.'] },
   ],
 };
