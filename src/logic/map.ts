@@ -17,7 +17,12 @@ export type PropKind =
   | 'stump'
   | 'shrub'
   | 'stone'
-  | 'ledge';
+  | 'ledge'
+  | 'hull'
+  | 'tank'
+  | 'pillar'
+  | 'crate'
+  | 'console';
 export type Cover = 'half' | 'full';
 
 export interface PropInfo {
@@ -41,6 +46,12 @@ export const PROPS: Readonly<Record<PropKind, PropInfo>> = {
   shrub: { width: 1, height: 1, cover: 'half' },
   stone: { width: 1, height: 1, cover: 'half' },
   ledge: { width: 1, height: 1, cover: 'half' },
+  // Alien ship (M4.3). The hull wall lines the top; a specimen tank stands on 3 x 2.
+  hull: { width: 1, height: 1, cover: 'full' },
+  tank: { width: 3, height: 2, cover: 'full' },
+  pillar: { width: 1, height: 1, cover: 'full' },
+  crate: { width: 1, height: 1, cover: 'half' },
+  console: { width: 1, height: 1, cover: 'half' },
 };
 
 export interface Tile {
@@ -246,10 +257,12 @@ function buildMap(
   const top = opts.treeLineRows;
 
   // Dense trees along the top edge. Every tile is blocked; only every other one is drawn,
-  // since each tree is about three tiles wide.
+  // since each tree is about three tiles wide. A wall (the ship's hull) is drawn on every
+  // tile of the bottom row instead: each piece is one tile wide and covers the row above.
   for (let y = 0; y < top; y++) {
     for (let x = 0; x < cols; x++) {
-      map.tiles[y * cols + x] = { prop: land.edge, anchor: (x + y) % 2 === 1 };
+      const anchor = land.edgeDrawn === 'wall' ? y === top - 1 : (x + y) % 2 === 1;
+      map.tiles[y * cols + x] = { prop: land.edge, anchor };
     }
   }
 

@@ -28,3 +28,9 @@ List every file copied into `public/assets/` here, one per line, as its path fro
 - `assets/lizard/lizard-hurt.png`: Warped, Grotto Escape 2 lizard (hurt)
 - `assets/snake/snake-hurt.png`: Warped, Grotto Escape 2 snake (hurt)
 - `assets/town/top-down-town-tileset.png`: TinyRPG, Top-Down Town (autumn trees, cottage, garden walls, shrubs, stumps, grass, cobble path)
+- `assets/ship/tileset-top-down-sci-fi.png`: Warped, Top-Down Dungeon Sci-Fi (floor plates, grates, hull wall with consoles)
+- `assets/ship/tank-1.png`: Warped, Scifi Lab (specimen tank 1)
+- `assets/ship/tank-2.png`: Warped, Scifi Lab (specimen tank 2)
+- `assets/ship/tank-3.png`: Warped, Scifi Lab (specimen tank 3)
+
+Drawn for Extrat in the Top-Down Dungeon Sci-Fi palette (no file; painted when the game loads, `src/scenes/shipArt.ts`): the ship's crate, console and bulkhead pillar.

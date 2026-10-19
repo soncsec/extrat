@@ -22,6 +22,7 @@ import {
   WALKER_SHEET,
   WALKER_WALK_SHEET,
 } from './art';
+import { SHIP_FRAMES, SHIP_SOURCES, SHIP_TEXTURE, buildShipTexture } from './shipArt';
 
 export const CHARACTER_SHEETS = [
   MARINE_SHEET,
@@ -53,6 +54,7 @@ export class PreloadScene extends Phaser.Scene {
 
     this.load.image(FOREST_SHEET.key, FOREST_SHEET.url);
     this.load.image(TOWN_SHEET.key, TOWN_SHEET.url);
+    for (const s of Object.values(SHIP_SOURCES)) this.load.image(s.key, s.url);
     for (const s of CHARACTER_SHEETS) {
       this.load.spritesheet(s.key, s.url, { frameWidth: s.frameWidth, frameHeight: s.frameHeight });
     }
@@ -67,6 +69,8 @@ export class PreloadScene extends Phaser.Scene {
   create(): void {
     addFrames(this.textures, FOREST_SHEET.key, FOREST_SHEET.frames);
     addFrames(this.textures, TOWN_SHEET.key, TOWN_SHEET.frames);
+    buildShipTexture(this.textures);
+    addFrames(this.textures, SHIP_TEXTURE.key, SHIP_FRAMES);
     for (const s of CHARACTER_SHEETS) addAnims(this.anims, s);
     for (const e of Object.values(EFFECTS)) {
       const frames = this.anims.generateFrameNumbers(e.key, { start: 0, end: e.count - 1 });

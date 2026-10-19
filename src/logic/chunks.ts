@@ -14,6 +14,11 @@ import type { PropKind } from './map';
  *   a  autumn tree    c  cypress    s  shrub (half)    n  stone (half)
  *   l  low earth wall (half)        t  stump: two tiles wide, 't-' (half)
  *
+ * Alien ship (M4.3):
+ *   T  specimen tank: its bottom-left tile, with '=' on the rest of its 3 x 2 footprint
+ *   P  bulkhead pillar    k  crate (half)    v  console (half)
+ *   *  a crate or a console    #  maybe a pillar
+ *
  * All chunks of a landscape are the same size (CHUNK in tuning.ts). The generator may
  * mirror each one left to right, and top to bottom unless it's `upright` (a house).
  */
@@ -56,6 +61,10 @@ const LEGEND: Readonly<Record<string, ChunkCell>> = {
   n: { kind: 'prop', prop: 'stone' },
   l: { kind: 'prop', prop: 'ledge' },
   t: { kind: 'prop', prop: 'stump' },
+  T: { kind: 'prop', prop: 'tank' },
+  P: { kind: 'prop', prop: 'pillar' },
+  k: { kind: 'prop', prop: 'crate' },
+  v: { kind: 'prop', prop: 'console' },
   '*': { kind: 'maybeCover' },
   '#': { kind: 'maybeTree' },
 };
@@ -106,5 +115,28 @@ export const TOWN_CHUNKS: ChunkSet = {
     { name: 'square', rows: ['..n...', '......', '..t-..', '.*..s.'] },
     { name: 'hedges', rows: ['.ss...', '...*..', '..#.ss', '......'] },
     { name: 'cypress row', rows: ['c.c.c.', '......', '.*..l.', '..s...'] },
+  ],
+};
+
+/**
+ * Alien ship: specimen tanks (full cover, and they block sight), bulkhead pillars,
+ * crates and consoles. A tank's glass rises far above its footprint, like a house's
+ * roof, so tank chunks stay upright. Spawn chunks stay light, as in the forest.
+ */
+export const SHIP_CHUNKS: ChunkSet = {
+  spawn: [
+    { name: 'airlock', rows: ['......', '.k....', '....*.', '......'] },
+    { name: 'cargo', rows: ['..kk..', '......', '.*..v.', '......'] },
+    { name: 'terminals', rows: ['....v.', '......', '.*....', '...k..'] },
+    { name: 'deck', rows: ['......', '.v....', '....*.', '.k....'] },
+  ],
+  field: [
+    { name: 'specimen tank', rows: ['===...', 'T==.*.', '......', '.k..#.'], upright: true },
+    { name: 'twin tanks', rows: ['===...', 'T==...', '...===', '.*.T=='], upright: true },
+    { name: 'pillar hall', rows: ['P...P.', '......', '.*..*.', 'P...P.'] },
+    { name: 'cargo bay', rows: ['kk..#.', 'k.....', '...*..', '.v..kk'] },
+    { name: 'control room', rows: ['.vvv..', '......', '..#...', '.k..v.'] },
+    { name: 'bulkheads', rows: ['PP....', '......', '...#P.', '.*....'] },
+    { name: 'machinery', rows: ['..#...', '.k..P.', '...*..', '#.....'] },
   ],
 };

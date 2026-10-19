@@ -124,8 +124,9 @@ describe('missions', () => {
     }
   }, 30_000);
 
-  it('include the town as mission 2', () => {
+  it('include the town as mission 2, and end on the alien ship', () => {
     expect(MISSIONS[1]?.landscape).toBe('town');
+    expect(MISSIONS[MISSIONS.length - 1]?.landscape).toBe('ship');
   });
 
   it('use the campaign squad`s names in a battle', () => {
