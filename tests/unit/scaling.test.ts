@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { integerZoom, pixelZoom } from '../../src/logic/scaling';
+import { fitZoom, integerZoom, pixelZoom } from '../../src/logic/scaling';
 
 describe('integerZoom', () => {
   it('picks the largest whole zoom that fits', () => {
@@ -52,5 +52,21 @@ describe('pixelZoom', () => {
     for (const r of [0, -2, Number.NaN, Infinity]) {
       expect(pixelZoom(800, 600, 384, 256, r)).toBe(integerZoom(800, 600, 384, 256));
     }
+  });
+});
+
+describe('fitZoom (phones fill the screen, owner 2026-10-19)', () => {
+  it('fills the limiting side exactly, whole number or not', () => {
+    expect(fitZoom(844, 390, 384, 256)).toBeCloseTo(390 / 256, 10); // iPhone sideways
+    expect(fitZoom(1180, 820, 384, 256)).toBeCloseTo(1180 / 384, 10); // tablet: width limits
+    expect(fitZoom(600, 2000, 384, 256)).toBeCloseTo(600 / 384, 10); // width limits
+  });
+
+  it('never goes below its minimum or returns a non-number', () => {
+    expect(fitZoom(100, 100, 384, 256)).toBe(1);
+    expect(fitZoom(100, 100, 384, 256, 0.5)).toBe(0.5);
+    expect(fitZoom(Number.NaN, 400, 384, 256)).toBe(1);
+    expect(fitZoom(Infinity, Infinity, 384, 256)).toBe(1);
+    expect(() => fitZoom(800, 600, 0, 256)).toThrow(RangeError);
   });
 });

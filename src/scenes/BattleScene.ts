@@ -11,6 +11,7 @@ import {
   MAP_ROWS,
   MISSIONS,
   TILE,
+  TOUCH,
   UNITS,
 } from '../config/tuning';
 import type { Point } from '../logic/grid';
@@ -575,11 +576,21 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
     if (y >= MAP_ROWS) return;
-    const previewed = this.pending?.x === x && this.pending.y === y;
+    // A second tap near the previewed tile confirms it: fingers are wider than tiles.
+    const pending = this.pending;
+    const near = (p: Point): boolean =>
+      Math.abs(px - (p.x + 0.5) * TILE) <= TILE / 2 + TOUCH.confirmSlop &&
+      Math.abs(py - (p.y + 0.5) * TILE) <= TILE / 2 + TOUCH.confirmSlop;
+    const previewed =
+      pending !== null && (touch ? near(pending) : pending.x === x && pending.y === y);
     this.pending = null;
     if (this.mode === 'grenade') {
       if (touch && !previewed) this.preview(px, py);
-      else this.throwAt({ x, y });
+      else this.throwAt(previewed && pending ? pending : { x, y });
+      return;
+    }
+    if (touch && previewed && pending && this.state.selected) {
+      this.moveUnit(this.state.selected, pending);
       return;
     }
     const unit = this.unitUnderPointer(x, y);

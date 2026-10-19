@@ -39,18 +39,52 @@ async function tapAt(page: Page, gx: number, gy: number): Promise<void> {
   await page.touchscreen.tap(box.x + gx * zoom, box.y + gy * zoom);
 }
 
-test('a phone shows the game bigger than 1x, and every art pixel on whole screen pixels', async ({
+test('a phone shows the game as large as the screen allows (owner, 2026-10-19)', async ({
   page,
 }) => {
   await page.goto('./?seed=42');
   await waitForScene(page, 'Title');
   const box = await page.locator('#game canvas').boundingBox();
   if (!box) throw new Error('no canvas');
+  // 844 x 390: the height is what limits it, so the game fills it top to bottom.
   const zoom = box.width / GAME_WIDTH;
-  expect(zoom).toBeCloseTo(4 / 3, 2);
-  expect(Math.abs(zoom * 3 - Math.round(zoom * 3))).toBeLessThan(0.01);
-  expect(box.height).toBeLessThanOrEqual(390);
+  expect(zoom).toBeCloseTo(390 / GAME_HEIGHT, 2);
+  expect(box.height).toBeCloseTo(390, 0);
+  expect(box.width).toBeLessThanOrEqual(844);
   expect(box.height).toBeCloseTo(GAME_HEIGHT * zoom, 0);
+});
+
+test('a second tap a little off the previewed tile still makes the move', async ({ page }) => {
+  await page.goto('./?seed=42');
+  await waitForScene(page, 'Title');
+  await tapAt(page, GAME_WIDTH / 2, 172);
+  await waitForScene(page, 'Battle');
+  const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
+  if (!marine) throw new Error('no marine');
+  await tapTile(page, marine.x, marine.y);
+  await expect.poll(async () => (await snapshot(page)).selected).toBe(marine.id);
+  const dest = (await snapshot(page)).reachable.find((t) => t.cost === 1);
+  if (!dest) throw new Error('nowhere to move');
+  await tapTile(page, dest.x, dest.y);
+  expect((await snapshot(page)).pending).toEqual({ x: dest.x, y: dest.y });
+  // A fingertip lands just over the tile's edge (4 art pixels past it): still a yes.
+  await tapAt(page, (dest.x + 1) * TILE + 4, dest.y * TILE + TILE / 2);
+  await expect.poll(async () => (await snapshot(page)).busy, { timeout: 20_000 }).toBe(false);
+  const moved = await snapshot(page);
+  expect(moved.units.find((u) => u.id === marine.id)).toMatchObject({ x: dest.x, y: dest.y });
+});
+
+test('the page never scrolls, so taps keep landing where the finger is', async ({ page }) => {
+  await page.goto('./?seed=42');
+  await waitForScene(page, 'Title');
+  const css = await page.evaluate(() => ({
+    body: getComputedStyle(document.body).position,
+    touch: getComputedStyle(document.documentElement).touchAction,
+  }));
+  expect(css).toEqual({ body: 'fixed', touch: 'none' });
+  // Nothing on the page is taller than the screen, so there is nothing to scroll to.
+  await page.evaluate(() => window.scrollTo(0, 400));
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
 });
 
 test('a tap on a tile shows the move; a second tap on it makes the move', async ({ page }) => {

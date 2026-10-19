@@ -38,7 +38,7 @@ It is built mainly from the Ansimuz "Legacy Collection" pixel-art pack (CC0) and
 | Landscapes | One per mission: forest, town, coast, rocky hills, alien crash site, alien ship (final mission) |
 | Campaign | **6 missions**. Mission goal: wipe out the aliens (the final mission ends with the boss). If the whole squad dies, the player retries the mission on a new map |
 | Ranks | Marines earn XP for hits and kills and rise in rank, with small stat increases and one tangible perk per promotion (owner, 2026-10-18) |
-| Supplies | Marines can run short of grenades in a mission. A simple resupply between missions (design to be confirmed by the owner). No shop, no weapon upgrades |
+| Supplies | After each won mission the player picks one supply for the next mission: +1 grenade, +1 health or +10 aim for every marine (owner, 2026-10-19). No shop, no weapon upgrades |
 | Fallen marines | **No permadeath.** A marine killed in a mission comes back for the next one at full health, but is **shamed**: an embarrassing nickname, a "Wall of Shame" death count, and mocking debrief lines. Shame is cosmetic only (owner decision 2026-10-17) |
 | Save and resume | The campaign autosaves every turn in the browser (localStorage) and resumes after the browser is closed |
 | Difficulty | One level, beatable by a casual player |
@@ -47,7 +47,7 @@ It is built mainly from the Ansimuz "Legacy Collection" pixel-art pack (CC0) and
 | Navigation | A link back to the games portal from the title screen |
 | Audio | CC0 sound effects. No music in v1 (planned later) |
 | Art | Legacy pack: Warped space marine and aliens, TinyRPG top-down terrain, Warped sci-fi interior, explosions and hit effects, Warped portraits. Claude draws missing terrain pieces in matching style |
-| Display | Native pixel art, fits the browser window. Every art pixel covers a whole number of the screen's own pixels (so phones can show the game at, say, 4/3 and stay crisp). Phones and tablets: landscape only, with a notice to turn the device when held upright |
+| Display | Native pixel art, fits the browser window. On desktops every art pixel covers a whole number of the screen's own pixels. Phones and tablets fill the screen, even if art pixels come out very slightly uneven (owner, 2026-10-19). Phones and tablets: landscape only, with a notice to turn the device when held upright |
 
 ### Out of scope (v1)
 
@@ -91,9 +91,10 @@ It is built mainly from the Ansimuz "Legacy Collection" pixel-art pack (CC0) and
 | 2026-10-17 | Marines gain ranks. No permadeath: fallen marines return at full health and are shamed (cosmetic only) |
 | 2026-10-17 | Whole squad lost: retry the mission on a new map |
 | 2026-10-17 | Campaign save in localStorage (security decision, ADR-E6) |
+| 2026-10-19 | Supply pick after each won mission: +1 grenade, +1 health or +10 aim for every marine, next mission only. Wall of Shame starter content approved. Phones fill the screen (iPhone Safari test: the game was small and some taps did nothing) |
 | 2026-10-18 | PM review: alien kinds introduced one per mission (walkers first, snakes from mission 4 at the earliest); balance pass now, not in M6; XP per hit; a tangible perk per rank; resupply between missions (design to confirm); alien turn fast-forward; landscapes built in the order ship, crash site, coast, hills, none dropped; help screen is enough onboarding for now |
 | 2026-10-18 | Playable on phones and tablets with touch, as well as desktop. Tap to preview, tap again to act. Whole map on phones (zoom and drag only if needed after play-testing). Landscape only. Built before the Wall of Shame |
 
 ## 8. Open questions
 
-- Resupply design (M5.10): a SUPPLY pick in the debrief, or pickups dropped by aliens? Claude recommends the debrief pick.
+None at the moment.

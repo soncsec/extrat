@@ -338,6 +338,15 @@ export const AI = {
 /** Action points each unit gets at the start of its side's turn. A move costs 1. */
 export const ACTION_POINTS = 2;
 
+/** Touchscreens (M5.7). */
+export const TOUCH = {
+  /**
+   * Art pixels around a previewed tile that still count as tapping it again (to make
+   * the move or throw): a fingertip is wider than a tile on a phone (owner, 2026-10-19).
+   */
+  confirmSlop: 6,
+} as const;
+
 /** Presentation speeds. */
 export const ANIMATION = {
   /** Tiles per second when a unit runs along a path. */

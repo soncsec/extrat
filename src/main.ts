@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import './style.css';
 import { GAME_HEIGHT, GAME_WIDTH } from './config/tuning';
-import { pixelZoom } from './logic/scaling';
+import { fitZoom, pixelZoom } from './logic/scaling';
 import { BattleScene } from './scenes/BattleScene';
 import { BriefingScene } from './scenes/BriefingScene';
 import { HelpScene } from './scenes/HelpScene';
@@ -9,15 +9,27 @@ import { PreloadScene } from './scenes/PreloadScene';
 import { ResultScene } from './scenes/ResultScene';
 import { SquadScene } from './scenes/SquadScene';
 import { TitleScene } from './scenes/TitleScene';
+import { isTouchDevice } from './scenes/touch';
 
-const zoomForWindow = (): number =>
-  pixelZoom(
-    window.innerWidth,
-    window.innerHeight,
-    GAME_WIDTH,
-    GAME_HEIGHT,
-    window.devicePixelRatio,
-  );
+/**
+ * The visible area: Safari on iPhone shows and hides its bars without resizing the
+ * window, but its visual viewport follows them.
+ */
+const view = (): { width: number; height: number } => ({
+  width: window.visualViewport?.width ?? window.innerWidth,
+  height: window.visualViewport?.height ?? window.innerHeight,
+});
+
+/**
+ * Phones and tablets fill the screen (owner decision 2026-10-19); desktops keep every
+ * art pixel on whole screen pixels.
+ */
+const zoomForWindow = (): number => {
+  const { width, height } = view();
+  return isTouchDevice()
+    ? fitZoom(width, height, GAME_WIDTH, GAME_HEIGHT)
+    : pixelZoom(width, height, GAME_WIDTH, GAME_HEIGHT, window.devicePixelRatio);
+};
 
 export const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -38,10 +50,19 @@ export const game = new Phaser.Game({
   scene: [PreloadScene, TitleScene, BriefingScene, BattleScene, ResultScene, HelpScene, SquadScene],
 });
 
-window.addEventListener('resize', () => {
+/**
+ * Fits the game again, and tells it where the canvas now is on the page, so a tap lands
+ * on the tile under the finger (Safari's bars come and go, the phone turns).
+ */
+const refit = (): void => {
   const zoom = zoomForWindow();
   if (game.scale.zoom !== zoom) game.scale.setZoom(zoom);
-});
+  game.scale.updateBounds();
+};
+window.addEventListener('resize', refit);
+window.addEventListener('orientationchange', refit);
+window.visualViewport?.addEventListener('resize', refit);
+window.visualViewport?.addEventListener('scroll', refit);
 
 // The e2e build adds a test hook. Vite replaces MODE at build time, so this
 // branch and the hook module are left out of the normal build entirely.

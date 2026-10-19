@@ -87,13 +87,14 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 
 - [ ] M5.1 Campaign of 6 missions, one per landscape; briefing and debrief screens. *Loop, briefing, debrief and mission ramp built; every mission uses the forest until M4.3 adds the other landscapes.*
 - [x] M5.2 XP, ranks and stat increases. *Kills and wins earn XP; five ranks add aim and health; a replayed battle earns no XP (owner, 2026-10-18).*
-- [x] M5.3 Fallen marines return next mission; Wall of Shame (nicknames, death counts, debrief jokes). *Starter nicknames and jokes in `src/logic/shame.ts` await the owner's review.*
+- [x] M5.3 Fallen marines return next mission; Wall of Shame (nicknames, death counts, debrief jokes). *Starter nicknames and jokes approved by the owner (2026-10-19).*
 - [x] M5.4 Squad wiped out: retry the mission on a new map
 - [x] M5.5 Autosave every turn; resume from the title screen; versioned save with validation (ADR-E6)
 - [x] M5.6 Final mission on the alien ship with the mech boss. *Design approved by merging #46 (`docs/boss-design.md`), with its proposed defaults: the fight ends on the boss's death, 12 health, a 3-damage blast. Built after the alien ship landscape. Rules and AI built (1 of 3); scene built (2 of 3: mech sprite, armour in the odds, red charge squares and warning, blast; `?boss=1` skirmish); mission 6 fields the boss with two escort groups and its own briefing (3 of 3). The owner's play-test will tune its numbers.*
 - [x] M5.8 Alien ramp and balance pass (owner lost on mission 3, 2026-10-18): mission 1 walkers only, one new kind per mission, snakes no earlier than mission 4; the briefing names the kinds and warns about the new one; walker aim 80 to 70. *More tuning after the owner's next play-test.*
 - [x] M5.9 XP per hit as well as per kill; one tangible perk per promotion (for example a second grenade, more ammo) alongside the aim and health bonuses
-- [ ] M5.10 Resupply between missions: the owner ran out of grenades mid-mission. *Design to confirm with the owner: a SUPPLY pick in the debrief (recommended) versus pickups dropped by aliens.*
+- [ ] M5.10 Resupply between missions: the owner ran out of grenades mid-mission. *Owner, 2026-10-19: after each won mission, pick one supply for the next mission: +1 grenade, +1 health or +10 aim for every marine.*
+- [x] M5.7b Phones, from the owner's iPhone test (2026-10-19: small screen, some taps did nothing): fill the screen on touch devices; the page can't scroll or bounce; refit when Safari's bars change; a second tap just off the previewed tile still confirms
 - [x] M5.11 Alien turn fast-forward (tap or key) so late missions with nine aliens don't drag
 - [x] M5.7 Phones and tablets: touch controls (tap to preview, tap again to act), crisp scaling on high-density screens, landscape notice, fullscreen, ? help button *(owner, 2026-10-18; zoom-and-drag on phones only if play-testing needs it)*
 
