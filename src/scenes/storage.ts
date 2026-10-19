@@ -1,12 +1,15 @@
 import type { BattleState } from '../logic/battle';
 import type { Campaign } from '../logic/campaign';
 import { decodeSave, encodeSave, type Save } from '../logic/save';
+import { decodeSettings, encodeSettings, type Settings } from '../logic/settings';
 
 /**
- * The campaign save in localStorage (ADR-E6): one key, nothing else stored. The browser
- * may refuse storage (private mode, full disk); the game then plays on without saving.
+ * The campaign save in localStorage (ADR-E6), and the player's settings under a key of
+ * their own (amended 2026-10-19). Nothing else is stored. The browser may refuse storage
+ * (private mode, full disk); the game then plays on without saving.
  */
 const KEY = 'extrat.campaign';
+const SETTINGS_KEY = 'extrat.settings';
 
 export type StoredSave = { status: 'none' } | { status: 'ok'; save: Save } | { status: 'bad' };
 
@@ -38,5 +41,22 @@ export function clearSave(): void {
     window.localStorage.removeItem(KEY);
   } catch {
     // Nothing to clear.
+  }
+}
+
+/** The player's settings; the defaults if there are none or they aren't ours. */
+export function readSettings(): Settings {
+  try {
+    return decodeSettings(window.localStorage.getItem(SETTINGS_KEY));
+  } catch {
+    return decodeSettings(null);
+  }
+}
+
+export function writeSettings(settings: Settings): void {
+  try {
+    window.localStorage.setItem(SETTINGS_KEY, encodeSettings(settings));
+  } catch {
+    // No storage: the setting lasts for this visit only.
   }
 }
