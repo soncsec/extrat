@@ -1,6 +1,7 @@
 import {
   ABILITIES,
   ACTION_POINTS,
+  BOSS,
   MAP_COLS,
   MAP_ROWS,
   MISSIONS,
@@ -10,8 +11,9 @@ import {
 import {
   clipSize,
   createBattle,
-  isVisibleTo,
+  footprint,
   MARINE_NAMES,
+  unitVisibleTo,
   type BattleState,
   type Unit,
 } from './battle';
@@ -27,11 +29,12 @@ import { generateMap, isWalkable } from './map';
  * checked. Anything unexpected (wrong version, an extra field, a number out of range,
  * a unit standing in a tree) rejects the whole save.
  */
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 /**
  * Older saves still load, checked just as strictly, with the fields they lack at their
  * starting values. Version 1 (M5.5) had no XP, kills or replay flag; version 2 (M5.2)
- * had no hit counts; version 3 (M5.9) had no death counts.
+ * had no hit counts; version 3 (M5.9) had no death counts; version 4 (M5.3) had none
+ * of the boss's front, charge or rest (M5.6).
  */
 const OLDEST_VERSION = 1;
 /** A save larger than this isn't ours: it is rejected before parsing. */
@@ -53,6 +56,10 @@ export interface SavedUnit {
   facing: 1 | -1;
   kills: number;
   hits: number;
+  /** The boss's state (M5.6); missing from saves before version 5, which had no boss. */
+  front?: -1 | 0 | 1;
+  charging?: { x: number; y: number } | null;
+  cooldown?: number;
 }
 
 /** A battle saved at the start of the squad's turn. */
@@ -105,6 +112,9 @@ export function encodeSave(campaign: Campaign, battle: BattleState | null, repla
             facing: u.facing,
             kills: u.kills,
             hits: u.hits,
+            front: u.front,
+            charging: u.charging ? { x: u.charging.x, y: u.charging.y } : null,
+            cooldown: u.cooldown,
           })),
           replay,
         }
@@ -152,6 +162,7 @@ export function restoreBattle(campaign: Campaign, saved: SavedBattle): BattleSta
     pods: mission.pods,
     kinds: mission.kinds,
     ranks: squadRanks(campaign),
+    boss: 'boss' in mission && mission.boss === true,
   });
   if (saved.units.length !== fresh.units.length) return null;
   const byId = new Map(saved.units.map((u) => [u.id, u]));
@@ -168,11 +179,20 @@ export function restoreBattle(campaign: Campaign, saved: SavedBattle): BattleSta
       return null;
     }
     if (s.dormant && base.side !== 'alien') return null;
+    // The boss's state belongs to the boss alone, and its charge lands on the map.
+    if (base.kind === 'overseer') {
+      if (s.front === 0) return null;
+      if (s.charging && (s.charging.x >= map.cols || s.charging.y >= map.rows)) return null;
+    } else if ((s.front ?? 0) !== 0 || (s.charging ?? null) !== null || (s.cooldown ?? 0) !== 0) {
+      return null;
+    }
     if (s.hp > 0) {
-      // The living stand on free ground, one to a tile.
-      const key = s.y * map.cols + s.x;
-      if (!isWalkable(map, s.x, s.y) || taken.has(key)) return null;
-      taken.add(key);
+      // The living stand on free ground, one to a tile (the boss on all four of its own).
+      for (const t of footprint({ kind: base.kind, x: s.x, y: s.y })) {
+        const key = t.y * map.cols + t.x;
+        if (!isWalkable(map, t.x, t.y) || taken.has(key)) return null;
+        taken.add(key);
+      }
     }
     units.push({ ...base, ...s });
   }
@@ -198,10 +218,11 @@ export function restoreBattle(campaign: Campaign, saved: SavedBattle): BattleSta
     lastShot: null,
     lastMove: null,
     lastThrow: null,
+    lastBlast: null,
     lastPoison: [],
   };
   // A dormant alien the squad can already see would have been woken: not a real save.
-  if (units.some((u) => u.dormant && u.hp > 0 && isVisibleTo(state, 'marine', u))) return null;
+  if (units.some((u) => u.dormant && u.hp > 0 && unitVisibleTo(state, 'marine', u))) return null;
   return state;
 }
 
@@ -300,7 +321,9 @@ function checkBattleShape(v: unknown, version: number): SavedBattle | null {
       ? UNIT_KEYS
       : version < 3
         ? [...UNIT_KEYS, 'kills']
-        : [...UNIT_KEYS, 'kills', 'hits'];
+        : version < 5
+          ? [...UNIT_KEYS, 'kills', 'hits']
+          : [...UNIT_KEYS, 'kills', 'hits', 'front', 'charging', 'cooldown'];
     if (!isRecord(u) || !hasOnly(u, keys)) return null;
     const { id, x, y, hp, ap, ammo, overwatch, grenades, exposed, dormant, poison, facing } = u;
     const kills = old ? 0 : u.kills;
@@ -316,6 +339,8 @@ function checkBattleShape(v: unknown, version: number): SavedBattle | null {
     if (typeof dormant !== 'boolean') return null;
     if (!isInt(poison, 0, ABILITIES.poison.turns)) return null;
     if (facing !== 1 && facing !== -1) return null;
+    const boss = version >= 5 ? checkBossState(u) : null;
+    if (version >= 5 && !boss) return null;
     out.push({
       id,
       x,
@@ -331,7 +356,21 @@ function checkBattleShape(v: unknown, version: number): SavedBattle | null {
       facing,
       kills,
       hits,
+      ...(boss ?? {}),
     });
   }
   return { round, rng, units: out, replay };
+}
+
+/** A unit's boss fields from a version 5 save, or null if any is out of shape. */
+function checkBossState(
+  u: Record<string, unknown>,
+): Required<Pick<SavedUnit, 'front' | 'charging' | 'cooldown'>> | null {
+  const { front, charging, cooldown } = u;
+  if (front !== -1 && front !== 0 && front !== 1) return null;
+  if (!isInt(cooldown, 0, BOSS.blast.cooldown)) return null;
+  if (charging === null) return { front, charging: null, cooldown };
+  if (!isRecord(charging) || !hasOnly(charging, ['x', 'y'])) return null;
+  if (!isInt(charging.x, 0, 255) || !isInt(charging.y, 0, 255)) return null;
+  return { front, charging: { x: charging.x, y: charging.y }, cooldown };
 }

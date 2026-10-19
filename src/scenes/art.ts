@@ -284,6 +284,9 @@ export const UNIT_ANIMS: Readonly<Record<UnitKind, Partial<Record<AnimName, Char
     shoot: SNAKE_SHOOT_SHEET,
     hurt: SNAKE_HURT_SHEET,
   },
+  // Stand-in until the boss's own art lands (M5.6, second PR). No mission fields the
+  // boss before then.
+  overseer: { idle: WALKER_SHEET, run: WALKER_WALK_SHEET },
 };
 
 /** The sheet that sets each kind's size: its height and muzzle. */
@@ -293,6 +296,7 @@ export const BASE_SHEETS: Readonly<Record<UnitKind, CharacterSheet>> = {
   flyer: FLYER_SHEET,
   lizard: LIZARD_SHEET,
   snake: SNAKE_SHEET,
+  overseer: WALKER_SHEET, // stand-in until the boss's art (M5.6, second PR)
 };
 
 /** Registers a sheet's animations as `<key>-<name>`, once. */
