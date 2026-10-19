@@ -68,11 +68,20 @@ export class BriefingScene extends Phaser.Scene {
       ].join('\n'),
       { color: 0xc8d0dc, valign: 'top' },
     );
-    pixelButton(this, cx - 30, 176, 'START MISSION', () => this.start(campaign));
-    pixelButton(this, cx + 52, 176, 'TITLE', () => this.toTitle(), false);
-    pixelText(this, cx, 196, 'Enter: start   Esc: title', 0xa3adbd);
+    pixelButton(this, cx - 50, 176, 'START MISSION', () => this.start(campaign));
+    pixelButton(this, cx + 26, 176, 'SQUAD', () => this.squad(campaign), false);
+    pixelButton(this, cx + 76, 176, 'TITLE', () => this.toTitle(), false);
+    pixelText(this, cx, 196, 'Enter: start   S: squad   Esc: title', 0xa3adbd);
     this.input.keyboard?.once('keydown-ENTER', () => this.start(campaign));
     this.input.keyboard?.once('keydown-ESC', () => this.toTitle());
+    this.input.keyboard?.on('keydown-S', () => this.squad(campaign));
+  }
+
+  /** The squad page with the Wall of Shame (M5.3), over this screen, which waits paused. */
+  private squad(campaign: Campaign): void {
+    if (this.scene.isActive('Squad')) return;
+    this.scene.pause();
+    this.scene.launch('Squad', { campaign, from: 'Briefing' });
   }
 
   private drawBackground(): void {

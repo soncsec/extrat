@@ -726,6 +726,34 @@ test('wins earn XP and promotions; a replayed win earns none (M5.2)', async ({ p
   expect(third.units.filter((u) => u.side === 'marine').every((u) => u.rank === 1)).toBe(true);
 });
 
+test('a fallen marine returns next mission, counted on the Wall of Shame (M5.3)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await openGame(page, '?campaign=7');
+  const first = await snapshot(page);
+  expect(first.campaign?.deaths).toEqual([0, 0, 0, 0]);
+  const m1 = first.units.find((u) => u.id === 'm1');
+  if (!m1) throw new Error('no m1');
+  await page.evaluate((id) => window.__game?.setHp(id, 0), m1.id);
+  await wipeOut(page, 'alien');
+  expect((await snapshot(page)).campaign?.deaths).toEqual([1, 0, 0, 0]);
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Briefing');
+  // S opens the squad page; S again closes it.
+  await page.keyboard.press('s');
+  await expect.poll(() => activeScenes(page)).toContain('Squad');
+  await page.keyboard.press('s');
+  await expect.poll(() => activeScenes(page)).not.toContain('Squad');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Battle');
+  const next = await snapshot(page);
+  expect(next.campaign?.deaths).toEqual([1, 0, 0, 0]);
+  const back = next.units.find((u) => u.id === 'm1');
+  expect(back?.name).toBe(m1.name);
+  expect(back?.hp).toBe(back?.maxHp);
+});
+
 test('winning all six missions completes the campaign', async ({ page }) => {
   test.setTimeout(120_000);
   await openGame(page, '?campaign=7');

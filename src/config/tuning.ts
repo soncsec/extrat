@@ -98,6 +98,8 @@ export const MISSIONS = [
  * earns none (owner decision 2026-10-18), so a map can't be farmed.
  */
 export const XP = {
+  /** Every shot or grenade that hits an enemy, so wounding counts (owner, 2026-10-18). */
+  hit: 3,
   kill: 10,
   missionWon: 10,
   /** No marine can have more: saves with more are rejected. */
@@ -105,16 +107,24 @@ export const XP = {
 } as const;
 
 /**
- * Ranks (M5.2): the XP a marine needs for each, and the aim and health it adds over a
- * rookie. Six missions earn a marine about 60-160 XP, so most finish as Sergeants.
+ * Ranks (M5.2): the XP a marine needs for each, and what it adds over a rookie: aim,
+ * health, and (M5.9, owner 2026-10-18) something to carry, so a promotion is felt:
+ * extra grenades and a bigger clip. Six missions earn a marine about 80-200 XP, so
+ * most finish as Sergeants.
  */
 export const RANKS = [
-  { name: 'Rookie', short: 'RKE', xp: 0, aim: 0, hp: 0 },
-  { name: 'Squaddie', short: 'SQD', xp: 20, aim: 5, hp: 0 },
-  { name: 'Corporal', short: 'CPL', xp: 50, aim: 5, hp: 1 },
-  { name: 'Sergeant', short: 'SGT', xp: 90, aim: 10, hp: 1 },
-  { name: 'Lieutenant', short: 'LT', xp: 140, aim: 10, hp: 2 },
+  { name: 'Rookie', short: 'RKE', xp: 0, aim: 0, hp: 0, grenades: 0, ammo: 0 },
+  { name: 'Squaddie', short: 'SQD', xp: 20, aim: 5, hp: 0, grenades: 0, ammo: 0 },
+  { name: 'Corporal', short: 'CPL', xp: 50, aim: 5, hp: 1, grenades: 1, ammo: 0 },
+  { name: 'Sergeant', short: 'SGT', xp: 90, aim: 10, hp: 1, grenades: 1, ammo: 1 },
+  { name: 'Lieutenant', short: 'LT', xp: 140, aim: 10, hp: 2, grenades: 2, ammo: 1 },
 ] as const;
+
+/** The Wall of Shame (M5.3): shame is cosmetic only (owner decision 2026-10-17). */
+export const SHAME = {
+  /** Deaths in a campaign before a marine's nickname gets worse. */
+  veteranDeaths: 3,
+} as const;
 
 /** Squad and enemy sizes for the skirmish. */
 export const SKIRMISH = {
