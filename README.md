@@ -36,7 +36,7 @@ Only with the owner's approval for each release.
 ```sh
 cp deploy/server.env.example deploy/server.env   # once; fill in the real values (git-ignored)
 git checkout main && git pull
-scripts/release.sh deploy --dry-run   # checks and build only
+scripts/release.sh deploy --dry-run   # checks and build only; a deploy needs one of this commit within the hour
 scripts/release.sh deploy             # upload, switch, smoke test (rolls back on failure)
 scripts/release.sh rollback           # back to the previous release
 scripts/release.sh activate <id>      # switch to a specific release
