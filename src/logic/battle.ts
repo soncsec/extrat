@@ -69,6 +69,8 @@ export interface Unit extends Point {
   rank: number;
   /** Enemies this unit has killed in this battle (for XP). */
   kills: number;
+  /** Shots and grenades of this unit that hit an enemy (kills included); marines earn XP for them. */
+  hits: number;
 }
 
 /** Health lost to poison at the start of a side's turn. */
@@ -193,9 +195,9 @@ export function createBattle(map: BattleMap, seed: number, setup: BattleSetup = 
       facing: 1,
       ap: ACTION_POINTS,
       move: UNITS.marine.move,
-      ammo: UNITS.marine.ammo,
+      ammo: UNITS.marine.ammo + rankOf(rank).ammo,
       overwatch: false,
-      grenades: GRENADE.perMarine,
+      grenades: GRENADE.perMarine + rankOf(rank).grenades,
       exposed: false,
       pod: null,
       dormant: false,
@@ -203,6 +205,7 @@ export function createBattle(map: BattleMap, seed: number, setup: BattleSetup = 
       freeSteps: 0,
       rank,
       kills: 0,
+      hits: 0,
     };
   });
   // Kinds come from their own generator, so the draw doesn't move where anyone stands.
@@ -230,6 +233,7 @@ export function createBattle(map: BattleMap, seed: number, setup: BattleSetup = 
       freeSteps: 0,
       rank: 0,
       kills: 0,
+      hits: 0,
     };
   });
   return {
@@ -520,9 +524,8 @@ function throwGrenade(state: BattleState, unitId: string, at: Point): BattleStat
   const facing = at.x === thrower.x ? thrower.facing : at.x > thrower.x ? 1 : -1;
   // Throwing uses all remaining action points, like a shot. Only enemies count as kills.
   const after = unitById(next, unitId) as Unit;
-  const kills = hits.filter(
-    (h) => h.killed && unitById(state, h.unitId)?.side !== thrower.side,
-  ).length;
+  const enemyHits = hits.filter((h) => unitById(state, h.unitId)?.side !== thrower.side);
+  const kills = enemyHits.filter((h) => h.killed).length;
   next = replaceUnit(next, {
     ...after,
     grenades: after.grenades - 1,
@@ -530,6 +533,7 @@ function throwGrenade(state: BattleState, unitId: string, at: Point): BattleStat
     facing,
     freeSteps: 0,
     kills: after.kills + kills,
+    hits: after.hits + enemyHits.length,
   });
   // A blast in the fog wakes the pod it lands on.
   const pods = [
@@ -598,7 +602,8 @@ function rollShot(
   const facing = target.x === shooter.x ? shooter.facing : target.x > shooter.x ? 1 : -1;
   const ammo = shooter.ammo === null ? null : shooter.ammo - 1;
   const kills = shooter.kills + (hp === 0 && target.hp > 0 ? 1 : 0);
-  let next = replaceUnit(state, { ...shooter, facing, ammo, kills });
+  const hits = shooter.hits + (hit && target.side !== shooter.side ? 1 : 0);
+  let next = replaceUnit(state, { ...shooter, facing, ammo, kills, hits });
   next = replaceUnit(next, { ...target, hp });
   // Abilities ride on aimed hits that leave the target standing, not on reactions.
   let pulledTo: Point | null = null;
@@ -860,9 +865,10 @@ function replaceUnit(state: BattleState, unit: Unit): BattleState {
   return { ...state, units: state.units.map((u) => (u.id === unit.id ? unit : u)) };
 }
 
-/** A full clip for this unit's weapon (null: it never needs reloading). */
+/** A full clip for this unit's weapon (null: it never needs reloading); ranks add to it. */
 export function clipSize(unit: Unit): number | null {
-  return UNITS[unit.kind].ammo;
+  const base = UNITS[unit.kind].ammo;
+  return base === null ? null : base + (unit.side === 'marine' ? rankOf(unit.rank).ammo : 0);
 }
 
 /** True if the unit can reload now: its turn, an action point, and a clip that isn't full. */
