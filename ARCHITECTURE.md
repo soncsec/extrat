@@ -84,5 +84,7 @@ Breadth-first search on the grid for movement ranges and paths (uniform tile cos
 
 The campaign state is saved as JSON in `localStorage` under one key, at the start of every turn and after every mission. The save carries a version number. On load it is parsed and checked against the expected shape; a corrupt or unknown save is discarded with a message offering a new campaign, never trusted. No personal data is stored. This replaces the template rule "localStorage holds only the high score" for this game.
 
+**Amended 2026-10-19 (owner approved):** the player's settings are kept under a second key, `extrat.settings`: a version number and whether sound is muted, nothing else. They are checked like the save; anything but exactly that shape gives the defaults.
+
 - **Alternative: IndexedDB.** More capacity than needed and a more complex API.
 - **Alternative: a server and accounts.** Breaks ADR-001 (static sites, no backend) and would add personal data.

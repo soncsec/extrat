@@ -507,10 +507,13 @@ test('a grenade blows down a tree to its trunk and clears small cover (M5.13)', 
   await expect.poll(async () => (await snapshot(page)).mode).toBe('grenade');
   await clickTile(page, x, y);
   await expect
-    .poll(async () => {
-      const t = await snapshot(page);
-      return `${t.units.find((u) => u.id === m.id)?.grenades},${t.busy}`;
-    })
+    .poll(
+      async () => {
+        const t = await snapshot(page);
+        return `${t.units.find((u) => u.id === m.id)?.grenades},${t.busy}`;
+      },
+      { timeout: 30_000 },
+    ) // the throw and blast animations, on a busy machine (T1)
     .toBe('0,false');
   const after = await snapshot(page);
   // The tree is a trunk now; nothing else in the blast is left as small cover.
@@ -652,10 +655,30 @@ test('sound effects are made while loading, and M mutes them (M6.1)', async ({ p
   const before = await audio();
   expect(before?.sounds.length).toBeGreaterThanOrEqual(15);
   expect(before?.muted).toBe(false);
+  // Keys are handled on the game's next frame, which a loaded CI runner can hold up (T1).
+  const slow = { timeout: 30_000 };
   await page.keyboard.press('m');
-  await expect.poll(async () => (await audio())?.muted).toBe(true);
+  await expect.poll(async () => (await audio())?.muted, slow).toBe(true);
   await page.keyboard.press('m');
-  await expect.poll(async () => (await audio())?.muted).toBe(false);
+  await expect.poll(async () => (await audio())?.muted, slow).toBe(false);
+});
+
+test('mute is remembered between visits; bad settings are ignored', async ({ page }) => {
+  await openGame(page, '?seed=42');
+  const muted = (): Promise<boolean | undefined> =>
+    page.evaluate(() => window.__game?.audio().muted);
+  await page.keyboard.press('m');
+  await expect.poll(muted).toBe(true);
+  await page.reload();
+  await waitForScene(page, 'Title');
+  expect(await muted()).toBe(true);
+  // Settings that aren't exactly ours give the defaults: sound on.
+  await page.evaluate(() =>
+    window.localStorage.setItem('extrat.settings', '{"v":1,"muted":"yes"}'),
+  );
+  await page.reload();
+  await waitForScene(page, 'Title');
+  expect(await muted()).toBe(false);
 });
 
 test('the End Turn button ends the turn', async ({ page }) => {
