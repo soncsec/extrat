@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ALIEN_KINDS, MAP_COLS, MAP_ROWS, MISSIONS, SKIRMISH } from '../../src/config/tuning';
+import { ALIEN_KINDS, BOSS, MAP_COLS, MAP_ROWS, MISSIONS, SKIRMISH } from '../../src/config/tuning';
 import { createBattle, MARINE_NAMES } from '../../src/logic/battle';
 import {
   afterBattle,
@@ -67,12 +67,22 @@ describe('afterBattle', () => {
 });
 
 describe('missions', () => {
-  it('ramp up gently: never fewer aliens than the mission before', () => {
-    const sizes = MISSIONS.map((m) => m.pods.count * m.pods.size);
+  it('ramp up gently: never fewer aliens than the mission before, up to the boss', () => {
+    // The final mission is the boss and its escorts instead (M5.6, approved design):
+    // fewer aliens, but the Overseer itself. Tested below.
+    const ramp = MISSIONS.filter((m) => !('boss' in m && m.boss));
+    expect(ramp).toHaveLength(MISSIONS.length - 1);
+    const sizes = ramp.map((m) => m.pods.count * m.pods.size);
     for (let i = 1; i < sizes.length; i++) {
       expect(sizes[i]).toBeGreaterThanOrEqual(sizes[i - 1] as number);
     }
     expect(sizes[sizes.length - 1]).toBeGreaterThan(sizes[0] as number);
+  });
+
+  it('end with the boss and its escorts on the alien ship (M5.6)', () => {
+    const last = MISSIONS[MISSIONS.length - 1] as (typeof MISSIONS)[number];
+    expect(last).toMatchObject({ landscape: 'ship', boss: true, pods: BOSS.escorts });
+    expect(MISSIONS.filter((m) => 'boss' in m && m.boss)).toHaveLength(1);
   });
 
   // 1,200 battles: about 1.5 s on a desktop but over 5 s on CI runners, so this test
@@ -82,9 +92,15 @@ describe('missions', () => {
       for (let seed = 1; seed <= 200; seed++) {
         const map = generateMap(seed, MAP_COLS, MAP_ROWS, m.landscape);
         expect(map.landscape ?? 'forest').toBe(m.landscape);
-        const b = createBattle(map, map.seed, { pods: m.pods });
+        const boss = 'boss' in m && m.boss;
+        const b = createBattle(map, map.seed, { pods: m.pods, boss });
         const aliens = b.units.filter((u) => u.side === 'alien');
-        expect(aliens, `seed ${seed}`).toHaveLength(m.pods.count * m.pods.size);
+        // The boss (M5.6) stands in a group of its own, beside its escorts.
+        expect(aliens, `seed ${seed}`).toHaveLength(m.pods.count * m.pods.size + (boss ? 1 : 0));
+        expect(
+          aliens.filter((a) => a.kind === 'overseer'),
+          `seed ${seed}`,
+        ).toHaveLength(boss ? 1 : 0);
         for (let pod = 0; pod < m.pods.count; pod++) {
           expect(
             aliens.filter((a) => a.pod === pod),
