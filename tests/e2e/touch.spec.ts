@@ -1,5 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
-import { GAME_HEIGHT, GAME_WIDTH, TILE } from '../../src/config/tuning';
+import { GAME_WIDTH, HUD_SIDE_WIDTH, MAP_WIDTH, TILE } from '../../src/config/tuning';
+import { designFit, layoutFor, TITLE_ROWS } from '../../src/logic/layout';
+
+/** Phones: the info panel beside the map; menus centred side to side (owner, 2026-10-19). */
+const PHONE = layoutFor(true);
+const MENU = designFit(PHONE).view;
+/** START on the title screen, in canvas pixels. */
+const START = { x: GAME_WIDTH / 2 - MENU.x, y: TITLE_ROWS.short.fresh[0] };
 import type { GameSnapshot } from '../../src/scenes/BattleScene';
 
 /**
@@ -24,7 +31,7 @@ async function waitForScene(page: Page, key: string): Promise<void> {
 async function tapTile(page: Page, x: number, y: number): Promise<void> {
   const box = await page.locator('#game canvas').boundingBox();
   if (!box) throw new Error('no canvas');
-  const zoom = box.width / GAME_WIDTH;
+  const zoom = box.height / PHONE.height;
   await page.touchscreen.tap(
     box.x + (x * TILE + TILE / 2) * zoom,
     box.y + (y * TILE + TILE / 2) * zoom,
@@ -35,28 +42,63 @@ async function tapTile(page: Page, x: number, y: number): Promise<void> {
 async function tapAt(page: Page, gx: number, gy: number): Promise<void> {
   const box = await page.locator('#game canvas').boundingBox();
   if (!box) throw new Error('no canvas');
-  const zoom = box.width / GAME_WIDTH;
+  const zoom = box.height / PHONE.height;
   await page.touchscreen.tap(box.x + gx * zoom, box.y + gy * zoom);
 }
 
-test('a phone shows the game bigger than 1x, and every art pixel on whole screen pixels', async ({
+test('a phone shows the game as large as the screen allows (owner, 2026-10-19)', async ({
   page,
 }) => {
   await page.goto('./?seed=42');
   await waitForScene(page, 'Title');
   const box = await page.locator('#game canvas').boundingBox();
   if (!box) throw new Error('no canvas');
-  const zoom = box.width / GAME_WIDTH;
-  expect(zoom).toBeCloseTo(4 / 3, 2);
-  expect(Math.abs(zoom * 3 - Math.round(zoom * 3))).toBeLessThan(0.01);
+  // The phone layout (map plus side panel) fills the 844 x 390 screen on one side.
+  const zoom = box.height / PHONE.height;
+  expect(zoom).toBeCloseTo(Math.min(844 / PHONE.width, 390 / PHONE.height), 2);
+  expect(Math.max(box.width / 844, box.height / 390)).toBeCloseTo(1, 2);
+  expect(box.width).toBeLessThanOrEqual(844);
   expect(box.height).toBeLessThanOrEqual(390);
-  expect(box.height).toBeCloseTo(GAME_HEIGHT * zoom, 0);
+  expect(box.width).toBeCloseTo(PHONE.width * zoom, 0);
+});
+
+test('a second tap a little off the previewed tile still makes the move', async ({ page }) => {
+  await page.goto('./?seed=42');
+  await waitForScene(page, 'Title');
+  await tapAt(page, START.x, START.y);
+  await waitForScene(page, 'Battle');
+  const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
+  if (!marine) throw new Error('no marine');
+  await tapTile(page, marine.x, marine.y);
+  await expect.poll(async () => (await snapshot(page)).selected).toBe(marine.id);
+  const dest = (await snapshot(page)).reachable.find((t) => t.cost === 1);
+  if (!dest) throw new Error('nowhere to move');
+  await tapTile(page, dest.x, dest.y);
+  expect((await snapshot(page)).pending).toEqual({ x: dest.x, y: dest.y });
+  // A fingertip lands just over the tile's edge (4 art pixels past it): still a yes.
+  await tapAt(page, (dest.x + 1) * TILE + 4, dest.y * TILE + TILE / 2);
+  await expect.poll(async () => (await snapshot(page)).busy, { timeout: 20_000 }).toBe(false);
+  const moved = await snapshot(page);
+  expect(moved.units.find((u) => u.id === marine.id)).toMatchObject({ x: dest.x, y: dest.y });
+});
+
+test('the page never scrolls, so taps keep landing where the finger is', async ({ page }) => {
+  await page.goto('./?seed=42');
+  await waitForScene(page, 'Title');
+  const css = await page.evaluate(() => ({
+    body: getComputedStyle(document.body).position,
+    touch: getComputedStyle(document.documentElement).touchAction,
+  }));
+  expect(css).toEqual({ body: 'fixed', touch: 'none' });
+  // Nothing on the page is taller than the screen, so there is nothing to scroll to.
+  await page.evaluate(() => window.scrollTo(0, 400));
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
 });
 
 test('a tap on a tile shows the move; a second tap on it makes the move', async ({ page }) => {
   await page.goto('./?seed=42');
   await waitForScene(page, 'Title');
-  await tapAt(page, GAME_WIDTH / 2, 172); // START MISSION
+  await tapAt(page, START.x, START.y); // START MISSION
   await waitForScene(page, 'Battle');
   // With nothing selected, the prompt says TAP, not CLICK (T3).
   await page.keyboard.press('Escape');
@@ -87,7 +129,7 @@ test('a tap on a tile shows the move; a second tap on it makes the move', async 
 test('tapping a different tile moves the preview instead of moving', async ({ page }) => {
   await page.goto('./?seed=42');
   await waitForScene(page, 'Title');
-  await tapAt(page, GAME_WIDTH / 2, 172);
+  await tapAt(page, START.x, START.y);
   await waitForScene(page, 'Battle');
   const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
   if (!marine) throw new Error('no marine');
@@ -105,13 +147,13 @@ test('tapping a different tile moves the preview instead of moving', async ({ pa
 test('the ? button opens the help, and a tap turns its pages and closes it', async ({ page }) => {
   await page.goto('./?seed=42');
   await waitForScene(page, 'Title');
-  await tapAt(page, GAME_WIDTH / 2, 172);
+  await tapAt(page, START.x, START.y);
   await waitForScene(page, 'Battle');
-  await tapAt(page, GAME_WIDTH - 10, 10);
+  await tapAt(page, MAP_WIDTH - 10, 10);
   await expect.poll(() => page.evaluate(() => window.__game?.scenes() ?? [])).toContain('Help');
   // The tap that opened it doesn't also turn the page or move anyone.
-  await tapAt(page, GAME_WIDTH / 2, GAME_HEIGHT / 2);
-  await tapAt(page, GAME_WIDTH / 2, GAME_HEIGHT / 2);
+  await tapAt(page, PHONE.width / 2, PHONE.height / 2);
+  await tapAt(page, PHONE.width / 2, PHONE.height / 2);
   await expect.poll(() => page.evaluate(() => window.__game?.scenes() ?? [])).not.toContain('Help');
   await waitForScene(page, 'Battle');
 });
@@ -135,7 +177,7 @@ test('a tap during the alien turn fast-forwards it, and the speed resets after (
   test.setTimeout(60_000);
   await page.goto('./?seed=7');
   await waitForScene(page, 'Title');
-  await tapAt(page, GAME_WIDTH / 2, 172); // START MISSION
+  await tapAt(page, START.x, START.y); // START MISSION
   await waitForScene(page, 'Battle');
   // The alien turn here is short (the pods are dormant), and on a loaded machine a tap
   // could land after it ends. At a quarter speed it lasts long enough; the tap's
@@ -147,4 +189,25 @@ test('a tap during the alien turn fast-forwards it, and the speed resets after (
   await expect.poll(async () => (await snapshot(page)).fast).toBe(true);
   await expect.poll(async () => (await snapshot(page)).busy, { timeout: 40_000 }).toBe(false);
   expect((await snapshot(page)).fast).toBe(false);
+});
+
+test('on a phone the buttons sit beside the map; tapping END TURN ends the turn', async ({
+  page,
+}) => {
+  await page.goto('./?seed=42');
+  await waitForScene(page, 'Title');
+  await tapAt(page, START.x, START.y);
+  await waitForScene(page, 'Battle');
+  // END TURN is the bottom button of the panel to the right of the map.
+  await tapAt(page, MAP_WIDTH + HUD_SIDE_WIDTH / 2, PHONE.height - 12);
+  await expect.poll(async () => (await snapshot(page)).busy).toBe(true);
+  await expect
+    .poll(
+      async () => {
+        const s = await snapshot(page);
+        return !s.busy && s.round === 2;
+      },
+      { timeout: 40_000 },
+    )
+    .toBe(true);
 });

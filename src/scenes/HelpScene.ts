@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
-import { GAME_HEIGHT, GAME_WIDTH } from '../config/tuning';
+import { isShort } from '../logic/layout';
+import { fitDesign, LAYOUT } from './layout';
+import { GAME_WIDTH } from '../config/tuning';
 import { PixelText, pixelText } from './pixelFont';
 
 /** The help pages: what to do, the alien types, and the keys. */
@@ -65,17 +67,27 @@ export class HelpScene extends Phaser.Scene {
     this.from = data.from ?? 'Battle';
     this.page = 0;
     const cx = GAME_WIDTH / 2;
-    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x05070f, 0.82).setOrigin(0);
+    const view = fitDesign(this);
+    // Phones are shorter: the same pages, closer to the edges.
+    const short = isShort(LAYOUT);
+    this.add.rectangle(view.x, view.y, view.width, view.height, 0x05070f, 0.82).setOrigin(0);
     this.add
-      .rectangle(cx, GAME_HEIGHT / 2, GAME_WIDTH - 16, GAME_HEIGHT - 16, 0x0b0e15, 0.97)
+      .rectangle(
+        cx,
+        view.height / 2,
+        GAME_WIDTH - 16,
+        view.height - (short ? 6 : 16),
+        0x0b0e15,
+        0.97,
+      )
       .setStrokeStyle(1, 0x3d4760);
-    this.title = pixelText(this, cx, 22, '', 0xf2a33a, 2);
-    this.body = new PixelText(this, 18, 40, '', {
+    this.title = pixelText(this, cx, short ? 15 : 22, '', 0xf2a33a, 2);
+    this.body = new PixelText(this, 18, short ? 27 : 40, '', {
       color: 0xdfe4ec,
       align: 'left',
       valign: 'top',
     });
-    this.footer = pixelText(this, cx, GAME_HEIGHT - 20, '', 0xa3adbd);
+    this.footer = pixelText(this, cx, view.height - (short ? 10 : 20), '', 0xa3adbd);
     this.show(0);
 
     // The H press that opened this screen may still be waiting in Phaser's key queue:

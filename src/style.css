@@ -6,6 +6,19 @@ body {
   overflow: hidden;
 }
 
+/* The page never moves: on an iPhone a swipe beside the game could scroll or bounce the
+   page, leaving the game's idea of where its canvas sits behind, so taps missed. */
+body {
+  position: fixed;
+  inset: 0;
+}
+
+html,
+body,
+#game {
+  touch-action: none;
+}
+
 #game {
   width: 100%;
   height: 100%;

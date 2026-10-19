@@ -10,8 +10,23 @@ export const MAP_ROWS = 14;
 /** Height of the info bar under the map, in art pixels. */
 export const HUD_HEIGHT = 32;
 
-export const GAME_WIDTH = MAP_COLS * TILE;
-export const GAME_HEIGHT = MAP_ROWS * TILE + HUD_HEIGHT;
+/** The map in art pixels. */
+export const MAP_WIDTH = MAP_COLS * TILE;
+export const MAP_HEIGHT = MAP_ROWS * TILE;
+
+/**
+ * The game as designed, with the info bar under the map: the desktop canvas, and the
+ * size every menu screen is laid out for.
+ */
+export const GAME_WIDTH = MAP_WIDTH;
+export const GAME_HEIGHT = MAP_HEIGHT + HUD_HEIGHT;
+
+/**
+ * Width of the info panel beside the map on phones and tablets (owner decision
+ * 2026-10-19), so the map gets the screen's full height: a sideways phone is much wider
+ * than the game.
+ */
+export const HUD_SIDE_WIDTH = 104;
 
 /** Seed for the random number generator; override with ?seed= in the URL. */
 export const DEFAULT_SEED = 1;
@@ -337,6 +352,15 @@ export const AI = {
 
 /** Action points each unit gets at the start of its side's turn. A move costs 1. */
 export const ACTION_POINTS = 2;
+
+/** Touchscreens (M5.7). */
+export const TOUCH = {
+  /**
+   * Art pixels around a previewed tile that still count as tapping it again (to make
+   * the move or throw): a fingertip is wider than a tile on a phone (owner, 2026-10-19).
+   */
+  confirmSlop: 6,
+} as const;
 
 /** Presentation speeds. */
 export const ANIMATION = {

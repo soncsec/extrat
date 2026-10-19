@@ -30,3 +30,21 @@ export function pixelZoom(
   const ratio = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
   return integerZoom(viewWidth * ratio, viewHeight * ratio, gameWidth, gameHeight) / ratio;
 }
+
+/**
+ * The zoom that makes the game as large as the window allows, whole number or not
+ * (owner decision 2026-10-19, for phones: an iPhone showed the game at about half the
+ * screen). Art pixels may come out a hair uneven, which a phone's dense screen hides.
+ * Never below `min`, and never a non-number.
+ */
+export function fitZoom(
+  viewWidth: number,
+  viewHeight: number,
+  gameWidth: number,
+  gameHeight: number,
+  min = 1,
+): number {
+  if (gameWidth <= 0 || gameHeight <= 0) throw new RangeError('game size must be positive');
+  const fit = Math.min(viewWidth / gameWidth, viewHeight / gameHeight);
+  return Number.isFinite(fit) && fit > min ? fit : min;
+}
