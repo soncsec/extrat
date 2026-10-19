@@ -479,6 +479,45 @@ test('G enters grenade mode and Esc leaves it', async ({ page }) => {
   await page.keyboard.press('Escape'); // and Esc again deselects
 });
 
+test('a grenade blows down a tree to its trunk and clears small cover (M5.13)', async ({
+  page,
+}) => {
+  await openGame(page, '?seed=42');
+  const s = await snapshot(page);
+  const marines = s.units.filter((u) => u.side === 'marine');
+  // A tree in the field, in range of a marine and away from the whole squad.
+  let target: { m: (typeof marines)[number]; x: number; y: number } | undefined;
+  for (let i = 2 * MAP_COLS; i < s.layout.length && !target; i++) {
+    if (!'po'.includes(s.layout[i] as string)) continue;
+    const x = i % MAP_COLS;
+    const y = Math.floor(i / MAP_COLS);
+    if (marines.some((m) => Math.hypot(m.x - x, m.y - y) < 3)) continue;
+    const m = marines.find((u) => Math.hypot(u.x - x, u.y - y) <= 8);
+    if (m) target = { m, x, y };
+  }
+  if (!target) throw new Error('no tree in throwing range on map 42');
+  const { m, x, y } = target;
+  await clickTile(page, m.x, m.y);
+  await page.keyboard.press('g');
+  await expect.poll(async () => (await snapshot(page)).mode).toBe('grenade');
+  await clickTile(page, x, y);
+  await expect
+    .poll(async () => {
+      const t = await snapshot(page);
+      return `${t.units.find((u) => u.id === m.id)?.grenades},${t.busy}`;
+    })
+    .toBe('0,false');
+  const after = await snapshot(page);
+  // The tree is a trunk now; nothing else in the blast is left as small cover.
+  expect(after.layout[y * MAP_COLS + x]).toBe('t');
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const ch = after.layout[(y + dy) * MAP_COLS + x + dx];
+      if (y + dy >= 2) expect('rs', `${x + dx},${y + dy}`).not.toContain(ch);
+    }
+  }
+});
+
 test('a grenade hits an alien for 2 and leaves it exposed', async ({ page }) => {
   // Plays a whole alien turn with animations: near 30 s on a loaded machine (T1).
   test.setTimeout(60_000);

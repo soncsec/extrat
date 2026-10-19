@@ -24,7 +24,8 @@ export type PropKind =
   | 'crate'
   | 'console'
   | 'wreck'
-  | 'scrap';
+  | 'scrap'
+  | 'trunk';
 export type Cover = 'half' | 'full';
 
 export interface PropInfo {
@@ -32,31 +33,38 @@ export interface PropInfo {
   width: number;
   height: number;
   cover: Cover;
+  /**
+   * What a grenade does to it (M5.13, owner 2026-10-19): 'cleared' (small cover is
+   * blown away), 'trunk' (a tree is blown down to its trunk) or 'stands' (too big).
+   */
+  blast: 'cleared' | 'trunk' | 'stands';
 }
 
 export const PROPS: Readonly<Record<PropKind, PropInfo>> = {
-  pine: { width: 1, height: 1, cover: 'full' },
-  oak: { width: 1, height: 1, cover: 'full' },
-  boulder: { width: 2, height: 1, cover: 'full' },
-  rocks: { width: 1, height: 1, cover: 'half' },
-  bush: { width: 1, height: 1, cover: 'half' },
+  pine: { width: 1, height: 1, cover: 'full', blast: 'trunk' },
+  oak: { width: 1, height: 1, cover: 'full', blast: 'trunk' },
+  boulder: { width: 2, height: 1, cover: 'full', blast: 'stands' },
+  rocks: { width: 1, height: 1, cover: 'half', blast: 'cleared' },
+  bush: { width: 1, height: 1, cover: 'half', blast: 'cleared' },
   // Town (M4.3). A house's walls fill its footprint; its roof is drawn above it.
-  house: { width: 5, height: 3, cover: 'full' },
-  autumn: { width: 1, height: 1, cover: 'full' },
-  cypress: { width: 1, height: 1, cover: 'full' },
-  stump: { width: 2, height: 1, cover: 'half' },
-  shrub: { width: 1, height: 1, cover: 'half' },
-  stone: { width: 1, height: 1, cover: 'half' },
-  ledge: { width: 1, height: 1, cover: 'half' },
+  house: { width: 5, height: 3, cover: 'full', blast: 'stands' },
+  autumn: { width: 1, height: 1, cover: 'full', blast: 'trunk' },
+  cypress: { width: 1, height: 1, cover: 'full', blast: 'trunk' },
+  stump: { width: 2, height: 1, cover: 'half', blast: 'stands' },
+  shrub: { width: 1, height: 1, cover: 'half', blast: 'cleared' },
+  stone: { width: 1, height: 1, cover: 'half', blast: 'cleared' },
+  ledge: { width: 1, height: 1, cover: 'half', blast: 'cleared' },
   // Alien ship (M4.3). The hull wall lines the top; a specimen tank stands on 3 x 2.
-  hull: { width: 1, height: 1, cover: 'full' },
-  tank: { width: 3, height: 2, cover: 'full' },
-  pillar: { width: 1, height: 1, cover: 'full' },
-  crate: { width: 1, height: 1, cover: 'half' },
-  console: { width: 1, height: 1, cover: 'half' },
+  hull: { width: 1, height: 1, cover: 'full', blast: 'stands' },
+  tank: { width: 3, height: 2, cover: 'full', blast: 'stands' },
+  pillar: { width: 1, height: 1, cover: 'full', blast: 'stands' },
+  crate: { width: 1, height: 1, cover: 'half', blast: 'cleared' },
+  console: { width: 1, height: 1, cover: 'half', blast: 'cleared' },
   // Crash site (M4.3): a torn hull section on 3 x 2, and scrap strewn around it.
-  wreck: { width: 3, height: 2, cover: 'full' },
-  scrap: { width: 1, height: 1, cover: 'half' },
+  wreck: { width: 3, height: 2, cover: 'full', blast: 'stands' },
+  scrap: { width: 1, height: 1, cover: 'half', blast: 'cleared' },
+  // What's left of a tree a grenade blew down: half cover, cleared by another blast.
+  trunk: { width: 1, height: 1, cover: 'half', blast: 'cleared' },
 };
 
 export interface Tile {
@@ -83,6 +91,12 @@ export interface BattleMap {
   /** Row-major: tile (x, y) is at y * cols + x. */
   tiles: Tile[];
   decals: Decal[];
+  /**
+   * Tiles (y * cols + x) where a grenade wrecked cover (M5.13), in the order it
+   * happened, each once: drawn scorched, and saved, since the map is rebuilt from its
+   * seed. Missing until a blast changes something.
+   */
+  wrecked?: number[];
 }
 
 export interface ForestOptions {
@@ -348,4 +362,47 @@ function stamp(
 function scatter(count: number, tryPlace: () => boolean): void {
   let placed = 0;
   for (let tries = 0; placed < count && tries < count * 20; tries++) if (tryPlace()) placed++;
+}
+
+/** A tile whose prop a blast changed: blown away (null) or down to a trunk. */
+export interface Wreck extends Point {
+  to: 'trunk' | null;
+}
+
+/**
+ * What a blast does to the props within `radius` of `at` (M5.13): small cover is blown
+ * away, trees are blown down to a trunk (half cover), a trunk is blown away. Props
+ * bigger than a tile (houses, wrecks, tanks, boulders) and the edge rows stand.
+ */
+export function blastProps(
+  map: BattleMap,
+  at: Point,
+  radius: number,
+  opts: ForestOptions = FOREST,
+): { map: BattleMap; wrecks: Wreck[] } {
+  const wrecks: Wreck[] = [];
+  const tiles = [...map.tiles];
+  const wrecked = [...(map.wrecked ?? [])];
+  const r = Math.ceil(radius);
+  for (let y = Math.max(opts.treeLineRows, at.y - r); y <= Math.min(map.rows - 1, at.y + r); y++) {
+    for (let x = Math.max(0, at.x - r); x <= Math.min(map.cols - 1, at.x + r); x++) {
+      if (Math.hypot(x - at.x, y - at.y) > radius) continue;
+      const i = y * map.cols + x;
+      const to = blastOutcome(tiles[i]?.prop ?? null);
+      if (to === undefined) continue;
+      tiles[i] = to === null ? { prop: null, anchor: false } : { prop: to, anchor: true };
+      if (!wrecked.includes(i)) wrecked.push(i);
+      wrecks.push({ x, y, to });
+    }
+  }
+  if (wrecks.length === 0) return { map, wrecks };
+  return { map: { ...map, tiles, wrecked }, wrecks };
+}
+
+/** What a blast leaves of a prop: null (nothing), 'trunk', or undefined (unchanged). */
+export function blastOutcome(prop: PropKind | null): 'trunk' | null | undefined {
+  if (prop === null) return undefined;
+  const info = PROPS[prop];
+  if (info.width !== 1 || info.height !== 1 || info.blast === 'stands') return undefined;
+  return info.blast === 'trunk' ? 'trunk' : null;
 }
