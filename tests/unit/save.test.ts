@@ -16,6 +16,12 @@ import {
 const buildMap = (c: Campaign): BattleMap =>
   generateMap(c.mapSeed, MAP_COLS, MAP_ROWS, currentMission(c).landscape);
 
+/** True if the campaign's current mission fields the boss (M5.6). */
+function bossMission(campaign: Campaign): boolean {
+  const mission = currentMission(campaign);
+  return 'boss' in mission && mission.boss;
+}
+
 /** Mission `n` of campaign 11, and its battle as it starts. */
 function setup(n = 0): { campaign: Campaign; battle: BattleState } {
   let campaign = newCampaign(11);
@@ -25,6 +31,7 @@ function setup(n = 0): { campaign: Campaign; battle: BattleState } {
     names: campaign.squad,
     pods: currentMission(campaign).pods,
     kinds: currentMission(campaign).kinds,
+    boss: bossMission(campaign),
   });
   return { campaign, battle };
 }

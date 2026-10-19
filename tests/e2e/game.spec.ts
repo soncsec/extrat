@@ -786,9 +786,38 @@ test('winning all six missions completes the campaign', async ({ page }) => {
       await waitForScene(page, 'Battle');
     }
   }
-  // The gentle ramp: 4, 4, 6, 6, 9, 9 aliens.
-  expect(alienCounts).toEqual([4, 4, 6, 6, 9, 9]);
+  // The gentle ramp: 4, 4, 6, 6, 9 aliens; mission 6 is the boss and its two escort
+  // groups (M5.6).
+  expect(alienCounts).toEqual([4, 4, 6, 6, 9, 5]);
   // The briefing now shows the campaign victory; Enter goes back to the title.
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Title');
+});
+
+test('in the final mission, killing the boss alone wins the campaign (M5.6)', async ({ page }) => {
+  test.setTimeout(120_000);
+  await openGame(page, '?campaign=7');
+  for (let mission = 0; mission < 5; mission++) {
+    await wipeOut(page, 'alien');
+    await page.keyboard.press('Enter');
+    await waitForScene(page, 'Briefing');
+    await page.keyboard.press('Enter');
+    await waitForScene(page, 'Battle');
+  }
+  const s = await snapshot(page);
+  expect(s.campaign?.mission).toBe(5);
+  // On the alien ship: its hull lines the top row.
+  expect(s.layout.slice(0, MAP_COLS)).toBe('h'.repeat(MAP_COLS));
+  const boss = s.units.find((u) => u.kind === 'overseer');
+  if (!boss) throw new Error('no boss in the final mission');
+  // Only the boss goes down; its escorts are still standing.
+  await page.evaluate((id) => window.__game?.setHp(id, 0), boss.id);
+  await expect.poll(() => activeScenes(page)).toContain('Result');
+  const after = await snapshot(page);
+  expect(after.units.filter((u) => u.side === 'alien' && u.hp > 0).length).toBeGreaterThan(0);
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Briefing');
+  // The briefing shows the campaign victory; Enter goes back to the title.
   await page.keyboard.press('Enter');
   await waitForScene(page, 'Title');
 });

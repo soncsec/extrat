@@ -82,15 +82,19 @@ export const MISSIONS = [
     pods: { count: 3, size: 3 },
     kinds: ['walker', 'flyer', 'lizard', 'snake'],
   },
+  // The final mission (M5.6, docs/boss-design.md): the Overseer on the alien ship, with
+  // its escorts (BOSS.escorts: a test keeps the two the same).
   {
     landscape: 'ship',
-    pods: { count: 3, size: 3 },
+    pods: { count: 2, size: 2 },
     kinds: ['walker', 'flyer', 'lizard', 'snake'],
+    boss: true,
   },
 ] as const satisfies readonly {
   landscape: string;
   pods: { count: number; size: number };
   kinds: readonly (typeof ALIEN_KINDS)[number][];
+  boss?: boolean;
 }[];
 
 /**
