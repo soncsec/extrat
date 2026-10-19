@@ -35,3 +35,5 @@ List every file copied into `public/assets/` here, one per line, as its path fro
 - `assets/ship/tank-3.png`: Warped, Scifi Lab (specimen tank 3)
 
 Drawn for Extrat in the Top-Down Dungeon Sci-Fi palette (no file; painted when the game loads, `src/scenes/shipArt.ts`): the ship's crate, console and bulkhead pillar.
+
+Drawn for Extrat in the same palette, with soot and ember colours (no file; painted when the game loads on top of the forest tileset, `src/scenes/crashArt.ts`): the crash site's hull wreck, scrap and scorch marks.

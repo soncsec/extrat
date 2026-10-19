@@ -3,6 +3,7 @@ import { FOREST, MAP_COLS, MAP_ROWS } from '../../src/config/tuning';
 import {
   chunkCell,
   FOREST_CHUNKS,
+  CRASH_CHUNKS,
   SHIP_CHUNKS,
   TOWN_CHUNKS,
   type Chunk,
@@ -431,5 +432,78 @@ describe('alien ship landscape (M4.3)', () => {
 
   it('is a landscape name the URL accepts', () => {
     expect(landscapeId('ship')).toBe('ship');
+  });
+});
+
+describe('crash site landscape (M4.3)', () => {
+  const crash = (seed: number): BattleMap => generateMap(seed, MAP_COLS, MAP_ROWS, 'crash');
+  const all = [...CRASH_CHUNKS.spawn, ...CRASH_CHUNKS.field];
+
+  it('makes a valid crash site map for 1,000 seeds', () => {
+    for (let seed = 1; seed <= 1000; seed++) {
+      const map = crash(seed);
+      expect(map.landscape).toBe('crash');
+      expect(validateMap(map), `seed ${seed}`).toEqual([]);
+    }
+  }, 30_000);
+
+  it('has chunks of the right size whose wrecks fill exactly their 3 x 2 footprint', () => {
+    for (const c of all) {
+      expect(c.rows, c.name).toHaveLength(FOREST.chunk.height);
+      const cells = c.rows.map((row) => [...row]);
+      const covered = new Set<string>();
+      cells.forEach((row, j) => {
+        expect(row, c.name).toHaveLength(FOREST.chunk.width);
+        row.forEach((ch, i) => {
+          expect(() => chunkCell(ch), `${c.name}: '${ch}'`).not.toThrow();
+          if (ch !== 'W') return;
+          expect(c.upright, `${c.name} has a wreck, so it must stay upright`).toBe(true);
+          for (let dy = 0; dy < PROPS.wreck.height; dy++) {
+            for (let dx = 0; dx < PROPS.wreck.width; dx++) {
+              expect(cells[j - dy]?.[i + dx], `${c.name} footprint`).toBe(dx || dy ? '=' : 'W');
+              covered.add(`${i + dx},${j - dy}`);
+            }
+          }
+        });
+      });
+      cells.forEach((row, j) =>
+        row.forEach((ch, i) => {
+          if (ch === '=') expect(covered.has(`${i},${j}`), `${c.name} stray '='`).toBe(true);
+        }),
+      );
+    }
+  });
+
+  it('keeps wrecks and trees out of the spawn chunks', () => {
+    for (const c of CRASH_CHUNKS.spawn) expect(c.rows.join(''), c.name).not.toMatch(/[Wpo#]/);
+  });
+
+  it('keeps every wreck whole on 300 maps; wrecks and scrap do show up', () => {
+    let wrecks = 0;
+    let scrap = 0;
+    for (let seed = 1; seed <= 300; seed++) {
+      const map = crash(seed);
+      map.tiles.forEach((t, i) => {
+        if (t.prop === 'scrap') scrap++;
+        if (t.prop !== 'wreck' || !t.anchor) return;
+        wrecks++;
+        const x = i % map.cols;
+        const y = Math.floor(i / map.cols);
+        for (let dy = 0; dy < PROPS.wreck.height; dy++) {
+          for (let dx = 0; dx < PROPS.wreck.width; dx++) {
+            expect(tileAt(map, x + dx, y - dy)?.prop, `seed ${seed}`).toBe('wreck');
+          }
+        }
+      });
+      const anchors = map.tiles.filter((t) => t.prop === 'wreck' && t.anchor).length;
+      const tiles = map.tiles.filter((t) => t.prop === 'wreck').length;
+      expect(tiles).toBe(anchors * PROPS.wreck.width * PROPS.wreck.height);
+    }
+    expect(wrecks).toBeGreaterThan(100);
+    expect(scrap).toBeGreaterThan(300);
+  });
+
+  it('is a known landscape name in the URL', () => {
+    expect(landscapeId('crash')).toBe('crash');
   });
 });

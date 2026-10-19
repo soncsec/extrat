@@ -1,8 +1,8 @@
-import { FOREST_CHUNKS, SHIP_CHUNKS, TOWN_CHUNKS, type ChunkSet } from './chunks';
+import { CRASH_CHUNKS, FOREST_CHUNKS, SHIP_CHUNKS, TOWN_CHUNKS, type ChunkSet } from './chunks';
 import type { PropKind } from './map';
 
 /** The landscapes a mission can be fought in (more come with M4.3). */
-export type LandscapeId = 'forest' | 'town' | 'ship';
+export type LandscapeId = 'forest' | 'town' | 'crash' | 'ship';
 
 /** What a landscape's maps are made of. The art for each prop is in the scenes. */
 export interface Landscape {
@@ -39,6 +39,16 @@ export const LANDSCAPES: Readonly<Record<LandscapeId, Landscape>> = {
     maybeTree: ['autumn', 'cypress'],
     maybeCover: ['shrub', 'stone'],
     scatter: ['shrub', 'stone'],
+  },
+  crash: {
+    id: 'crash',
+    name: 'Crash site',
+    edge: 'pine',
+    chunks: CRASH_CHUNKS,
+    maybeTree: ['pine', 'oak'],
+    // Rocks first: a little less scrap than the forest has bushes, so the field isn't cluttered.
+    maybeCover: ['rocks', 'scrap'],
+    scatter: ['rocks', 'scrap'],
   },
   ship: {
     id: 'ship',

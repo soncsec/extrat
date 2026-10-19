@@ -4,6 +4,9 @@ import type { LandscapeId } from '../logic/landscapes';
 import type { PropKind } from '../logic/map';
 import { SHIP_TEXTURE } from './shipArt';
 
+/** The crash site's texture (crashArt.ts builds it from the forest sheet and drawn pieces). */
+export const CRASH_KEY = 'crash';
+
 /** Where each piece of art sits in its sheet. Pixel rectangles measured from the files. */
 export const FOREST_SHEET = {
   key: 'forest',
@@ -76,6 +79,17 @@ export const LANDSCAPE_ART: Readonly<Record<LandscapeId, LandscapeArt>> = {
     ],
     decals: ['path', 'townFlowers'],
     prop: (kind, x, y) => (kind === 'shrub' ? alternate('shrubA', 'shrubB', x, y) : kind),
+  },
+  crash: {
+    key: CRASH_KEY,
+    ground: ['grass'],
+    decals: ['scorchA', 'scorchB'],
+    prop: (kind, x, y) => {
+      if (kind === 'bush') return alternate('bushA', 'bushB', x, y);
+      if (kind === 'scrap') return alternate('scrapA', 'scrapB', x, y);
+      if (kind === 'wreck') return alternate('wreck', 'wreckB', x, y);
+      return kind;
+    },
   },
   ship: {
     key: SHIP_TEXTURE.key,

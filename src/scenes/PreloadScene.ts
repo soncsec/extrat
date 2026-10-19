@@ -24,6 +24,7 @@ import {
   WALKER_SHEET,
   WALKER_WALK_SHEET,
 } from './art';
+import { CRASH_FRAMES, CRASH_TEXTURE, buildCrashTexture } from './crashArt';
 import { SHIP_FRAMES, SHIP_SOURCES, SHIP_TEXTURE, buildShipTexture } from './shipArt';
 
 export const CHARACTER_SHEETS = [
@@ -74,6 +75,8 @@ export class PreloadScene extends Phaser.Scene {
     addFrames(this.textures, TOWN_SHEET.key, TOWN_SHEET.frames);
     buildShipTexture(this.textures);
     addFrames(this.textures, SHIP_TEXTURE.key, SHIP_FRAMES);
+    buildCrashTexture(this.textures);
+    addFrames(this.textures, CRASH_TEXTURE.key, CRASH_FRAMES);
     for (const s of CHARACTER_SHEETS) addAnims(this.anims, s);
     for (const e of Object.values(EFFECTS)) {
       const frames = this.anims.generateFrameNumbers(e.key, { start: 0, end: e.count - 1 });

@@ -625,6 +625,21 @@ test('?landscape=ship opens an alien ship map with no errors (M4.3)', async ({ p
   expect(errors).toEqual([]);
 });
 
+test('?landscape=crash opens a crash site map with no errors (M4.3)', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text());
+  });
+  await openGame(page, '?seed=42&landscape=crash');
+  const snap = await snapshot(page);
+  // Trees line the top; the field has the ship's wreckage (w) and scrap (s).
+  expect(snap.layout.slice(0, 2 * MAP_COLS)).toBe('p'.repeat(2 * MAP_COLS));
+  expect(snap.layout.slice(2 * MAP_COLS)).toMatch(/w/);
+  expect(snap.layout.slice(2 * MAP_COLS)).toMatch(/s/);
+  expect(errors).toEqual([]);
+});
+
 test('the title screen starts a campaign with its button', async ({ page }) => {
   await page.goto('./');
   await waitForScene(page, 'Title');
