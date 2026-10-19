@@ -5,6 +5,7 @@ import { rankOf } from '../logic/battle';
 import { rankForXp, type Campaign } from '../logic/campaign';
 import { NO_SHAME, nicknameFor } from '../logic/shame';
 import { LINE_H, PixelText, pixelText } from './pixelFont';
+import { PORTRAIT_SIZE, PORTRAIT_TEXTURE } from './portraits';
 
 /**
  * The squad and its Wall of Shame (M5.3): rank, name, XP, deaths and the nickname a
@@ -27,14 +28,23 @@ export class SquadScene extends Phaser.Scene {
       .rectangle(cx, view.height / 2, GAME_WIDTH - 16, view.height - 16, 0x0b0e15, 0.97)
       .setStrokeStyle(1, 0x3d4760);
     pixelText(this, cx, 22, 'THE SQUAD', 0xf2a33a, 2);
-    new PixelText(this, 24, 44, squadTable(c).join('\n'), {
+    // Their portraits in a row (M6.2), each over its name.
+    const spacing = (GAME_WIDTH - 32) / c.squad.length;
+    c.squad.forEach((name, i) => {
+      const x = Math.round(16 + spacing * (i + 0.5));
+      if (this.textures.get(PORTRAIT_TEXTURE.key).has(name)) {
+        this.add.image(x, PORTRAIT_TOP, PORTRAIT_TEXTURE.key, name).setOrigin(0.5, 0);
+      }
+      pixelText(this, x, PORTRAIT_TOP + PORTRAIT_SIZE + 6, name.toUpperCase(), 0xdfe4ec);
+    });
+    new PixelText(this, 24, TABLE_TOP, squadTable(c).join('\n'), {
       color: 0xdfe4ec,
       align: 'left',
       valign: 'top',
     });
     const shamed = c.squad.filter((_, i) => (c.deaths[i] ?? 0) > 0).length;
-    pixelText(this, cx, 44 + 6 * LINE_H + 10, 'WALL OF SHAME', 0xff6a5a, 2);
-    new PixelText(this, cx, 44 + 6 * LINE_H + 34, wallLines(c, shamed).join('\n'), {
+    pixelText(this, cx, TABLE_TOP + 5 * LINE_H + 14, 'WALL OF SHAME', 0xff6a5a, 2);
+    new PixelText(this, cx, TABLE_TOP + 5 * LINE_H + 31, wallLines(c, shamed).join('\n'), {
       color: 0xdfe4ec,
       valign: 'top',
     });
@@ -55,6 +65,10 @@ export class SquadScene extends Phaser.Scene {
     this.scene.stop();
   }
 }
+
+/** Where the portraits row starts, and the table under it. */
+const PORTRAIT_TOP = 34;
+const TABLE_TOP = PORTRAIT_TOP + PORTRAIT_SIZE + 16;
 
 /** One row per marine: rank, name, XP, deaths and nickname, under a header. */
 function squadTable(c: Campaign): string[] {

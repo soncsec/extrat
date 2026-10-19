@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { fitDesign } from './layout';
 import { buildPixelFont } from './pixelFont';
+import { buildPortraits } from './portraits';
 import { registerSounds } from './sfx';
 import { GAME_WIDTH } from '../config/tuning';
 import {
@@ -93,6 +94,7 @@ export class PreloadScene extends Phaser.Scene {
       const frames = this.anims.generateFrameNumbers(e.key, { start: 0, end: e.count - 1 });
       this.anims.create({ key: e.key, frames, frameRate: e.fps, repeat: 0 });
     }
+    buildPortraits(this.textures);
     buildPixelFont(this);
     registerSounds(this);
     this.scene.start('Title');
