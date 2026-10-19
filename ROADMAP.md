@@ -87,14 +87,14 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 
 - [ ] M5.1 Campaign of 6 missions, one per landscape; briefing and debrief screens. *Loop, briefing, debrief and mission ramp built; every mission uses the forest until M4.3 adds the other landscapes.*
 - [x] M5.2 XP, ranks and stat increases. *Kills and wins earn XP; five ranks add aim and health; a replayed battle earns no XP (owner, 2026-10-18).*
-- [ ] M5.3 Fallen marines return next mission; Wall of Shame (nicknames, death counts, debrief jokes)
+- [x] M5.3 Fallen marines return next mission; Wall of Shame (nicknames, death counts, debrief jokes). *Starter nicknames and jokes in `src/logic/shame.ts` await the owner's review.*
 - [x] M5.4 Squad wiped out: retry the mission on a new map
 - [x] M5.5 Autosave every turn; resume from the title screen; versioned save with validation (ADR-E6)
-- [ ] M5.6 Final mission on the alien ship with the mech boss. *A one-page boss design (phases, a tell before its big attack, a weak point that rewards flanking) goes to the owner for approval before any code.*
+- [ ] M5.6 Final mission on the alien ship with the mech boss. *Design approved by merging #46 (`docs/boss-design.md`), with its proposed defaults: the fight ends on the boss's death, 12 health, a 3-damage blast. Built after the alien ship landscape.*
 - [x] M5.8 Alien ramp and balance pass (owner lost on mission 3, 2026-10-18): mission 1 walkers only, one new kind per mission, snakes no earlier than mission 4; the briefing names the kinds and warns about the new one; walker aim 80 to 70. *More tuning after the owner's next play-test.*
-- [ ] M5.9 XP per hit as well as per kill; one tangible perk per promotion (for example a second grenade, more ammo) alongside the aim and health bonuses
+- [x] M5.9 XP per hit as well as per kill; one tangible perk per promotion (for example a second grenade, more ammo) alongside the aim and health bonuses
 - [ ] M5.10 Resupply between missions: the owner ran out of grenades mid-mission. *Design to confirm with the owner: a SUPPLY pick in the debrief (recommended) versus pickups dropped by aliens.*
-- [ ] M5.11 Alien turn fast-forward (tap or key) so late missions with nine aliens don't drag
+- [x] M5.11 Alien turn fast-forward (tap or key) so late missions with nine aliens don't drag
 - [x] M5.7 Phones and tablets: touch controls (tap to preview, tap again to act), crisp scaling on high-density screens, landscape notice, fullscreen, ? help button *(owner, 2026-10-18; zoom-and-drag on phones only if play-testing needs it)*
 
 **Acceptance criteria:** the owner plays the campaign from start to finish on staging; closing the browser mid-mission resumes the same turn; save loading rejects corrupt data in tests.
@@ -111,6 +111,6 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 
 ## Engineering (from the PM review, owner 2026-10-18)
 
-- [ ] T1 Browser tests that play a whole alien turn get a 60 s limit (the other tests keep 30 s); the machine is shared with other games' test runs
-- [ ] T2 `scripts/release.sh deploy` refuses unless a dry run passed for the same commit within the last hour
-- [ ] T3 Battle prompt says TAP, not CLICK, on touch devices
+- [x] T1 Browser tests that play a whole alien turn get a 60 s limit (the other tests keep 30 s); the machine is shared with other games' test runs
+- [x] T2 `scripts/release.sh deploy` refuses unless a dry run passed for the same commit within the last hour
+- [x] T3 Battle prompt says TAP, not CLICK, on touch devices
