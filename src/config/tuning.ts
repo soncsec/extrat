@@ -69,6 +69,8 @@ export const PODS = {
   minApart: 6,
   /** Pod members start within this many steps of their leader. */
   spread: 2,
+  /** ...or this many, if that's what it takes to start out of the squad's sight. */
+  hiddenSpread: 4,
 } as const;
 
 /**
