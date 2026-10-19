@@ -615,6 +615,7 @@ describe('shot odds, flanking and crits', () => {
       flanked: false,
       reactionPenalty: 0,
       exposed: false,
+      armoured: false,
       hit: UNITS.marine.aim - 4 * SHOOTING.penaltyPerTile - SHOOTING.cover.half,
       crit: UNITS.marine.crit,
     });

@@ -201,6 +201,43 @@ export const UNITS = {
     ammo: null,
     ability: 'poison',
   },
+  /**
+   * The Overseer, the final mission's boss (M5.6, docs/boss-design.md): a mech on a
+   * 2 x 2 footprint with an armoured front and a charged blast (see BOSS).
+   */
+  overseer: {
+    hp: 12,
+    move: 3,
+    aim: 75,
+    damage: { min: 2, max: 3 },
+    range: 7,
+    crit: 10,
+    ammo: null,
+    ability: 'blast',
+  },
+} as const;
+
+/**
+ * The Overseer's rules (M5.6, approved design docs/boss-design.md with its proposed
+ * defaults, owner 2026-10-19).
+ */
+export const BOSS = {
+  /** Tiles on each side of its square footprint. */
+  size: 2,
+  /** The most damage a shot from in front of it does. */
+  armourCap: 1,
+  /** It starts charging its blast once its health is at or below this share of the most. */
+  chargeBelow: 0.5,
+  blast: {
+    /** Units within this distance of the marked tile are hit: 1.5 covers the 3 x 3 square. */
+    radius: 1.5,
+    damage: 3,
+    /**
+     * Alien turns, counted from the one it fires on, before it can charge again: it
+     * fires, rests a turn, and may charge on the next.
+     */
+    cooldown: 2,
+  },
 } as const;
 
 /** The alien kinds a pod member can be, drawn at random for each one. */
