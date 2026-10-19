@@ -54,6 +54,7 @@ import { planAlienAction } from '../logic/ai';
 import {
   afterBattle,
   awardXp,
+  recordDeaths,
   battleXp,
   currentMission,
   isComplete,
@@ -89,6 +90,7 @@ import type { BattleResult } from './ResultScene';
 import { CELL_W, PixelButton, PixelText } from './pixelFont';
 import { initialSeed, urlWord } from './seed';
 import { clearSave, writeSave } from './storage';
+import { isTouchDevice } from './touch';
 
 /** A tile a unit can move to, and the action points that costs (2 means a dash). */
 export interface MoveTile extends Point {
@@ -100,11 +102,13 @@ export interface GameSnapshot {
   seed: number;
   mapSeed: number;
   /** The campaign mission (0-based), try and squad XP, or null in a skirmish. */
-  campaign: { mission: number; attempt: number; xp: number[] } | null;
+  campaign: { mission: number; attempt: number; xp: number[]; deaths: number[] } | null;
   /** This battle was started with REPLAY (it earns no XP). */
   replaying: boolean;
   /** The alien turn is playing at fast-forward speed (M5.11). */
   fast: boolean;
+  /** The text of the unit line in the HUD, e.g. the prompt to pick a marine. */
+  prompt: string;
   /** Touch: the tile tapped once, whose preview shows until it is tapped again. */
   pending: Point | null;
   /** One character per tile, row by row: '.' free, or the first letter of the prop. */
@@ -463,10 +467,12 @@ export class BattleScene extends Phaser.Scene {
             mission: this.campaign.mission,
             attempt: this.campaign.attempt,
             xp: [...this.campaign.xp],
+            deaths: [...this.campaign.deaths],
           }
         : null,
       replaying: this.replaying,
       fast: this.fast,
+      prompt: this.unitText.text,
       pending: this.pending,
       mapSeed: map.seed,
       layout: map.tiles.map((t) => (t.prop ? t.prop[0] : '.')).join(''),
@@ -1045,6 +1051,7 @@ export class BattleScene extends Phaser.Scene {
       landscape: this.landscape,
       campaign: this.campaign,
       xp: null,
+      lost: this.state.units.filter((u) => u.side === 'marine' && u.hp <= 0).map((u) => u.name),
     };
     if (this.campaign) {
       // XP is earned when the battle ends, whatever is picked on the debrief; a
@@ -1052,8 +1059,9 @@ export class BattleScene extends Phaser.Scene {
       const gained = this.replaying ? null : battleXp(this.state, won);
       if (gained) {
         const awarded = awardXp(this.campaign, gained);
-        this.campaign = awarded.campaign;
-        result.campaign = awarded.campaign;
+        // Deaths are counted when XP is: never for a replay (M5.3).
+        this.campaign = recordDeaths(awarded.campaign, this.state);
+        result.campaign = this.campaign;
         result.xp = { gained, promotions: awarded.promotions };
       }
       // Closing the browser on the debrief picks up at the next briefing: the next
@@ -1562,7 +1570,9 @@ export class BattleScene extends Phaser.Scene {
       createBattle(
         map,
         map.seed,
-        c && mission ? { names: c.squad, pods: mission.pods, ranks: squadRanks(c) } : {},
+        c && mission
+          ? { names: c.squad, pods: mission.pods, kinds: mission.kinds, ranks: squadRanks(c) }
+          : {},
       );
     // A campaign saves as each of the squad's turns begins, this first one included.
     if (c) writeSave(c, this.state, replay);
@@ -1710,7 +1720,7 @@ export class BattleScene extends Phaser.Scene {
         this.unitText.setText(unit ? marineLabel(unit) : hint);
         return;
       }
-      this.unitText.setText('Click a marine to select it');
+      this.unitText.setText(`${isTouchDevice() ? 'Tap' : 'Click'} a marine to select it`);
       return;
     }
     const x = unit.x * TILE;

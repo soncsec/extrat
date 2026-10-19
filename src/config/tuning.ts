@@ -61,15 +61,36 @@ export const PODS = {
  * logic/landscapes.ts). Coast, rocky hills, crash site and alien ship come in M4.3 and
  * the boss in M5.6; until then those missions use the forest. A gentle ramp
  * (owner decision 2026-10-18): more and bigger alien groups as the campaign goes on.
+ *
+ * `kinds` are the alien kinds that mission can field (M5.8, owner decision 2026-10-18):
+ * one new kind per mission, walkers first, so a new player learns one ability at a
+ * time, and snakes (poison, the deadliest) no earlier than mission 4. The last kind
+ * listed is the new one, and the battle always fields at least one of it.
  */
 export const MISSIONS = [
-  { landscape: 'forest', pods: { count: 2, size: 2 } },
-  { landscape: 'town', pods: { count: 2, size: 2 } },
-  { landscape: 'forest', pods: { count: 3, size: 2 } },
-  { landscape: 'forest', pods: { count: 3, size: 2 } },
-  { landscape: 'forest', pods: { count: 3, size: 3 } },
-  { landscape: 'forest', pods: { count: 3, size: 3 } },
-] as const;
+  { landscape: 'forest', pods: { count: 2, size: 2 }, kinds: ['walker'] },
+  { landscape: 'town', pods: { count: 2, size: 2 }, kinds: ['walker', 'flyer'] },
+  { landscape: 'forest', pods: { count: 3, size: 2 }, kinds: ['walker', 'flyer', 'lizard'] },
+  {
+    landscape: 'forest',
+    pods: { count: 3, size: 2 },
+    kinds: ['walker', 'flyer', 'lizard', 'snake'],
+  },
+  {
+    landscape: 'forest',
+    pods: { count: 3, size: 3 },
+    kinds: ['walker', 'flyer', 'lizard', 'snake'],
+  },
+  {
+    landscape: 'forest',
+    pods: { count: 3, size: 3 },
+    kinds: ['walker', 'flyer', 'lizard', 'snake'],
+  },
+] as const satisfies readonly {
+  landscape: string;
+  pods: { count: number; size: number };
+  kinds: readonly (typeof ALIEN_KINDS)[number][];
+}[];
 
 /**
  * XP (M5.2). Each marine earns XP for the aliens they kill (shots and grenades), and
@@ -77,6 +98,8 @@ export const MISSIONS = [
  * earns none (owner decision 2026-10-18), so a map can't be farmed.
  */
 export const XP = {
+  /** Every shot or grenade that hits an enemy, so wounding counts (owner, 2026-10-18). */
+  hit: 3,
   kill: 10,
   missionWon: 10,
   /** No marine can have more: saves with more are rejected. */
@@ -84,16 +107,24 @@ export const XP = {
 } as const;
 
 /**
- * Ranks (M5.2): the XP a marine needs for each, and the aim and health it adds over a
- * rookie. Six missions earn a marine about 60-160 XP, so most finish as Sergeants.
+ * Ranks (M5.2): the XP a marine needs for each, and what it adds over a rookie: aim,
+ * health, and (M5.9, owner 2026-10-18) something to carry, so a promotion is felt:
+ * extra grenades and a bigger clip. Six missions earn a marine about 80-200 XP, so
+ * most finish as Sergeants.
  */
 export const RANKS = [
-  { name: 'Rookie', short: 'RKE', xp: 0, aim: 0, hp: 0 },
-  { name: 'Squaddie', short: 'SQD', xp: 20, aim: 5, hp: 0 },
-  { name: 'Corporal', short: 'CPL', xp: 50, aim: 5, hp: 1 },
-  { name: 'Sergeant', short: 'SGT', xp: 90, aim: 10, hp: 1 },
-  { name: 'Lieutenant', short: 'LT', xp: 140, aim: 10, hp: 2 },
+  { name: 'Rookie', short: 'RKE', xp: 0, aim: 0, hp: 0, grenades: 0, ammo: 0 },
+  { name: 'Squaddie', short: 'SQD', xp: 20, aim: 5, hp: 0, grenades: 0, ammo: 0 },
+  { name: 'Corporal', short: 'CPL', xp: 50, aim: 5, hp: 1, grenades: 1, ammo: 0 },
+  { name: 'Sergeant', short: 'SGT', xp: 90, aim: 10, hp: 1, grenades: 1, ammo: 1 },
+  { name: 'Lieutenant', short: 'LT', xp: 140, aim: 10, hp: 2, grenades: 2, ammo: 1 },
 ] as const;
+
+/** The Wall of Shame (M5.3): shame is cosmetic only (owner decision 2026-10-17). */
+export const SHAME = {
+  /** Deaths in a campaign before a marine's nickname gets worse. */
+  veteranDeaths: 3,
+} as const;
 
 /** Squad and enemy sizes for the skirmish. */
 export const SKIRMISH = {
@@ -122,11 +153,14 @@ export const UNITS = {
     ammo: 3,
     ability: null,
   },
-  /** Charges in and claws: reaches the 8 tiles around it, ignores cover, can't watch. */
+  /**
+   * Charges in and claws: reaches the 8 tiles around it, ignores cover, can't watch.
+   * Aim was 80 until the balance pass of 2026-10-18 (M5.8): two claws killed a rookie.
+   */
   walker: {
     hp: 4,
     move: 5,
-    aim: 80,
+    aim: 70,
     damage: { min: 2, max: 3 },
     range: 1.5,
     crit: 10,

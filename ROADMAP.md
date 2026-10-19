@@ -11,7 +11,7 @@ The order follows the risks: first prove the core fight is fun and readable with
 | M2 Tactical core | Built; waiting for the owner's play-test |
 | M3 Aliens and ambush | Built; waiting for the owner's play-test |
 | M4 Maps and landscapes | In progress |
-| M5 Campaign | In progress |
+| M5 Campaign | In progress (PM review 2026-10-18 added M5.8–M5.11) |
 | M6 Polish and release | Not started |
 
 ## Main risks
@@ -76,7 +76,7 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 
 - [x] M4.1 Chunk-based generator with seeded scatter (ADR-E3)
 - [x] M4.2 Validators: reachability, spawn distance, cover density; 1,000-seed test
-- [ ] M4.3 Landscapes: forest, town, coast, rocky hills, crash site, alien ship; missing tiles drawn by Claude to match
+- [ ] M4.3 Landscapes: forest, town, coast, rocky hills, crash site, alien ship; missing tiles drawn by Claude to match. *Order (PM review, owner 2026-10-18): alien ship first (the boss needs it), then crash site, coast, rocky hills. None dropped.*
 - [x] M4.4 Map seed shown in the debrief so a map can be replayed for bug reports
 
 **Acceptance criteria:** every landscape passes the 1,000-seed test; the owner plays one map per landscape on staging.
@@ -90,7 +90,11 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 - [ ] M5.3 Fallen marines return next mission; Wall of Shame (nicknames, death counts, debrief jokes)
 - [x] M5.4 Squad wiped out: retry the mission on a new map
 - [x] M5.5 Autosave every turn; resume from the title screen; versioned save with validation (ADR-E6)
-- [ ] M5.6 Final mission on the alien ship with the mech boss
+- [ ] M5.6 Final mission on the alien ship with the mech boss. *A one-page boss design (phases, a tell before its big attack, a weak point that rewards flanking) goes to the owner for approval before any code.*
+- [x] M5.8 Alien ramp and balance pass (owner lost on mission 3, 2026-10-18): mission 1 walkers only, one new kind per mission, snakes no earlier than mission 4; the briefing names the kinds and warns about the new one; walker aim 80 to 70. *More tuning after the owner's next play-test.*
+- [ ] M5.9 XP per hit as well as per kill; one tangible perk per promotion (for example a second grenade, more ammo) alongside the aim and health bonuses
+- [ ] M5.10 Resupply between missions: the owner ran out of grenades mid-mission. *Design to confirm with the owner: a SUPPLY pick in the debrief (recommended) versus pickups dropped by aliens.*
+- [ ] M5.11 Alien turn fast-forward (tap or key) so late missions with nine aliens don't drag
 - [x] M5.7 Phones and tablets: touch controls (tap to preview, tap again to act), crisp scaling on high-density screens, landscape notice, fullscreen, ? help button *(owner, 2026-10-18; zoom-and-drag on phones only if play-testing needs it)*
 
 **Acceptance criteria:** the owner plays the campaign from start to finish on staging; closing the browser mid-mission resumes the same turn; save loading rejects corrupt data in tests.
@@ -98,9 +102,15 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 ## M6 — Polish and release
 
 - [ ] M6.1 CC0 sound effects (owner approves the assets)
-- [ ] M6.2 Squad portraits from the pack; tooltips and first-mission hints
+- [ ] M6.2 Squad portraits from the pack; tooltips and first-mission hints *(owner 2026-10-18: the help screen is enough for now, so hints stay here)*
 - [ ] M6.3 Balance pass from play-tests
 - [ ] M6.4 Portal card image and status `coming-soon`, then `live`
 - [ ] M6.5 Static and dynamic security checks; production release with owner approval
 
 **Acceptance criteria:** the definition of success in PROJECT.md section 6 is met on production.
+
+## Engineering (from the PM review, owner 2026-10-18)
+
+- [ ] T1 Browser tests that play a whole alien turn get a 60 s limit (the other tests keep 30 s); the machine is shared with other games' test runs
+- [ ] T2 `scripts/release.sh deploy` refuses unless a dry run passed for the same commit within the last hour
+- [ ] T3 Battle prompt says TAP, not CLICK, on touch devices

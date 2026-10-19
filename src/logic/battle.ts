@@ -69,6 +69,8 @@ export interface Unit extends Point {
   rank: number;
   /** Enemies this unit has killed in this battle (for XP). */
   kills: number;
+  /** Shots and grenades of this unit that hit an enemy (kills included); marines earn XP for them. */
+  hits: number;
 }
 
 /** Health lost to poison at the start of a side's turn. */
@@ -172,6 +174,11 @@ export interface BattleSetup {
   pods?: { count: number; size: number };
   /** Marine ranks in squad order (index into RANKS); missing ones are rookies. */
   ranks?: readonly number[];
+  /**
+   * Alien kinds this battle may field (default: all). The last one listed is the
+   * mission's new kind, and at least one alien is always of that kind (M5.8).
+   */
+  kinds?: readonly AlienKind[];
 }
 
 /** A new battle: marines deploy in the west spawn zone, aliens in the east. */
@@ -193,9 +200,9 @@ export function createBattle(map: BattleMap, seed: number, setup: BattleSetup = 
       facing: 1,
       ap: ACTION_POINTS,
       move: UNITS.marine.move,
-      ammo: UNITS.marine.ammo,
+      ammo: UNITS.marine.ammo + rankOf(rank).ammo,
       overwatch: false,
-      grenades: GRENADE.perMarine,
+      grenades: GRENADE.perMarine + rankOf(rank).grenades,
       exposed: false,
       pod: null,
       dormant: false,
@@ -203,12 +210,19 @@ export function createBattle(map: BattleMap, seed: number, setup: BattleSetup = 
       freeSteps: 0,
       rank,
       kills: 0,
+      hits: 0,
     };
   });
   // Kinds come from their own generator, so the draw doesn't move where anyone stands.
   const kindRng = createRng((seed ^ 0x5bd1e995) >>> 0);
-  const aliens = deployPods(map, rng, marines, setup.pods ?? PODS).map(({ pod, ...p }, i): Unit => {
-    const kind = kindRng.pick(ALIEN_KINDS);
+  const allowed = setup.kinds && setup.kinds.length > 0 ? setup.kinds : ALIEN_KINDS;
+  const places = deployPods(map, rng, marines, setup.pods ?? PODS);
+  const kinds = places.map(() => kindRng.pick(allowed));
+  // The mission's new kind must show up, so the briefing's warning is never a lie.
+  const newest = allowed[allowed.length - 1] as AlienKind;
+  if (kinds.length > 0 && !kinds.includes(newest)) kinds[kindRng.int(0, kinds.length - 1)] = newest;
+  const aliens = places.map(({ pod, ...p }, i): Unit => {
+    const kind = kinds[i] as AlienKind;
     return {
       ...p,
       id: `a${i + 1}`,
@@ -230,6 +244,7 @@ export function createBattle(map: BattleMap, seed: number, setup: BattleSetup = 
       freeSteps: 0,
       rank: 0,
       kills: 0,
+      hits: 0,
     };
   });
   return {
@@ -520,9 +535,8 @@ function throwGrenade(state: BattleState, unitId: string, at: Point): BattleStat
   const facing = at.x === thrower.x ? thrower.facing : at.x > thrower.x ? 1 : -1;
   // Throwing uses all remaining action points, like a shot. Only enemies count as kills.
   const after = unitById(next, unitId) as Unit;
-  const kills = hits.filter(
-    (h) => h.killed && unitById(state, h.unitId)?.side !== thrower.side,
-  ).length;
+  const enemyHits = hits.filter((h) => unitById(state, h.unitId)?.side !== thrower.side);
+  const kills = enemyHits.filter((h) => h.killed).length;
   next = replaceUnit(next, {
     ...after,
     grenades: after.grenades - 1,
@@ -530,6 +544,7 @@ function throwGrenade(state: BattleState, unitId: string, at: Point): BattleStat
     facing,
     freeSteps: 0,
     kills: after.kills + kills,
+    hits: after.hits + enemyHits.length,
   });
   // A blast in the fog wakes the pod it lands on.
   const pods = [
@@ -598,7 +613,8 @@ function rollShot(
   const facing = target.x === shooter.x ? shooter.facing : target.x > shooter.x ? 1 : -1;
   const ammo = shooter.ammo === null ? null : shooter.ammo - 1;
   const kills = shooter.kills + (hp === 0 && target.hp > 0 ? 1 : 0);
-  let next = replaceUnit(state, { ...shooter, facing, ammo, kills });
+  const hits = shooter.hits + (hit && target.side !== shooter.side ? 1 : 0);
+  let next = replaceUnit(state, { ...shooter, facing, ammo, kills, hits });
   next = replaceUnit(next, { ...target, hp });
   // Abilities ride on aimed hits that leave the target standing, not on reactions.
   let pulledTo: Point | null = null;
@@ -860,9 +876,10 @@ function replaceUnit(state: BattleState, unit: Unit): BattleState {
   return { ...state, units: state.units.map((u) => (u.id === unit.id ? unit : u)) };
 }
 
-/** A full clip for this unit's weapon (null: it never needs reloading). */
+/** A full clip for this unit's weapon (null: it never needs reloading); ranks add to it. */
 export function clipSize(unit: Unit): number | null {
-  return UNITS[unit.kind].ammo;
+  const base = UNITS[unit.kind].ammo;
+  return base === null ? null : base + (unit.side === 'marine' ? rankOf(unit.rank).ammo : 0);
 }
 
 /** True if the unit can reload now: its turn, an action point, and a clip that isn't full. */
