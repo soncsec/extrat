@@ -28,7 +28,12 @@ export type PropKind =
   | 'trunk'
   | 'sea'
   | 'driftwood'
-  | 'boat';
+  | 'boat'
+  | 'cliff'
+  | 'crag'
+  | 'slabs'
+  | 'scree'
+  | 'mine';
 export type Cover = 'half' | 'full';
 
 export interface PropInfo {
@@ -72,6 +77,13 @@ export const PROPS: Readonly<Record<PropKind, PropInfo>> = {
   sea: { width: 1, height: 1, cover: 'full', blast: 'stands' },
   driftwood: { width: 1, height: 1, cover: 'half', blast: 'cleared' },
   boat: { width: 2, height: 1, cover: 'full', blast: 'stands' },
+  // Rocky hills (M4.3): a cliff along the top, crags and slab piles, scree, and an old
+  // mine entrance on 3 x 2 that blocks sight like a house.
+  cliff: { width: 1, height: 1, cover: 'full', blast: 'stands' },
+  crag: { width: 2, height: 1, cover: 'full', blast: 'stands' },
+  slabs: { width: 2, height: 1, cover: 'half', blast: 'stands' },
+  scree: { width: 1, height: 1, cover: 'half', blast: 'cleared' },
+  mine: { width: 3, height: 2, cover: 'full', blast: 'stands' },
 };
 
 export interface Tile {
