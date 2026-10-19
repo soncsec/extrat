@@ -14,6 +14,11 @@ export default defineConfig({
   test: {
     include: ['tests/unit/**/*.test.ts'],
     environment: 'node',
+    // The many-map tests take about a second each when the machine is quiet, but this
+    // machine is shared with other games' test runs (load averages of 50-70), and one
+    // passed Vitest's 5 s default at 5.35 s and stopped a release dry run (T1). The
+    // tests and their checks are unchanged; each just gets 30 s before it counts as hung.
+    testTimeout: 30_000,
     coverage: {
       provider: 'v8',
       include: ['src/logic/**'],
