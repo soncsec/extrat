@@ -156,6 +156,12 @@ export const SHAME = {
   veteranDeaths: 3,
 } as const;
 
+/** Sound effects (M6.1): made in code, see src/scenes/sfx.ts. */
+export const AUDIO = {
+  /** Loudness of every effect, 0 to 1. */
+  volume: 0.5,
+} as const;
+
 /** Squad and enemy sizes for the skirmish. */
 export const SKIRMISH = {
   marines: 4,

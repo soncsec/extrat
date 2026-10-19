@@ -1,5 +1,6 @@
 import type Phaser from 'phaser';
 import type { BattleScene, GameSnapshot } from '../scenes/BattleScene';
+import { isMuted } from '../scenes/sfx';
 
 /**
  * Test-only hook for Playwright (ADR-006). It is loaded only in the e2e build
@@ -18,6 +19,8 @@ export interface TestHook {
   /** Slows down (or speeds up) the battle's animations, for frame-by-frame visual checks. */
   setSpeed(scale: number): void;
   snapshot(): GameSnapshot | null;
+  /** The sound effects made while loading (M6.1), and whether sound is muted. */
+  audio(): { sounds: string[]; muted: boolean };
 }
 
 declare global {
@@ -39,6 +42,10 @@ export function installTestHook(game: Phaser.Game): void {
     },
     setAmmo: (unitId, ammo) =>
       (game.scene.getScene('Battle') as BattleScene).debugSetAmmo(unitId, ammo),
+    audio: () => ({
+      sounds: game.cache.audio.getKeys().filter((k) => k.startsWith('sfx-')),
+      muted: isMuted(),
+    }),
     snapshot: () => {
       const s = game.scene.getScene('Battle') as BattleScene | null;
       return s && game.scene.isActive('Battle') ? s.snapshot() : null;

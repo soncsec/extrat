@@ -640,6 +640,19 @@ test('E ends the turn: awake aliens act, dormant pods wait, then round 2 begins'
   );
 });
 
+test('sound effects are made while loading, and M mutes them (M6.1)', async ({ page }) => {
+  await openGame(page, '?seed=42');
+  const audio = (): Promise<{ sounds: string[]; muted: boolean } | undefined> =>
+    page.evaluate(() => window.__game?.audio());
+  const before = await audio();
+  expect(before?.sounds.length).toBeGreaterThanOrEqual(15);
+  expect(before?.muted).toBe(false);
+  await page.keyboard.press('m');
+  await expect.poll(async () => (await audio())?.muted).toBe(true);
+  await page.keyboard.press('m');
+  await expect.poll(async () => (await audio())?.muted).toBe(false);
+});
+
 test('the End Turn button ends the turn', async ({ page }) => {
   await openGame(page, '?seed=42');
   const box = await page.locator('#game canvas').boundingBox();

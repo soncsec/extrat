@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { wrapLines } from '../logic/text';
 import { GLYPH_CHARS, GLYPH_HEIGHT, GLYPH_WIDTH, GLYPHS, toFontText } from './glyphs';
+import { playSound } from './sfx';
 
 /**
  * Extrat's pixel font (see glyphs.ts), drawn into a texture at startup and used as a
@@ -188,7 +189,10 @@ export class PixelButton extends Phaser.GameObjects.Container {
     this.box.setInteractive({ useHandCursor: true });
     this.box.on('pointerover', () => this.box.setFillStyle(colors.hover));
     this.box.on('pointerout', () => this.box.setFillStyle(colors.bg));
-    this.box.on('pointerdown', onClick);
+    this.box.on('pointerdown', () => {
+      playSound(scene, 'click');
+      onClick();
+    });
     this.label = new PixelText(scene, 0, 1, '', { color: colors.fg, shadow: false });
     this.add([this.box, this.label]);
     scene.add.existing(this);
