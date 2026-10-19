@@ -1,5 +1,6 @@
 import type Phaser from 'phaser';
 import { AUDIO } from '../config/tuning';
+import { readSettings, writeSettings } from './storage';
 
 /*
  * Sound effects (M6.1, owner 2026-10-19: made in code). Each sound is a few layers, each
@@ -191,9 +192,9 @@ export function playSound(scene: Phaser.Scene, id: SoundId): void {
 }
 
 /**
- * Muted for this visit? Kept here, not read back from Phaser: its mute is a volume in
- * the audio engine, which may not show the change until the engine next runs (or at all
- * before the player's first tap unlocks sound).
+ * Muted? Kept here, not read back from Phaser: its mute is a volume in the audio
+ * engine, which may not show the change until the engine next runs (or at all before
+ * the player's first tap unlocks sound). Remembered between visits (settings).
  */
 let muted = false;
 
@@ -202,9 +203,16 @@ export function isMuted(): boolean {
   return muted;
 }
 
-/** Mutes or unmutes every sound (for this visit). Returns whether it is now muted. */
+/** Applies the remembered mute setting (once, while loading). */
+export function restoreMute(scene: Phaser.Scene): void {
+  muted = readSettings().muted;
+  scene.sound.mute = muted;
+}
+
+/** Mutes or unmutes every sound, and remembers it. Returns whether it is now muted. */
 export function toggleMute(scene: Phaser.Scene): boolean {
   muted = !muted;
   scene.sound.mute = muted;
+  writeSettings({ muted });
   return muted;
 }
