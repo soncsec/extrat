@@ -47,7 +47,7 @@ It is built mainly from the Ansimuz "Legacy Collection" pixel-art pack (CC0) and
 | Navigation | A link back to the games portal from the title screen |
 | Audio | CC0 sound effects. No music in v1 (planned later) |
 | Art | Legacy pack: Warped space marine and aliens, TinyRPG top-down terrain, Warped sci-fi interior, explosions and hit effects, Warped portraits. Claude draws missing terrain pieces in matching style |
-| Display | Native pixel art, fits the browser window. On desktops every art pixel covers a whole number of the screen's own pixels. Phones and tablets fill the screen, even if art pixels come out very slightly uneven (owner, 2026-10-19). Phones and tablets: landscape only, with a notice to turn the device when held upright |
+| Display | Native pixel art, fits the browser window. On desktops every art pixel covers a whole number of the screen's own pixels. Phones and tablets fill the screen, even if art pixels come out very slightly uneven, with the info panel beside the map rather than under it (owner, 2026-10-19). Phones and tablets: landscape only, with a notice to turn the device when held upright |
 
 ### Out of scope (v1)
 

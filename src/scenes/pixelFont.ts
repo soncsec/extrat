@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { wrapLines } from '../logic/text';
 import { GLYPH_CHARS, GLYPH_HEIGHT, GLYPH_WIDTH, GLYPHS, toFontText } from './glyphs';
 
 /**
@@ -62,6 +63,8 @@ export interface PixelTextStyle {
   align?: 'left' | 'center' | 'right';
   /** Which edge of the text sits at y. */
   valign?: 'top' | 'middle' | 'bottom';
+  /** Break the text into lines of at most this many characters (see wrapLines); 0: don't. */
+  wrap?: number;
   /** A panel behind the text. */
   background?: number | null;
   backgroundAlpha?: number;
@@ -87,6 +90,7 @@ export class PixelText extends Phaser.GameObjects.Container {
       background: null,
       backgroundAlpha: 0.92,
       padding: 3,
+      wrap: 0,
       ...style,
     };
     const { scale, background, backgroundAlpha } = this.style;
@@ -117,7 +121,7 @@ export class PixelText extends Phaser.GameObjects.Container {
 
   setText(text: string): this {
     this.lastText = text;
-    const t = toFontText(text);
+    const t = toFontText(this.style.wrap ? wrapLines(text, this.style.wrap) : text);
     const { align, valign, padding, scale } = this.style;
     for (const b of [this.main, this.shade]) {
       if (!b) continue;
@@ -198,6 +202,22 @@ export class PixelButton extends Phaser.GameObjects.Container {
   onRelease(onRelease: () => void): this {
     this.box.on('pointerup', onRelease);
     return this;
+  }
+
+  /**
+   * Widens the button to `width` game pixels (never narrower than its label), and
+   * makes it `extra` pixels taller: a bigger target for a finger (the phone's panel).
+   */
+  setBoxSize(width: number, extra = 0): this {
+    const w = Math.max(width, this.box.width);
+    this.box.setSize(w, CELL_H + 7 + extra);
+    this.box.input?.hitArea.setTo(0, 0, this.box.width, this.box.height);
+    return this;
+  }
+
+  /** Height of the button in game pixels. */
+  get buttonHeight(): number {
+    return this.box.height;
   }
 
   /** Width of the button in game pixels. */

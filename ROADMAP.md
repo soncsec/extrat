@@ -95,6 +95,7 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 - [x] M5.9 XP per hit as well as per kill; one tangible perk per promotion (for example a second grenade, more ammo) alongside the aim and health bonuses
 - [ ] M5.10 Resupply between missions: the owner ran out of grenades mid-mission. *Owner, 2026-10-19: after each won mission, pick one supply for the next mission: +1 grenade, +1 health or +10 aim for every marine.*
 - [x] M5.7b Phones, from the owner's iPhone test (2026-10-19: small screen, some taps did nothing): fill the screen on touch devices; the page can't scroll or bounce; refit when Safari's bars change; a second tap just off the previewed tile still confirms
+- [x] M5.7c Phones: the info panel beside the map (owner, 2026-10-19), so the map gets the screen's full height (an iPhone in Safari: about 1.33x to 1.53x); menus keep 1x and a shorter layout
 - [x] M5.11 Alien turn fast-forward (tap or key) so late missions with nine aliens don't drag
 - [x] M5.7 Phones and tablets: touch controls (tap to preview, tap again to act), crisp scaling on high-density screens, landscape notice, fullscreen, ? help button *(owner, 2026-10-18; zoom-and-drag on phones only if play-testing needs it)*
 
