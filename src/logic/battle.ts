@@ -1311,7 +1311,14 @@ function deployPods(
   const taken = (p: Point): boolean =>
     placed.some((q) => q.x === p.x && q.y === p.y) ||
     reserved.some((q) => q.x === p.x && q.y === p.y);
-  for (const hideOnly of [true, false]) {
+  // Out of sight first, even if a pod must spread out to stay hidden (as a last resort,
+  // anywhere hidden); into sight only if the east has too few hidden tiles for everyone.
+  for (const [hideOnly, spread] of [
+    [true, PODS.spread],
+    [true, PODS.hiddenSpread],
+    [true, map.cols + map.rows],
+    [false, PODS.spread],
+  ] as const) {
     for (const apart of [PODS.minApart, 1]) {
       for (let pod = placed.length / pods.size; pod < pods.count; pod++) {
         const leader = order.find(
@@ -1325,7 +1332,7 @@ function deployPods(
         for (const { p } of order) {
           if (members.length === pods.size) break;
           if (taken(p) || members.some((m) => m.x === p.x && m.y === p.y)) continue;
-          if (dist(p, leader.p) > PODS.spread) continue;
+          if (dist(p, leader.p) > spread) continue;
           if (hideOnly && seen.has(p.y * map.cols + p.x)) continue;
           members.push(p);
         }
