@@ -19,6 +19,10 @@ import type { PropKind } from './map';
  *   P  bulkhead pillar    k  crate (half)    v  console (half)
  *   *  a crate or a console    #  maybe a pillar
  *
+ * Crash site (M4.3), with the forest's trees and rocks:
+ *   W  wreck: its bottom-left tile, with '=' on the rest of its 3 x 2 footprint
+ *   j  scrap, junk from the wreck (half)    *  scrap or rocks    #  maybe a tree
+ *
  * All chunks of a landscape are the same size (CHUNK in tuning.ts). The generator may
  * mirror each one left to right, and top to bottom unless it's `upright` (a house).
  */
@@ -65,6 +69,8 @@ const LEGEND: Readonly<Record<string, ChunkCell>> = {
   P: { kind: 'prop', prop: 'pillar' },
   k: { kind: 'prop', prop: 'crate' },
   v: { kind: 'prop', prop: 'console' },
+  W: { kind: 'prop', prop: 'wreck' },
+  j: { kind: 'prop', prop: 'scrap' },
   '*': { kind: 'maybeCover' },
   '#': { kind: 'maybeTree' },
 };
@@ -138,5 +144,29 @@ export const SHIP_CHUNKS: ChunkSet = {
     { name: 'control room', rows: ['.vvv..', '......', '..#...', '.k..v.'] },
     { name: 'bulkheads', rows: ['PP....', '......', '...#P.', '.*....'] },
     { name: 'machinery', rows: ['..#...', '.k..P.', '...*..', '#.....'] },
+  ],
+};
+
+/**
+ * Crash site: a forest clearing strewn with the alien ship's wreckage. A wreck is full
+ * cover and blocks sight; scrap is half cover. A wreck rises above its footprint, so
+ * wreck chunks stay upright. Spawn chunks stay light, as in the forest.
+ */
+export const CRASH_CHUNKS: ChunkSet = {
+  spawn: [
+    { name: 'scorched ground', rows: ['......', '.j....', '....*.', '......'] },
+    { name: 'scattered scrap', rows: ['..r...', '......', '.j..*.', '......'] },
+    { name: 'burnt bushes', rows: ['......', '..*b..', '......', '.j....'] },
+    { name: 'quiet edge', rows: ['....*.', '......', '.*....', '...r..'] },
+  ],
+  field: [
+    { name: 'hull section', rows: ['===...', 'W==.*.', '......', '.j..#.'], upright: true },
+    { name: 'wreck in the trees', rows: ['p.....', 'o.===.', '..W==.', '.*....'], upright: true },
+    { name: 'two wrecks', rows: ['===...', 'W==...', '...===', '.*.W=='], upright: true },
+    { name: 'debris field', rows: ['j...*.', '..j...', '.*..j.', '......'] },
+    { name: 'broken trees', rows: ['pp....', '.o..j.', '..#...', '.j..p.'] },
+    { name: 'impact', rows: ['......', '.j..j.', '......', '..*.#.'] },
+    { name: 'copse', rows: ['..bb..', '.pop..', '.p#o..', '..*...'] },
+    { name: 'rocky glade', rows: ['r...*.', '..o...', '......', '.r..j.'] },
   ],
 };

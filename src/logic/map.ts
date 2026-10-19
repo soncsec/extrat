@@ -22,7 +22,9 @@ export type PropKind =
   | 'tank'
   | 'pillar'
   | 'crate'
-  | 'console';
+  | 'console'
+  | 'wreck'
+  | 'scrap';
 export type Cover = 'half' | 'full';
 
 export interface PropInfo {
@@ -52,6 +54,9 @@ export const PROPS: Readonly<Record<PropKind, PropInfo>> = {
   pillar: { width: 1, height: 1, cover: 'full' },
   crate: { width: 1, height: 1, cover: 'half' },
   console: { width: 1, height: 1, cover: 'half' },
+  // Crash site (M4.3): a torn hull section on 3 x 2, and scrap strewn around it.
+  wreck: { width: 3, height: 2, cover: 'full' },
+  scrap: { width: 1, height: 1, cover: 'half' },
 };
 
 export interface Tile {
