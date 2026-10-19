@@ -76,7 +76,7 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 
 - [x] M4.1 Chunk-based generator with seeded scatter (ADR-E3)
 - [x] M4.2 Validators: reachability, spawn distance, cover density; 1,000-seed test
-- [ ] M4.3 Landscapes: forest, town, coast, rocky hills, crash site, alien ship; missing tiles drawn by Claude to match. *Order (PM review, owner 2026-10-18): alien ship first (the boss needs it), then crash site, coast, rocky hills. None dropped. Built: forest, town, coast (mission 3), crash site (mission 5), alien ship (mission 6).*
+- [x] M4.3 Landscapes: forest, town, coast, rocky hills, crash site, alien ship; missing tiles drawn by Claude to match. *Order (PM review, owner 2026-10-18): alien ship first (the boss needs it), then crash site, coast, rocky hills. None dropped. All built: forest (mission 1), town (2), coast (3), rocky hills (4), crash site (5), alien ship (6). The owner's play of one map per landscape is still to come.*
 - [x] M4.4 Map seed shown in the debrief so a map can be replayed for bug reports
 
 **Acceptance criteria:** every landscape passes the 1,000-seed test; the owner plays one map per landscape on staging.
@@ -85,7 +85,7 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 
 *Order changed (owner, 2026-10-18): a playable campaign skeleton on forest maps comes before the other landscapes (M4.3), then one landscape per PR. Mission ramp (owner decision): missions 1-2 two groups of 2 aliens, 3-4 three of 2, 5 three of 3, 6 the boss (three of 3 until M5.6). The debrief keeps REPLAY (same map) in the campaign.*
 
-- [ ] M5.1 Campaign of 6 missions, one per landscape; briefing and debrief screens. *Loop, briefing, debrief and mission ramp built; every mission uses the forest until M4.3 adds the other landscapes.*
+- [ ] M5.1 Campaign of 6 missions, one per landscape; briefing and debrief screens. *Loop, briefing, debrief and mission ramp built; each mission has its own landscape (M4.3).*
 - [x] M5.2 XP, ranks and stat increases. *Kills and wins earn XP; five ranks add aim and health; a replayed battle earns no XP (owner, 2026-10-18).*
 - [x] M5.3 Fallen marines return next mission; Wall of Shame (nicknames, death counts, debrief jokes). *Starter nicknames and jokes approved by the owner (2026-10-19).*
 - [x] M5.4 Squad wiped out: retry the mission on a new map

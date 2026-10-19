@@ -9,6 +9,8 @@ import { SHIP_TEXTURE } from './shipArt';
 export const CRASH_KEY = 'crash';
 /** The coast's texture (coastArt.ts builds it from the forest sheet and drawn pieces). */
 export const COAST_KEY = 'coast';
+/** The rocky hills' texture (hillsArt.ts builds it from the mountain and forest sheets). */
+export const HILLS_KEY = 'hills';
 /** The coast's sandy rows below the sea; the row after them is where sand meets grass. */
 const BEACH_ROWS = { first: FOREST.treeLineRows, last: FOREST.treeLineRows + 2 } as const;
 
@@ -102,6 +104,18 @@ export const LANDSCAPE_ART: Readonly<Record<LandscapeId, LandscapeArt>> = {
       if (y <= BEACH_ROWS.last && kind === 'rocks') return 'rocksSand';
       if (y <= BEACH_ROWS.last && kind === 'boulder') return 'boulderSand';
       if (kind === 'bush') return alternate('bushA', 'bushB', x, y);
+      return kind;
+    },
+  },
+  hills: {
+    key: HILLS_KEY,
+    // Mostly bare gravel; grass tufts and pebbles now and then.
+    ground: [...Array<string>(9).fill('gravel'), 'tuftA', 'tuftB', 'pebbles'],
+    decals: ['patch', 'pebbles'],
+    prop: (kind, x, y) => {
+      if (kind === 'cliff') return alternate('cliffA', 'cliffB', x, 0);
+      if (kind === 'pine') return 'pineGravel';
+      if (kind === 'bush') return alternate('bushGravelA', 'bushGravelB', x, y);
       return kind;
     },
   },

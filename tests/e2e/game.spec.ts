@@ -677,6 +677,21 @@ test('?landscape=ship opens an alien ship map with no errors (M4.3)', async ({ p
   expect(errors).toEqual([]);
 });
 
+test('?landscape=hills opens a rocky hills map with no errors (M4.3)', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text());
+  });
+  await openGame(page, '?seed=42&landscape=hills');
+  const snap = await snapshot(page);
+  // The cliff lines the top two rows; the field has crags (c), scree (s) and a mine (m).
+  expect(snap.layout.slice(0, 2 * MAP_COLS)).toBe('c'.repeat(2 * MAP_COLS));
+  expect(snap.layout.slice(2 * MAP_COLS)).toMatch(/c/);
+  expect(snap.layout.slice(2 * MAP_COLS)).toMatch(/m/);
+  expect(errors).toEqual([]);
+});
+
 test('?landscape=coast opens a coast map with no errors (M4.3)', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));

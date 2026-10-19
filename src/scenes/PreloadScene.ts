@@ -27,6 +27,7 @@ import {
 } from './art';
 import { BLAST_FRAMES, BLAST_TEXTURE, buildBlastTexture } from './blastArt';
 import { COAST_FRAMES, COAST_TEXTURE, buildCoastTexture } from './coastArt';
+import { HILLS_FRAMES, HILLS_SOURCE, HILLS_TEXTURE, buildHillsTexture } from './hillsArt';
 import { CRASH_FRAMES, CRASH_TEXTURE, buildCrashTexture } from './crashArt';
 import { SHIP_FRAMES, SHIP_SOURCES, SHIP_TEXTURE, buildShipTexture } from './shipArt';
 
@@ -61,6 +62,7 @@ export class PreloadScene extends Phaser.Scene {
 
     this.load.image(FOREST_SHEET.key, FOREST_SHEET.url);
     this.load.image(TOWN_SHEET.key, TOWN_SHEET.url);
+    this.load.image(HILLS_SOURCE.key, HILLS_SOURCE.url);
     for (const s of Object.values(SHIP_SOURCES)) this.load.image(s.key, s.url);
     for (const s of CHARACTER_SHEETS) {
       this.load.spritesheet(s.key, s.url, { frameWidth: s.frameWidth, frameHeight: s.frameHeight });
@@ -80,6 +82,8 @@ export class PreloadScene extends Phaser.Scene {
     addFrames(this.textures, SHIP_TEXTURE.key, SHIP_FRAMES);
     buildBlastTexture(this.textures);
     addFrames(this.textures, BLAST_TEXTURE.key, BLAST_FRAMES);
+    buildHillsTexture(this.textures);
+    addFrames(this.textures, HILLS_TEXTURE.key, HILLS_FRAMES);
     buildCoastTexture(this.textures);
     addFrames(this.textures, COAST_TEXTURE.key, COAST_FRAMES);
     buildCrashTexture(this.textures);
