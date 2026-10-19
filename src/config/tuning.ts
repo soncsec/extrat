@@ -140,6 +140,16 @@ export const RANKS = [
   { name: 'Lieutenant', short: 'LT', xp: 140, aim: 10, hp: 2, grenades: 2, ammo: 1 },
 ] as const;
 
+/**
+ * The supply drop (M5.10, owner 2026-10-19): after each won mission the player picks
+ * one, and every marine gets it for the next mission only (retries of it included).
+ */
+export const SUPPLIES = {
+  grenades: { name: 'GRENADES', line: '+1 grenade each', grenades: 1, hp: 0, aim: 0 },
+  armour: { name: 'ARMOUR', line: '+1 health each', grenades: 0, hp: 1, aim: 0 },
+  scopes: { name: 'SCOPES', line: '+10 aim each', grenades: 0, hp: 0, aim: 10 },
+} as const;
+
 /** The Wall of Shame (M5.3): shame is cosmetic only (owner decision 2026-10-17). */
 export const SHAME = {
   /** Deaths in a campaign before a marine's nickname gets worse. */

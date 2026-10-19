@@ -1,5 +1,5 @@
 import { MISSIONS, RANKS, SKIRMISH, XP } from '../config/tuning';
-import { MARINE_NAMES, type BattleState } from './battle';
+import { MARINE_NAMES, SUPPLY_IDS, type BattleState, type SupplyId } from './battle';
 import { createRng, rngStep } from './rng';
 
 /**
@@ -21,6 +21,11 @@ export interface Campaign {
   xp: number[];
   /** How many times each marine has died this campaign, in squad order (M5.3). */
   deaths: number[];
+  /**
+   * The supply picked for this mission (M5.10), kept for its retries. Null on the
+   * first mission, and on a later one until the player picks (see supplyDue).
+   */
+  supply: SupplyId | null;
 }
 
 /** What the player picked on the debrief. */
@@ -41,6 +46,7 @@ export function newCampaign(seed: number): Campaign {
     squad: names.slice(0, SKIRMISH.marines),
     xp: Array.from({ length: SKIRMISH.marines }, () => 0),
     deaths: Array.from({ length: SKIRMISH.marines }, () => 0),
+    supply: null,
   };
 }
 
@@ -86,13 +92,28 @@ export function afterBattle(c: Campaign, won: boolean, choice: DebriefChoice): C
   if (choice === 'replay') return c;
   if (choice === 'next' && won) {
     const mission = c.mission + 1;
-    return { ...c, mission, attempt: 0, mapSeed: mapSeedFor(c.seed, mission, 0) };
+    // A won mission earns the next one a supply drop, picked on its briefing.
+    return { ...c, mission, attempt: 0, mapSeed: mapSeedFor(c.seed, mission, 0), supply: null };
   }
   if (choice === 'retry' && !won) {
     const attempt = c.attempt + 1;
     return { ...c, attempt, mapSeed: mapSeedFor(c.seed, c.mission, attempt) };
   }
   return c;
+}
+
+/**
+ * True if the squad has won a mission and not yet picked the supply for this one
+ * (M5.10). The first mission has none: nothing has been won yet.
+ */
+export function supplyDue(c: Campaign): boolean {
+  return !isComplete(c) && c.mission > 0 && c.supply === null;
+}
+
+/** The campaign with this mission's supply picked. Only when one is due; else unchanged. */
+export function pickSupply(c: Campaign, supply: SupplyId): Campaign {
+  if (!supplyDue(c) || !SUPPLY_IDS.includes(supply)) return c;
+  return { ...c, supply };
 }
 
 /** The highest rank this much XP has earned (an index into RANKS). */

@@ -53,6 +53,7 @@ import {
   type ShotResult,
   type ThrowResult,
   type Side,
+  type SupplyId,
   type Unit,
   type UnitKind,
   footprint,
@@ -111,8 +112,14 @@ export interface MoveTile extends Point {
 export interface GameSnapshot {
   seed: number;
   mapSeed: number;
-  /** The campaign mission (0-based), try and squad XP, or null in a skirmish. */
-  campaign: { mission: number; attempt: number; xp: number[]; deaths: number[] } | null;
+  /** The campaign mission (0-based), try, squad XP and supply, or null in a skirmish. */
+  campaign: {
+    mission: number;
+    attempt: number;
+    xp: number[];
+    deaths: number[];
+    supply: SupplyId | null;
+  } | null;
   /** This battle was started with REPLAY (it earns no XP). */
   replaying: boolean;
   /** The alien turn is playing at fast-forward speed (M5.11). */
@@ -501,6 +508,7 @@ export class BattleScene extends Phaser.Scene {
             attempt: this.campaign.attempt,
             xp: [...this.campaign.xp],
             deaths: [...this.campaign.deaths],
+            supply: this.campaign.supply,
           }
         : null,
       replaying: this.replaying,
@@ -1700,6 +1708,7 @@ export class BattleScene extends Phaser.Scene {
               kinds: mission.kinds,
               ranks: squadRanks(c),
               boss: 'boss' in mission && mission.boss,
+              supply: c.supply,
             }
           : this.skirmishBoss
             ? { boss: true, pods: BOSS.escorts }

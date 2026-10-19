@@ -13,8 +13,10 @@ import {
   createBattle,
   footprint,
   MARINE_NAMES,
+  SUPPLY_IDS,
   unitVisibleTo,
   type BattleState,
+  type SupplyId,
   type Unit,
 } from './battle';
 import { currentMission, mapSeedFor, squadRanks, type Campaign } from './campaign';
@@ -29,12 +31,12 @@ import { generateMap, isWalkable } from './map';
  * checked. Anything unexpected (wrong version, an extra field, a number out of range,
  * a unit standing in a tree) rejects the whole save.
  */
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 /**
  * Older saves still load, checked just as strictly, with the fields they lack at their
  * starting values. Version 1 (M5.5) had no XP, kills or replay flag; version 2 (M5.2)
  * had no hit counts; version 3 (M5.9) had no death counts; version 4 (M5.3) had none
- * of the boss's front, charge or rest (M5.6).
+ * of the boss's front, charge or rest (M5.6); version 5 had no supply (M5.10).
  */
 const OLDEST_VERSION = 1;
 /** A save larger than this isn't ours: it is rejected before parsing. */
@@ -92,6 +94,7 @@ export function encodeSave(campaign: Campaign, battle: BattleState | null, repla
       squad: [...campaign.squad],
       xp: [...campaign.xp],
       deaths: [...campaign.deaths],
+      supply: campaign.supply,
     },
     battle: battle
       ? {
@@ -163,6 +166,7 @@ export function restoreBattle(campaign: Campaign, saved: SavedBattle): BattleSta
     kinds: mission.kinds,
     ranks: squadRanks(campaign),
     boss: 'boss' in mission && mission.boss === true,
+    supply: campaign.supply,
   });
   if (saved.units.length !== fresh.units.length) return null;
   const byId = new Map(saved.units.map((u) => [u.id, u]));
@@ -217,6 +221,7 @@ export function restoreBattle(campaign: Campaign, saved: SavedBattle): BattleSta
     selected: null,
     lastShot: null,
     lastMove: null,
+    supply: fresh.supply,
     lastThrow: null,
     lastBlast: null,
     lastPoison: [],
@@ -252,11 +257,15 @@ function checkCampaign(v: unknown, version: number): Campaign | null {
     ? CAMPAIGN_KEYS
     : version < 4
       ? [...CAMPAIGN_KEYS, 'xp']
-      : [...CAMPAIGN_KEYS, 'xp', 'deaths'];
+      : version < 6
+        ? [...CAMPAIGN_KEYS, 'xp', 'deaths']
+        : [...CAMPAIGN_KEYS, 'xp', 'deaths', 'supply'];
   if (!isRecord(v) || !hasOnly(v, keys)) return null;
   const { seed, mission, attempt, mapSeed, squad } = v;
   const xp = old ? noXp() : v.xp;
   const deaths = version < 4 ? noXp() : v.deaths;
+  // Before version 6 there was no supply: the next briefing offers one if it's due.
+  const supply = version < 6 ? null : v.supply;
   if (!isInt(seed, 0, 0xffffffff)) return null;
   // A completed campaign isn't saved, so the mission is always one still to play.
   if (!isInt(mission, 0, MISSIONS.length - 1)) return null;
@@ -271,6 +280,9 @@ function checkCampaign(v: unknown, version: number): Campaign | null {
   if (!xp.every((x) => isInt(x, 0, XP.max))) return null;
   if (!Array.isArray(deaths) || deaths.length !== squad.length) return null;
   if (!deaths.every((d) => isInt(d, 0, 100_000))) return null;
+  // One of the named supplies, never on the first mission (nothing won yet).
+  const ids = SUPPLY_IDS as readonly unknown[];
+  if (supply !== null && (!ids.includes(supply) || mission === 0)) return null;
   return {
     seed,
     mission,
@@ -279,6 +291,7 @@ function checkCampaign(v: unknown, version: number): Campaign | null {
     squad: [...(squad as string[])],
     xp: [...(xp as number[])],
     deaths: [...(deaths as number[])],
+    supply: supply as SupplyId | null,
   };
 }
 

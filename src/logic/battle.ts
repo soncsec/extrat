@@ -10,6 +10,7 @@ import {
   SHOOTING,
   SIGHT,
   SKIRMISH,
+  SUPPLIES,
   UNITS,
 } from '../config/tuning';
 import { findPath, hasLineOfSight, reachable, type Point } from './grid';
@@ -105,6 +106,8 @@ export interface BattleState {
   lastShot: ShotResult | null;
   /** What the most recent move did, including reaction shots along the way. */
   lastMove: MoveResult | null;
+  /** The supply the squad brought (M5.10): its aim counts on every marine's shot. */
+  supply: SupplyId | null;
   /** What the most recent grenade did. */
   lastThrow: ThrowResult | null;
   /** What the boss's most recent blast did (M5.6). */
@@ -203,16 +206,24 @@ export interface BattleSetup {
   kinds?: readonly AlienKind[];
   /** The final mission's boss (M5.6) stands among the alien groups, in its own group. */
   boss?: boolean;
+  /** The supply picked after the last mission (M5.10), for every marine. */
+  supply?: SupplyId | null;
 }
+
+/** One of the supplies picked between missions (M5.10). */
+export type SupplyId = keyof typeof SUPPLIES;
+export const SUPPLY_IDS = Object.keys(SUPPLIES) as SupplyId[];
 
 /** A new battle: marines deploy in the west spawn zone, aliens in the east. */
 export function createBattle(map: BattleMap, seed: number, setup: BattleSetup = {}): BattleState {
   const rng = createRng(seed);
   const drawn = shuffled(rng, MARINE_NAMES);
   const names = drawn.map((n, i) => setup.names?.[i] ?? n);
+  const supply = setup.supply ?? null;
+  const extra = supply ? SUPPLIES[supply] : { hp: 0, grenades: 0 };
   const marines = deploy(map, rng, 'west', SKIRMISH.marines).map((p, i): Unit => {
     const rank = rankIndex(setup.ranks?.[i] ?? 0);
-    const hp = UNITS.marine.hp + rankOf(rank).hp;
+    const hp = UNITS.marine.hp + rankOf(rank).hp + extra.hp;
     return {
       ...p,
       id: `m${i + 1}`,
@@ -226,7 +237,7 @@ export function createBattle(map: BattleMap, seed: number, setup: BattleSetup = 
       move: UNITS.marine.move,
       ammo: UNITS.marine.ammo + rankOf(rank).ammo,
       overwatch: false,
-      grenades: GRENADE.perMarine + rankOf(rank).grenades,
+      grenades: GRENADE.perMarine + rankOf(rank).grenades + extra.grenades,
       exposed: false,
       pod: null,
       dormant: false,
@@ -296,6 +307,7 @@ export function createBattle(map: BattleMap, seed: number, setup: BattleSetup = 
     rng: (seed ^ 0x9e3779b9) >>> 0,
     lastShot: null,
     lastMove: null,
+    supply,
     lastThrow: null,
     lastBlast: null,
     lastPoison: [],
@@ -588,7 +600,7 @@ export function hitChance(state: BattleState, shooterId: string, targetId: strin
 
 /** Everything that goes into a shot's odds, for the breakdown panel. */
 export interface ShotOdds {
-  /** The shooter's aim, with its rank's bonus. */
+  /** The shooter's aim, with its rank's bonus and a marine's supply of scopes (M5.10). */
   aim: number;
   /** Lost to distance beyond close range (zero or negative). */
   range: number;
@@ -652,7 +664,8 @@ export function oddsBetween(
   reaction: boolean,
 ): ShotOdds {
   const stats = UNITS[shooter.kind];
-  const aim = stats.aim + rankOf(shooter.rank).aim;
+  const scopes = shooter.side === 'marine' && state.supply ? SUPPLIES[state.supply].aim : 0;
+  const aim = stats.aim + rankOf(shooter.rank).aim + scopes;
   // From the shooter's tile nearest the target that can see it, to that target tile.
   const line = sightLine(state.map, shooter, target) ?? { from: shooter, to: target };
   const dist = Math.hypot(line.to.x - line.from.x, line.to.y - line.from.y);
