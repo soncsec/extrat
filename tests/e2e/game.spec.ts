@@ -33,12 +33,17 @@ async function waitForScene(page: Page, key: string): Promise<void> {
 
 /**
  * Opens the game and starts a battle from the title screen. With ?seed= that's a
- * one-off skirmish; without, a campaign, whose briefing comes first.
+ * one-off skirmish; without, a campaign, whose briefing comes first. A new campaign
+ * (no ?campaign=) picks its difficulty before that: Enter takes RECRUIT (M6.3).
  */
 async function openGame(page: Page, query = ''): Promise<void> {
   await page.goto(`./${query}`);
   await waitForScene(page, 'Title');
   await page.keyboard.press('Enter');
+  if (!/seed=|campaign=/i.test(query)) {
+    await waitForScene(page, 'Difficulty');
+    await page.keyboard.press('Enter');
+  }
   if (!/seed=/i.test(query)) {
     await waitForScene(page, 'Briefing');
     await page.keyboard.press('Enter');
@@ -727,9 +732,35 @@ test('the title screen starts a campaign with its button', async ({ page }) => {
   const box = await page.locator('#game canvas').boundingBox();
   if (!box) throw new Error('no canvas');
   const zoom = box.width / GAME_WIDTH;
-  // START CAMPAIGN is centred at y = 172; the briefing comes first.
+  // START CAMPAIGN is centred at y = 172; the difficulty, then the briefing, come first.
   await page.mouse.click(box.x + (GAME_WIDTH / 2) * zoom, box.y + 172 * zoom);
+  await waitForScene(page, 'Difficulty');
+  await page.keyboard.press('Enter');
   await waitForScene(page, 'Briefing');
+});
+
+test('a new campaign picks RECRUIT or VETERAN; RECRUIT marines are tougher (M6.3)', async ({
+  page,
+}) => {
+  const squadOf = async (key: string): Promise<GameSnapshot['units']> => {
+    await page.goto('./');
+    await page.evaluate(() => window.localStorage.clear());
+    await page.reload();
+    await waitForScene(page, 'Title');
+    await page.keyboard.press('Enter');
+    await waitForScene(page, 'Difficulty');
+    await page.keyboard.press(key);
+    await waitForScene(page, 'Briefing');
+    await page.keyboard.press('Enter');
+    await waitForScene(page, 'Battle');
+    return (await snapshot(page)).units.filter((u) => u.side === 'marine');
+  };
+  const recruits = await squadOf('1');
+  const veterans = await squadOf('2');
+  for (const m of recruits) {
+    expect(m.maxHp).toBe((veterans[0]?.maxHp ?? 0) + 1);
+    expect(m.grenades).toBe((veterans[0]?.grenades ?? 0) + 1);
+  }
 });
 
 test('without ?seed= each new game gets a different map', async ({ page }) => {
@@ -742,6 +773,8 @@ test('without ?seed= each new game gets a different map', async ({ page }) => {
   await waitForScene(page, 'Title');
   // The first campaign is saved now, so the title offers to continue it: N starts anew.
   await page.keyboard.press('n');
+  await waitForScene(page, 'Difficulty');
+  await page.keyboard.press('Enter');
   await waitForScene(page, 'Briefing');
   await page.keyboard.press('Enter');
   await waitForScene(page, 'Battle');

@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { fitDesign } from './layout';
-import { GAME_HEIGHT, GAME_WIDTH, MISSIONS, SUPPLIES, TILE } from '../config/tuning';
+import { DIFFICULTY, GAME_HEIGHT, GAME_WIDTH, MISSIONS, SUPPLIES, TILE } from '../config/tuning';
 import { rankOf, SUPPLY_IDS, type SupplyId } from '../logic/battle';
 import {
   currentMission,
@@ -67,7 +67,8 @@ export class BriefingScene extends Phaser.Scene {
     // A retry says so beside the landscape: 'TOWN   TRY 2: A NEW MAP'.
     const where = LANDSCAPES[mission.landscape].name.toUpperCase();
     const retry = campaign.attempt > 0 ? `   Try ${campaign.attempt + 1}: a new map` : '';
-    pixelText(this, cx, 62, `${where}${retry}`, 0xdfe4ec);
+    const level = DIFFICULTY[campaign.difficulty].name;
+    pixelText(this, cx, 62, `${where}   ${level}${retry}`, 0xdfe4ec);
     const intel = missionIntel(campaign.mission);
     new PixelText(
       this,

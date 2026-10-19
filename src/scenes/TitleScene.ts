@@ -7,7 +7,7 @@ import { newCampaign } from '../logic/campaign';
 import { restoreBattle, type Save } from '../logic/save';
 import { clearSave, readSave } from './storage';
 import { isTouchDevice } from './touch';
-import { randomSeed, urlNumber } from './seed';
+import { randomSeed, urlDifficulty, urlNumber } from './seed';
 import { PixelButton, PixelText, pixelButton, pixelText } from './pixelFont';
 
 /** Where the games portal lives, relative to this game's folder (games.soncrant.com/extrat/). */
@@ -135,10 +135,16 @@ export class TitleScene extends Phaser.Scene {
       this.scene.start('Battle', { seed });
       return;
     }
-    // ?campaign=N replays a whole campaign (bug reports); otherwise a new one. It
-    // replaces any saved campaign when its briefing saves.
-    const campaign = newCampaign(urlNumber('campaign') ?? randomSeed());
-    this.scene.start('Briefing', { campaign });
+    // ?campaign=N replays a whole campaign (bug reports): VETERAN unless the link says
+    // ?difficulty=. A new campaign picks its difficulty first (M6.3). Either replaces
+    // any saved campaign when its briefing saves.
+    const replayed = urlNumber('campaign');
+    if (replayed !== null) {
+      const campaign = newCampaign(replayed, urlDifficulty() ?? 'veteran');
+      this.scene.start('Briefing', { campaign });
+      return;
+    }
+    this.scene.start('Difficulty', { seed: randomSeed() });
   }
 
   /** Back to where the save left off: the battle in progress, or the next briefing. */

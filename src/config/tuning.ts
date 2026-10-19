@@ -150,6 +150,31 @@ export const SUPPLIES = {
   scopes: { name: 'SCOPES', line: '+10 aim each', grenades: 0, hp: 0, aim: 10 },
 } as const;
 
+/**
+ * How hard the campaign is (M6.3, owner 2026-10-19: "very difficult"), picked when it
+ * starts. RECRUIT is the default; VETERAN is the game as first tuned. Skirmish links
+ * (?seed=) are VETERAN unless they say otherwise, so old links play the same.
+ */
+export const DIFFICULTY = {
+  recruit: {
+    name: 'RECRUIT',
+    /** Added to every alien's aim (claws and spit included). */
+    alienAim: -15,
+    /** Extra health and grenades for every marine. */
+    marineHp: 1,
+    grenades: 1,
+    /** Added to the Overseer's health. */
+    bossHp: -4,
+  },
+  veteran: { name: 'VETERAN', alienAim: 0, marineHp: 0, grenades: 0, bossHp: 0 },
+} as const;
+
+/**
+ * The boss practice battle (?boss=1): a squad like one that fought its way to mission 6
+ * (owner, 2026-10-19), not rookies. `rank` is an index into RANKS (3: Sergeant).
+ */
+export const BOSS_PRACTICE = { rank: 3, supply: 'grenades' } as const;
+
 /** The Wall of Shame (M5.3): shame is cosmetic only (owner decision 2026-10-17). */
 export const SHAME = {
   /** Deaths in a campaign before a marine's nickname gets worse. */

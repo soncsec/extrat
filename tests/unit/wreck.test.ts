@@ -222,11 +222,17 @@ describe('wrecked cover in the save (version 7)', () => {
     const { campaign, battle } = blasted();
     const save = JSON.parse(encodeSave(campaign, battle)) as {
       v: number;
+      campaign: Record<string, unknown>;
       battle: Record<string, unknown>;
     };
     const { wrecks, ...v6battle } = save.battle;
     expect(Array.isArray(wrecks)).toBe(true);
-    const v6 = decodeSave(JSON.stringify({ ...save, v: 6, battle: v6battle }));
+    // Version 6 had no difficulty either (M6.3).
+    const { difficulty, ...v6campaign } = save.campaign;
+    expect(difficulty).toBe('veteran');
+    const v6 = decodeSave(
+      JSON.stringify({ ...save, v: 6, campaign: v6campaign, battle: v6battle }),
+    );
     expect(v6.ok && v6.save.battle?.wrecks).toEqual([]);
     expect(decodeSave(JSON.stringify({ ...save, v: 6 })).ok).toBe(false);
   });

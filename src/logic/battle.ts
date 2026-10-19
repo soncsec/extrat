@@ -9,6 +9,7 @@ import {
   RANKS,
   SHOOTING,
   SIGHT,
+  DIFFICULTY,
   SKIRMISH,
   SUPPLIES,
   UNITS,
@@ -110,6 +111,8 @@ export interface BattleState {
   lastMove: MoveResult | null;
   /** The supply the squad brought (M5.10): its aim counts on every marine's shot. */
   supply: SupplyId | null;
+  /** How hard the battle is (M6.3): RECRUIT takes aim off every alien's attack. */
+  difficulty: DifficultyId;
   /** What the most recent grenade did. */
   lastThrow: ThrowResult | null;
   /** What the boss's most recent blast did (M5.6). */
@@ -212,7 +215,13 @@ export interface BattleSetup {
   boss?: boolean;
   /** The supply picked after the last mission (M5.10), for every marine. */
   supply?: SupplyId | null;
+  /** How hard (M6.3); VETERAN when missing. */
+  difficulty?: DifficultyId;
 }
+
+/** A campaign's difficulty (M6.3). */
+export type DifficultyId = keyof typeof DIFFICULTY;
+export const DIFFICULTY_IDS = Object.keys(DIFFICULTY) as DifficultyId[];
 
 /** One of the supplies picked between missions (M5.10). */
 export type SupplyId = keyof typeof SUPPLIES;
@@ -224,7 +233,13 @@ export function createBattle(map: BattleMap, seed: number, setup: BattleSetup = 
   const drawn = shuffled(rng, MARINE_NAMES);
   const names = drawn.map((n, i) => setup.names?.[i] ?? n);
   const supply = setup.supply ?? null;
-  const extra = supply ? SUPPLIES[supply] : { hp: 0, grenades: 0 };
+  const difficulty = setup.difficulty ?? 'veteran';
+  const easier = DIFFICULTY[difficulty];
+  const supplied = supply ? SUPPLIES[supply] : { hp: 0, grenades: 0 };
+  const extra = {
+    hp: supplied.hp + easier.marineHp,
+    grenades: supplied.grenades + easier.grenades,
+  };
   const marines = deploy(map, rng, 'west', SKIRMISH.marines).map((p, i): Unit => {
     const rank = rankIndex(setup.ranks?.[i] ?? 0);
     const hp = UNITS.marine.hp + rankOf(rank).hp + extra.hp;
@@ -301,7 +316,11 @@ export function createBattle(map: BattleMap, seed: number, setup: BattleSetup = 
       cooldown: 0,
     };
   });
-  if (bossAt) aliens.push(makeBoss(bossAt, `a${aliens.length + 1}`, (setup.pods ?? PODS).count));
+  if (bossAt) {
+    const boss = makeBoss(bossAt, `a${aliens.length + 1}`, (setup.pods ?? PODS).count);
+    const hp = boss.hp + easier.bossHp;
+    aliens.push({ ...boss, hp, maxHp: hp });
+  }
   return {
     map,
     units: [...marines, ...aliens],
@@ -312,6 +331,7 @@ export function createBattle(map: BattleMap, seed: number, setup: BattleSetup = 
     lastShot: null,
     lastMove: null,
     supply,
+    difficulty,
     lastThrow: null,
     lastBlast: null,
     lastPoison: [],
@@ -669,7 +689,9 @@ export function oddsBetween(
 ): ShotOdds {
   const stats = UNITS[shooter.kind];
   const scopes = shooter.side === 'marine' && state.supply ? SUPPLIES[state.supply].aim : 0;
-  const aim = stats.aim + rankOf(shooter.rank).aim + scopes;
+  // RECRUIT (M6.3): aliens aim worse.
+  const handicap = shooter.side === 'alien' ? DIFFICULTY[state.difficulty].alienAim : 0;
+  const aim = stats.aim + rankOf(shooter.rank).aim + scopes + handicap;
   // From the shooter's tile nearest the target that can see it, to that target tile.
   const line = sightLine(state.map, shooter, target) ?? { from: shooter, to: target };
   const dist = Math.hypot(line.to.x - line.from.x, line.to.y - line.from.y);

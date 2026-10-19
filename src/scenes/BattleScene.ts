@@ -3,6 +3,7 @@ import {
   ACTION_POINTS,
   ANIMATION,
   BOSS,
+  BOSS_PRACTICE,
   DEFAULT_SEED,
   GRENADE,
   GAME_WIDTH,
@@ -13,6 +14,7 @@ import {
   MAP_COLS,
   MAP_ROWS,
   MISSIONS,
+  SKIRMISH,
   TILE,
   TOUCH,
   UNITS,
@@ -101,7 +103,7 @@ import {
 } from './fx';
 import type { BattleResult } from './ResultScene';
 import { CELL_W, PixelButton, PixelText } from './pixelFont';
-import { initialSeed, urlWord } from './seed';
+import { initialSeed, urlDifficulty, urlWord } from './seed';
 import { LAYOUT } from './layout';
 import { clearSave, writeSave } from './storage';
 import { isTouchDevice } from './touch';
@@ -1745,10 +1747,17 @@ export class BattleScene extends Phaser.Scene {
               ranks: squadRanks(c),
               boss: 'boss' in mission && mission.boss,
               supply: c.supply,
+              difficulty: c.difficulty,
             }
           : this.skirmishBoss
-            ? { boss: true, pods: BOSS.escorts }
-            : {},
+            ? {
+                boss: true,
+                pods: BOSS.escorts,
+                ranks: Array.from({ length: SKIRMISH.marines }, () => BOSS_PRACTICE.rank),
+                supply: BOSS_PRACTICE.supply,
+                difficulty: urlDifficulty() ?? 'veteran',
+              }
+            : { difficulty: urlDifficulty() ?? 'veteran' },
       );
     // A campaign saves as each of the squad's turns begins, this first one included.
     if (c) writeSave(c, this.state, replay);

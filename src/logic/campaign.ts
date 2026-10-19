@@ -1,5 +1,11 @@
 import { MISSIONS, RANKS, SKIRMISH, XP } from '../config/tuning';
-import { MARINE_NAMES, SUPPLY_IDS, type BattleState, type SupplyId } from './battle';
+import {
+  MARINE_NAMES,
+  SUPPLY_IDS,
+  type BattleState,
+  type DifficultyId,
+  type SupplyId,
+} from './battle';
 import { createRng, rngStep } from './rng';
 
 /**
@@ -26,12 +32,14 @@ export interface Campaign {
    * first mission, and on a later one until the player picks (see supplyDue).
    */
   supply: SupplyId | null;
+  /** How hard the campaign is (M6.3), picked when it starts. */
+  difficulty: DifficultyId;
 }
 
 /** What the player picked on the debrief. */
 export type DebriefChoice = 'next' | 'retry' | 'replay';
 
-export function newCampaign(seed: number): Campaign {
+export function newCampaign(seed: number, difficulty: DifficultyId = 'veteran'): Campaign {
   const rng = createRng(seed);
   const names = [...MARINE_NAMES];
   for (let i = names.length - 1; i > 0; i--) {
@@ -47,6 +55,7 @@ export function newCampaign(seed: number): Campaign {
     xp: Array.from({ length: SKIRMISH.marines }, () => 0),
     deaths: Array.from({ length: SKIRMISH.marines }, () => 0),
     supply: null,
+    difficulty,
   };
 }
 
