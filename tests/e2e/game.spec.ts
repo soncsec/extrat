@@ -660,6 +660,25 @@ async function wipeOut(page: Page, side: 'alien' | 'marine'): Promise<void> {
   await expect.poll(() => activeScenes(page), { timeout: 15_000 }).toContain('Result');
 }
 
+/**
+ * On the supply drop after a won mission (M5.10): press 1, 2 or 3 and wait for the
+ * pick to be saved and the usual briefing to show.
+ */
+async function pickSupply(page: Page, key: '1' | '2' | '3' = '1'): Promise<void> {
+  await waitForScene(page, 'Briefing');
+  await page.keyboard.press(key);
+  await expect
+    .poll(() =>
+      page.evaluate((k) => {
+        const text = window.localStorage.getItem(k);
+        return text
+          ? (JSON.parse(text) as { campaign: { supply: unknown } }).campaign.supply
+          : null;
+      }, SAVE_KEY),
+    )
+    .not.toBeNull();
+}
+
 test('a campaign runs mission after mission with the same squad', async ({ page }) => {
   test.setTimeout(90_000);
   await openGame(page, '?campaign=7');
@@ -670,10 +689,10 @@ test('a campaign runs mission after mission with the same squad', async ({ page 
   expect(first.units.filter((u) => u.side === 'alien').every((u) => u.kind === 'walker')).toBe(
     true,
   );
-  // Mission 1 won: Enter goes to the next briefing, then the next mission.
+  // Mission 1 won: Enter goes to the supply drop, then the briefing, then the mission.
   await wipeOut(page, 'alien');
   await page.keyboard.press('Enter');
-  await waitForScene(page, 'Briefing');
+  await pickSupply(page);
   await page.keyboard.press('Enter');
   await waitForScene(page, 'Battle');
   const second = await snapshot(page);
@@ -724,7 +743,7 @@ test('wins earn XP and promotions; a replayed win earns none (M5.2)', async ({ p
   // The replayed win earns nothing; the debrief says so.
   await wipeOut(page, 'alien');
   await page.keyboard.press('Enter');
-  await waitForScene(page, 'Briefing');
+  await pickSupply(page);
   await page.keyboard.press('Enter');
   await waitForScene(page, 'Battle');
   const second = await snapshot(page);
@@ -734,7 +753,7 @@ test('wins earn XP and promotions; a replayed win earns none (M5.2)', async ({ p
   // Mission 2 won: 20 XP each makes them all Squaddies.
   await wipeOut(page, 'alien');
   await page.keyboard.press('Enter');
-  await waitForScene(page, 'Briefing');
+  await pickSupply(page);
   await page.keyboard.press('Enter');
   await waitForScene(page, 'Battle');
   const third = await snapshot(page);
@@ -755,7 +774,7 @@ test('a fallen marine returns next mission, counted on the Wall of Shame (M5.3)'
   await wipeOut(page, 'alien');
   expect((await snapshot(page)).campaign?.deaths).toEqual([1, 0, 0, 0]);
   await page.keyboard.press('Enter');
-  await waitForScene(page, 'Briefing');
+  await pickSupply(page);
   // S opens the squad page; S again closes it.
   await page.keyboard.press('s');
   await expect.poll(() => activeScenes(page)).toContain('Squad');
@@ -782,6 +801,7 @@ test('winning all six missions completes the campaign', async ({ page }) => {
     await page.keyboard.press('Enter');
     await waitForScene(page, 'Briefing');
     if (mission < 5) {
+      await pickSupply(page);
       await page.keyboard.press('Enter');
       await waitForScene(page, 'Battle');
     }
@@ -800,7 +820,7 @@ test('in the final mission, killing the boss alone wins the campaign (M5.6)', as
   for (let mission = 0; mission < 5; mission++) {
     await wipeOut(page, 'alien');
     await page.keyboard.press('Enter');
-    await waitForScene(page, 'Briefing');
+    await pickSupply(page);
     await page.keyboard.press('Enter');
     await waitForScene(page, 'Battle');
   }
@@ -1006,10 +1026,62 @@ test('a campaign saved between missions resumes at the next briefing', async ({ 
   await page.reload();
   await waitForScene(page, 'Title');
   await page.keyboard.press('Enter');
-  await waitForScene(page, 'Briefing');
+  await pickSupply(page);
   await page.keyboard.press('Enter');
   await waitForScene(page, 'Battle');
   expect((await snapshot(page)).campaign).toMatchObject({ mission: 1, attempt: 0 });
+});
+
+test('a won mission brings a supply drop for every marine, next mission only (M5.10)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await openGame(page, '?campaign=7');
+  const first = await snapshot(page);
+  const marines = (s: typeof first): typeof first.units =>
+    s.units.filter((u) => u.side === 'marine');
+  // Mission 1 has no supply.
+  expect(first.campaign?.supply).toBeNull();
+  await wipeOut(page, 'alien');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Briefing');
+  // Enter doesn't skip the pick; the supply drop waits for one.
+  await page.keyboard.press('Enter');
+  await expect.poll(() => activeScenes(page)).not.toContain('Battle');
+  // 2 picks armour, and it survives closing the browser at the briefing.
+  await pickSupply(page, '2');
+  await page.goto('./');
+  await waitForScene(page, 'Title');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Briefing');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Battle');
+  const second = await snapshot(page);
+  expect(second.campaign).toMatchObject({ mission: 1, supply: 'armour' });
+  for (const m of marines(second)) expect(m.maxHp).toBe((marines(first)[0]?.maxHp ?? 0) + 1);
+  // Mission 2 lost: the retry keeps the armour.
+  await wipeOut(page, 'marine');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Briefing');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Battle');
+  expect((await snapshot(page)).campaign).toMatchObject({
+    mission: 1,
+    attempt: 1,
+    supply: 'armour',
+  });
+  // Won: the next mission's drop is a new pick. 1 is grenades.
+  await wipeOut(page, 'alien');
+  await page.keyboard.press('Enter');
+  await pickSupply(page, '1');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Battle');
+  const third = await snapshot(page);
+  expect(third.campaign).toMatchObject({ mission: 2, supply: 'grenades' });
+  for (const m of marines(third)) {
+    expect(m.maxHp).toBe(marines(first)[0]?.maxHp);
+    expect(m.grenades).toBe((marines(first)[0]?.grenades ?? 0) + 1);
+  }
 });
 
 test('a damaged save is cleared with a message, never loaded', async ({ page }) => {

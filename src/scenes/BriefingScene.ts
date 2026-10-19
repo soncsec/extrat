@@ -1,12 +1,19 @@
 import Phaser from 'phaser';
 import { fitDesign } from './layout';
-import { GAME_HEIGHT, GAME_WIDTH, MISSIONS, TILE } from '../config/tuning';
-import { rankOf } from '../logic/battle';
-import { currentMission, isComplete, squadRanks, type Campaign } from '../logic/campaign';
+import { GAME_HEIGHT, GAME_WIDTH, MISSIONS, SUPPLIES, TILE } from '../config/tuning';
+import { rankOf, SUPPLY_IDS, type SupplyId } from '../logic/battle';
+import {
+  currentMission,
+  isComplete,
+  pickSupply,
+  squadRanks,
+  supplyDue,
+  type Campaign,
+} from '../logic/campaign';
 import { missionIntel } from '../logic/intel';
 import { LANDSCAPES } from '../logic/landscapes';
 import { FOREST_SHEET } from './art';
-import { PixelText, pixelButton, pixelText } from './pixelFont';
+import { LINE_H, PixelButton, PixelText, pixelButton, pixelText } from './pixelFont';
 import { clearSave, writeSave } from './storage';
 
 /**
@@ -50,12 +57,18 @@ export class BriefingScene extends Phaser.Scene {
       return;
     }
 
+    if (supplyDue(campaign)) {
+      this.supplyDrop(campaign);
+      return;
+    }
+
     const mission = currentMission(campaign);
     pixelText(this, cx, 40, `MISSION ${campaign.mission + 1} OF ${MISSIONS.length}`, 0xf2a33a, 2);
     // A retry says so beside the landscape: 'TOWN   TRY 2: A NEW MAP'.
     const where = LANDSCAPES[mission.landscape].name.toUpperCase();
     const retry = campaign.attempt > 0 ? `   Try ${campaign.attempt + 1}: a new map` : '';
     pixelText(this, cx, 62, `${where}${retry}`, 0xdfe4ec);
+    const intel = missionIntel(campaign.mission);
     new PixelText(
       this,
       cx,
@@ -65,12 +78,19 @@ export class BriefingScene extends Phaser.Scene {
         ...('boss' in mission && mission.boss
           ? ['Find the Overseer in the fog', 'and destroy it.']
           : ['Find the aliens hiding in the fog', 'and wipe them out.']),
-        ...missionIntel(campaign.mission),
+        ...intel,
         '',
         ...squadLines(campaign),
       ].join('\n'),
       { color: 0xc8d0dc, valign: 'top' },
     );
+    // The supply picked for this mission (M5.10), in orange on the gap above the squad.
+    if (campaign.supply) {
+      new PixelText(this, cx, 76 + (2 + intel.length) * LINE_H, supplyLine(campaign.supply), {
+        color: 0xf2a33a,
+        valign: 'top',
+      });
+    }
     pixelButton(this, cx - 50, 176, 'START MISSION', () => this.start(campaign));
     pixelButton(this, cx + 26, 176, 'SQUAD', () => this.squad(campaign), false);
     pixelButton(this, cx + 76, 176, 'TITLE', () => this.toTitle(), false);
@@ -78,6 +98,49 @@ export class BriefingScene extends Phaser.Scene {
     this.input.keyboard?.once('keydown-ENTER', () => this.start(campaign));
     this.input.keyboard?.once('keydown-ESC', () => this.toTitle());
     this.input.keyboard?.on('keydown-S', () => this.squad(campaign));
+  }
+
+  /**
+   * After a won mission (M5.10): pick one supply for every marine, for this mission
+   * and its retries. The pick is saved, then the briefing shows as usual.
+   */
+  private supplyDrop(campaign: Campaign): void {
+    const cx = GAME_WIDTH / 2;
+    pixelText(this, cx, 40, 'SUPPLY DROP', 0xf2a33a, 2);
+    pixelText(this, cx, 62, `Mission ${campaign.mission} won`, 0xdfe4ec);
+    new PixelText(
+      this,
+      cx,
+      84,
+      [
+        'Command sends supplies for',
+        `mission ${campaign.mission + 1}. Pick one for every marine.`,
+        'It lasts for this mission only,',
+        'retries included.',
+        '',
+        ...squadLines(campaign),
+      ].join('\n'),
+      { color: 0xc8d0dc, valign: 'top' },
+    );
+    const pick = (id: SupplyId): void => {
+      this.scene.restart({ campaign: pickSupply(campaign, id) });
+    };
+    const buttons = SUPPLY_IDS.map(
+      (id) => new PixelButton(this, 0, 176, supplyButton(id), () => pick(id)),
+    );
+    const gap = 8;
+    const total = buttons.reduce((sum, b) => sum + b.buttonWidth, 0) + gap * (buttons.length - 1);
+    let x = cx - total / 2;
+    for (const b of buttons) {
+      b.setX(Math.round(x + b.buttonWidth / 2));
+      x += b.buttonWidth + gap;
+    }
+    pixelText(this, cx, 196, '1, 2 or 3: pick   Esc: title', 0xa3adbd);
+    const keys = ['ONE', 'TWO', 'THREE'] as const;
+    SUPPLY_IDS.forEach((id, i) => {
+      this.input.keyboard?.once(`keydown-${keys[i] ?? ''}`, () => pick(id));
+    });
+    this.input.keyboard?.once('keydown-ESC', () => this.toTitle());
   }
 
   /** The squad page with the Wall of Shame (M5.3), over this screen, which waits paused. */
@@ -108,6 +171,20 @@ export class BriefingScene extends Phaser.Scene {
   private toTitle(): void {
     this.scene.start('Title');
   }
+}
+
+/** A supply's button: '+1 GRENADE', '+1 HEALTH', '+10 AIM'. */
+function supplyButton(id: SupplyId): string {
+  const s = SUPPLIES[id];
+  if (s.grenades > 0) return `+${s.grenades} GRENADE`;
+  if (s.hp > 0) return `+${s.hp} HEALTH`;
+  return `+${s.aim} AIM`;
+}
+
+/** 'Supply: scopes, +10 aim each'. */
+function supplyLine(id: SupplyId): string {
+  const s = SUPPLIES[id];
+  return `Supply: ${s.name.toLowerCase()}, ${s.line}`;
 }
 
 /** The squad with their ranks, two to a line, e.g. 'Squad: SQD Vasquez, RKE Okafor,'. */

@@ -242,6 +242,8 @@ describe('save version 2: XP, kills and replays (M5.2)', () => {
   const good = raw(ranked, battle);
   const b = good.battle;
   if (!b) throw new Error('no battle');
+  /** The campaign as saved before version 6: without the supply (M5.10). */
+  const pre6 = without(good.campaign, 'supply');
 
   it('keeps the squad`s XP and the replay flag', () => {
     const loaded = decodeSave(encodeSave(ranked, battle, true));
@@ -354,8 +356,52 @@ describe('save version 2: XP, kills and replays (M5.2)', () => {
     }
   });
 
+  it('keeps the supply picked for the mission, and rebuilds the battle with it (M5.10)', () => {
+    const supplied = { ...ranked, supply: 'armour' as const };
+    const map = buildMap(supplied);
+    const armoured = createBattle(map, map.seed, {
+      names: supplied.squad,
+      pods: currentMission(supplied).pods,
+      kinds: currentMission(supplied).kinds,
+      ranks: [0, 1, 2, 4],
+      supply: 'armour',
+    });
+    const loaded = decodeSave(encodeSave(supplied, armoured));
+    if (!loaded.ok || !loaded.save.battle) throw new Error('did not load');
+    expect(loaded.save.campaign.supply).toBe('armour');
+    const back = restoreBattle(loaded.save.campaign, loaded.save.battle);
+    expect(back?.supply).toBe('armour');
+    expect(back?.units.filter((u) => u.side === 'marine').map((u) => u.maxHp)).toEqual([
+      5, 5, 6, 7,
+    ]);
+    // The armour's extra health is only allowed with the armour.
+    expect(restoreBattle(ranked, loaded.save.battle)).toBeNull();
+  });
+
+  it('rejects a supply that is missing, unknown, or on the first mission', () => {
+    const c = good.campaign;
+    expect(decodes({ ...good, campaign: pre6 })).toBe(false);
+    for (const bad of ['rockets', 'SCOPES', 1, true, {}, ['armour'], '']) {
+      expect(decodes({ ...good, campaign: { ...c, supply: bad } }), String(bad)).toBe(false);
+    }
+    expect(decodes({ ...good, campaign: { ...c, supply: 'scopes' } })).toBe(true);
+    const first = raw(newCampaign(11), null);
+    expect(decodes(first)).toBe(true);
+    expect(decodes({ ...first, campaign: { ...first.campaign, supply: 'scopes' } })).toBe(false);
+  });
+
+  it('still loads a version 5 save, with no supply', () => {
+    const v5 = { v: 5, campaign: pre6, battle: b };
+    const loaded = decodeSave(JSON.stringify(v5));
+    if (!loaded.ok || !loaded.save.battle) throw new Error('did not load');
+    expect(loaded.save.v).toBe(SAVE_VERSION);
+    expect(loaded.save.campaign.supply).toBeNull();
+    // A version 5 save carrying version 6's field isn't one.
+    expect(decodes({ ...v5, campaign: good.campaign })).toBe(false);
+  });
+
   it('still loads a version 4 save, with no boss fields', () => {
-    const v4 = { v: 4, campaign: good.campaign, battle: { ...b, units: b.units.map(preBoss) } };
+    const v4 = { v: 4, campaign: pre6, battle: { ...b, units: b.units.map(preBoss) } };
     const loaded = decodeSave(JSON.stringify(v4));
     if (!loaded.ok || !loaded.save.battle) throw new Error('did not load');
     expect(loaded.save.v).toBe(SAVE_VERSION);
@@ -370,20 +416,20 @@ describe('save version 2: XP, kills and replays (M5.2)', () => {
   it('still loads a version 3 save, with no deaths', () => {
     const v3 = {
       v: 3,
-      campaign: without(good.campaign, 'deaths'),
+      campaign: without(pre6, 'deaths'),
       battle: { ...b, units: b.units.map(preBoss) },
     };
     const loaded = decodeSave(JSON.stringify(v3));
     if (!loaded.ok) throw new Error('did not load');
     expect(loaded.save.v).toBe(SAVE_VERSION);
     expect(loaded.save.campaign.deaths).toEqual([0, 0, 0, 0]);
-    expect(decodes({ ...v3, campaign: good.campaign })).toBe(false);
+    expect(decodes({ ...v3, campaign: pre6 })).toBe(false);
   });
 
   it('still loads a version 2 save, with no hits', () => {
     const v2 = {
       v: 2,
-      campaign: without(good.campaign, 'deaths'),
+      campaign: without(pre6, 'deaths'),
       battle: { ...b, units: b.units.map((u) => without(preBoss(u), 'hits')) },
     };
     const loaded = decodeSave(JSON.stringify(v2));
@@ -410,7 +456,7 @@ describe('save version 2: XP, kills and replays (M5.2)', () => {
   it('still loads a version 1 save, with no XP, kills or replay', () => {
     const v1 = {
       v: 1,
-      campaign: without(without(good.campaign, 'xp'), 'deaths'),
+      campaign: without(without(pre6, 'xp'), 'deaths'),
       battle: {
         round: b.round,
         rng: b.rng,
@@ -424,7 +470,7 @@ describe('save version 2: XP, kills and replays (M5.2)', () => {
     expect(loaded.save.battle.replay).toBe(false);
     expect(loaded.save.battle.units.every((u) => u.kills === 0)).toBe(true);
     // A version 1 save with version 2's fields isn't one.
-    expect(decodes({ ...v1, campaign: good.campaign })).toBe(false);
+    expect(decodes({ ...v1, campaign: pre6 })).toBe(false);
     expect(decodes({ ...v1, battle: { ...v1.battle, replay: false } })).toBe(false);
     expect(decodes({ ...v1, v: 0 })).toBe(false);
     expect(decodes({ ...v1, v: SAVE_VERSION + 1, campaign: good.campaign, battle: b })).toBe(false);
