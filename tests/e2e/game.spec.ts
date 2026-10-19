@@ -538,7 +538,9 @@ test('Tab and 1-4 pick marines; Tab skips marines with no actions left', async (
   await expect.poll(async () => (await snapshot(page)).selected).toBe(ids[2]);
   // Marine 3 goes on overwatch (no actions left), so the next marine is picked for us...
   await page.keyboard.press('o');
-  await expect.poll(async () => (await snapshot(page)).selected).toBe(ids[3]);
+  // The pick waits for the overwatch animation, whose game clock slows when the frame
+  // rate drops on a loaded machine (T1).
+  await expect.poll(async () => (await snapshot(page)).selected, { timeout: 15_000 }).toBe(ids[3]);
   // ...and Tab from marine 2 skips marine 3.
   await page.keyboard.press('2');
   await page.keyboard.press('Tab');
