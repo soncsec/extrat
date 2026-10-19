@@ -298,4 +298,6 @@ export const ACTION_POINTS = 2;
 export const ANIMATION = {
   /** Tiles per second when a unit runs along a path. */
   runSpeed: 6,
+  /** How many times faster the alien turn plays after Space or a tap (M5.11). */
+  fastForward: 3,
 } as const;

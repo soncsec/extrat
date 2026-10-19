@@ -855,6 +855,24 @@ async function scriptedTurn(page: Page): Promise<GameSnapshot> {
   return snapshot(page);
 }
 
+test('Space fast-forwards the alien turn, and the speed resets when it ends (M5.11)', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await openGame(page, '?seed=7');
+  expect((await snapshot(page)).fast).toBe(false);
+  await page.keyboard.press('e');
+  await expect.poll(async () => (await snapshot(page)).busy).toBe(true);
+  // One press, straight after the turn starts: a short alien turn (dormant pods) ends
+  // in a couple of seconds, so toggling back and forth would race it.
+  await page.keyboard.press(' ');
+  await expect.poll(async () => (await snapshot(page)).fast).toBe(true);
+  await expect.poll(async () => (await snapshot(page)).busy, { timeout: 40_000 }).toBe(false);
+  const after = await snapshot(page);
+  expect(after.fast).toBe(false);
+  expect(after.round).toBe(2);
+});
+
 test('a fixed-seed turn plays out exactly the same every time', async ({ page }) => {
   // Two full rounds, alien turns included, run back to back: more than the 30 s default.
   test.setTimeout(60_000);

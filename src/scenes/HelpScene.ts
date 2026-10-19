@@ -41,6 +41,7 @@ const PAGES: readonly { title: string; lines: readonly string[] }[] = [
       'Tab or 1-4: pick a marine   F: next target',
       'Enter: fire   E: end turn   Esc: cancel',
       'R: reload   O: watch   G: grenade   H: help',
+      'Space or a tap: fast-forward the alien turn',
     ],
   },
 ];

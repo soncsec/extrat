@@ -105,6 +105,8 @@ export interface GameSnapshot {
   campaign: { mission: number; attempt: number; xp: number[]; deaths: number[] } | null;
   /** This battle was started with REPLAY (it earns no XP). */
   replaying: boolean;
+  /** The alien turn is playing at fast-forward speed (M5.11). */
+  fast: boolean;
   /** The text of the unit line in the HUD, e.g. the prompt to pick a marine. */
   prompt: string;
   /** Touch: the tile tapped once, whose preview shows until it is tapped again. */
@@ -247,6 +249,8 @@ export class BattleScene extends Phaser.Scene {
   /** Cover shields for the hovered tile, drawn above units and trees. */
   private coverLayer!: Phaser.GameObjects.Graphics;
   private busy = false;
+  /** The alien turn is playing at ANIMATION.fastForward speed (M5.11). */
+  private fast = false;
   private pips!: Phaser.GameObjects.Graphics;
   /** Reused sprites for hits, deaths, blasts and projectiles. */
   private fx!: FxPool;
@@ -337,6 +341,7 @@ export class BattleScene extends Phaser.Scene {
       (p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
         // A press on a button (the ? over the map) is the button's, not the map's.
         if (over.length === 0) this.onClick(p.worldX, p.worldY, p.wasTouch);
+        else if (this.busy && this.state.turn === 'alien') this.toggleFast();
       },
     );
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.onHover(p.worldX, p.worldY));
@@ -363,6 +368,11 @@ export class BattleScene extends Phaser.Scene {
       if (e.key === 'Escape') {
         // Its own checks: it also works while the aliens move (it just does nothing).
         this.onEscape();
+        return;
+      }
+      if (e.key === ' ' && !e.repeat && this.busy && this.state.turn === 'alien') {
+        e.preventDefault();
+        this.toggleFast();
         return;
       }
       if (this.busy || this.state.turn !== 'marine') return;
@@ -461,6 +471,7 @@ export class BattleScene extends Phaser.Scene {
           }
         : null,
       replaying: this.replaying,
+      fast: this.fast,
       prompt: this.unitText.text,
       pending: this.pending,
       mapSeed: map.seed,
@@ -533,7 +544,12 @@ export class BattleScene extends Phaser.Scene {
   private onClick(px: number, py: number, touch = false): void {
     const x = Math.floor(px / TILE);
     const y = Math.floor(py / TILE);
-    if (y >= MAP_ROWS || this.busy) return;
+    if (this.busy) {
+      // A click or tap anywhere during the alien turn speeds it up, or slows it again.
+      if (this.state.turn === 'alien') this.toggleFast();
+      return;
+    }
+    if (y >= MAP_ROWS) return;
     const previewed = this.pending?.x === x && this.pending.y === y;
     this.pending = null;
     if (this.mode === 'grenade') {
@@ -937,6 +953,30 @@ export class BattleScene extends Phaser.Scene {
   }
 
   /** Ends the marines' turn, plays every alien's actions, then starts the next round. */
+  /**
+   * Fast-forward (M5.11): the alien turn's tweens, timers and sprite animations run
+   * ANIMATION.fastForward times faster. Rules are untouched: only the playback speeds up.
+   */
+  private setFast(on: boolean): void {
+    this.fast = on;
+    const scale = on ? ANIMATION.fastForward : 1;
+    this.tweens.timeScale = scale;
+    this.time.timeScale = scale;
+    this.anims.globalTimeScale = scale;
+    if (this.busy && this.state.turn === 'alien') this.unitText.setText(this.fastHint());
+  }
+
+  private toggleFast(): void {
+    this.setFast(!this.fast);
+  }
+
+  /** The unit line during the alien turn: how to speed it up, or slow it down again. */
+  private fastHint(): string {
+    return this.fast
+      ? 'Fast forward   Space or tap: normal'
+      : 'Alien turn   Space or tap: fast forward';
+  }
+
   private async endTurn(): Promise<void> {
     if (this.busy || this.state.turn !== 'marine') return;
     this.mode = 'move';
@@ -972,13 +1012,17 @@ export class BattleScene extends Phaser.Scene {
       }
     }
 
-    if (this.checkEnd()) return;
+    if (this.checkEnd()) {
+      this.setFast(false);
+      return;
+    }
     this.state = apply(this.state, { type: 'endTurn' });
     this.endWatch('marine');
     this.refreshVision();
     await this.banner(`TURN ${this.state.round}`, '#f2a33a');
     await this.playPoison();
     if (this.campaign) writeSave(this.campaign, this.state, this.replaying);
+    this.setFast(false);
     this.busy = false;
     const first = nextReadyMarine(this.state, null);
     if (first) this.selectMarine(first);
@@ -1672,7 +1716,8 @@ export class BattleScene extends Phaser.Scene {
     if (!unit || this.busy) {
       this.chevron.clear();
       if (this.busy) {
-        this.unitText.setText(unit ? marineLabel(unit) : '');
+        const hint = this.state.turn === 'alien' ? this.fastHint() : '';
+        this.unitText.setText(unit ? marineLabel(unit) : hint);
         return;
       }
       this.unitText.setText(`${isTouchDevice() ? 'Tap' : 'Click'} a marine to select it`);
