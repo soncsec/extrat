@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, MAP_ROWS, MISSIONS, TILE } from '../config/tuning';
+import { GAME_WIDTH, MAP_ROWS, MISSIONS, SKIRMISH, TILE } from '../config/tuning';
 import { rankOf } from '../logic/battle';
 import {
   afterBattle,
@@ -9,6 +9,7 @@ import {
   type Promotion,
 } from '../logic/campaign';
 import type { LandscapeId } from '../logic/landscapes';
+import { debriefJokes } from '../logic/shame';
 import { LINE_H, PixelButton, PixelText, pixelText } from './pixelFont';
 
 export interface BattleResult {
@@ -22,6 +23,8 @@ export interface BattleResult {
   campaign: Campaign | null;
   /** XP each marine earned (squad order) and who was promoted; null for a replay or skirmish. */
   xp: { gained: number[]; promotions: Promotion[] } | null;
+  /** The names of the marines lying dead at the end (M5.3: the debrief mocks them). */
+  lost: string[];
 }
 
 /** Space between buttons in a row. */
@@ -43,16 +46,20 @@ export class ResultScene extends Phaser.Scene {
     // A campaign debrief has a second column: the squad's XP and ranks.
     const squad = result.campaign !== null;
     const width = squad ? 312 : 252;
-    this.add.rectangle(cx, cy, width, 136, 0x0b0e15, 0.97).setStrokeStyle(1, 0x3d4760);
+    // Lost marines get a line each (M5.3), and the panel grows to fit them.
+    const jokes = debriefJokes(result.lost, SKIRMISH.marines, result.mapSeed);
+    const extra = jokes.length > 0 ? jokes.length * LINE_H + 6 : 0;
+    const top = cy - 68 - Math.ceil(extra / 2);
+    this.add.rectangle(cx, cy, width, 136 + extra, 0x0b0e15, 0.97).setStrokeStyle(1, 0x3d4760);
 
     const title = result.won ? 'MISSION COMPLETE' : 'SQUAD LOST';
-    pixelText(this, cx, cy - 46, title, result.won ? 0x8bf06a : 0xff6a5a, 2);
+    pixelText(this, cx, top + 22, title, result.won ? 0x8bf06a : 0xff6a5a, 2);
     const row = (name: string, value: number): string =>
       `${name.padEnd(15)}${String(value).padStart(3)}`;
     pixelText(
       this,
       squad ? cx - 74 : cx,
-      cy - 10,
+      top + 58,
       [
         row('Rounds', result.rounds),
         row('Aliens killed', result.aliensKilled),
@@ -60,10 +67,15 @@ export class ResultScene extends Phaser.Scene {
       ].join('\n'),
       0xdfe4ec,
     );
-    if (result.campaign) this.squadXp(cx + 14, cy - 10, result.campaign, result.xp);
+    if (result.campaign) this.squadXp(cx + 14, top + 58, result.campaign, result.xp);
     // The seed rebuilds this exact map: quote it in a bug report, or open the link.
     const where = result.landscape === 'forest' ? '' : `&landscape=${result.landscape}`;
-    pixelText(this, cx, cy + 18, `Link: ?seed=${result.mapSeed}${where}`, 0xa3adbd);
+    pixelText(this, cx, top + 86, `Link: ?seed=${result.mapSeed}${where}`, 0xa3adbd);
+    if (jokes.length > 0) {
+      new PixelText(this, cx, top + 100, jokes.join('\n'), { color: 0xf2a33a, valign: 'top' });
+    }
+    const buttonsY = top + 112 + extra;
+    const hintY = buttonsY + 18;
 
     const c = result.campaign;
     if (c) {
@@ -71,21 +83,21 @@ export class ResultScene extends Phaser.Scene {
       const last = c.mission === MISSIONS.length - 1;
       const main = result.won ? (last ? 'FINISH' : 'NEXT MISSION') : 'RETRY';
       const choice: DebriefChoice = result.won ? 'next' : 'retry';
-      this.buttonRow(cx, cy + 44, [
+      this.buttonRow(cx, buttonsY, [
         [main, () => this.campaignNext(c, result.won, choice), true],
         ['REPLAY', () => this.leave('replay'), false],
         ['TITLE', () => this.toTitle(), false],
       ]);
       const hint = result.won ? (last ? 'finish' : 'next') : 'new map';
-      pixelText(this, cx, cy + 62, `Enter: ${hint}  R: replay  Esc: title`, 0xa3adbd);
+      pixelText(this, cx, hintY, `Enter: ${hint}  R: replay  Esc: title`, 0xa3adbd);
       this.input.keyboard?.once('keydown-ENTER', () => this.campaignNext(c, result.won, choice));
     } else {
-      this.buttonRow(cx, cy + 44, [
+      this.buttonRow(cx, buttonsY, [
         ['PLAY AGAIN', () => this.leave('play-again'), true],
         ['REPLAY', () => this.leave('replay'), false],
         ['TITLE', () => this.toTitle(), false],
       ]);
-      pixelText(this, cx, cy + 62, 'Enter: again  R: replay  Esc: title', 0xa3adbd);
+      pixelText(this, cx, hintY, 'Enter: again  R: replay  Esc: title', 0xa3adbd);
       this.input.keyboard?.once('keydown-ENTER', () => this.leave('play-again'));
     }
     this.input.keyboard?.once('keydown-R', () => this.leave('replay'));
