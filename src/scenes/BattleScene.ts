@@ -1526,7 +1526,9 @@ export class BattleScene extends Phaser.Scene {
       createBattle(
         map,
         map.seed,
-        c && mission ? { names: c.squad, pods: mission.pods, ranks: squadRanks(c) } : {},
+        c && mission
+          ? { names: c.squad, pods: mission.pods, kinds: mission.kinds, ranks: squadRanks(c) }
+          : {},
       );
     // A campaign saves as each of the squad's turns begins, this first one included.
     if (c) writeSave(c, this.state, replay);

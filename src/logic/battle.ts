@@ -174,6 +174,11 @@ export interface BattleSetup {
   pods?: { count: number; size: number };
   /** Marine ranks in squad order (index into RANKS); missing ones are rookies. */
   ranks?: readonly number[];
+  /**
+   * Alien kinds this battle may field (default: all). The last one listed is the
+   * mission's new kind, and at least one alien is always of that kind (M5.8).
+   */
+  kinds?: readonly AlienKind[];
 }
 
 /** A new battle: marines deploy in the west spawn zone, aliens in the east. */
@@ -210,8 +215,14 @@ export function createBattle(map: BattleMap, seed: number, setup: BattleSetup = 
   });
   // Kinds come from their own generator, so the draw doesn't move where anyone stands.
   const kindRng = createRng((seed ^ 0x5bd1e995) >>> 0);
-  const aliens = deployPods(map, rng, marines, setup.pods ?? PODS).map(({ pod, ...p }, i): Unit => {
-    const kind = kindRng.pick(ALIEN_KINDS);
+  const allowed = setup.kinds && setup.kinds.length > 0 ? setup.kinds : ALIEN_KINDS;
+  const places = deployPods(map, rng, marines, setup.pods ?? PODS);
+  const kinds = places.map(() => kindRng.pick(allowed));
+  // The mission's new kind must show up, so the briefing's warning is never a lie.
+  const newest = allowed[allowed.length - 1] as AlienKind;
+  if (kinds.length > 0 && !kinds.includes(newest)) kinds[kindRng.int(0, kinds.length - 1)] = newest;
+  const aliens = places.map(({ pod, ...p }, i): Unit => {
+    const kind = kinds[i] as AlienKind;
     return {
       ...p,
       id: `a${i + 1}`,
