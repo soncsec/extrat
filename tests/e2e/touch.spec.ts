@@ -137,10 +137,12 @@ test('a tap during the alien turn fast-forwards it, and the speed resets after (
   await waitForScene(page, 'Title');
   await tapAt(page, GAME_WIDTH / 2, 172); // START MISSION
   await waitForScene(page, 'Battle');
+  // The alien turn here is short (the pods are dormant), and on a loaded machine a tap
+  // could land after it ends. At a quarter speed it lasts long enough; the tap's
+  // fast-forward replaces that speed, and the end of the turn puts it back to normal.
+  await page.evaluate(() => window.__game?.setSpeed(0.25));
   await page.keyboard.press('e');
   await expect.poll(async () => (await snapshot(page)).busy).toBe(true);
-  // One tap, straight after the turn starts: a short alien turn (dormant pods) ends in
-  // a couple of seconds, so toggling back and forth would race it.
   await tapTile(page, 5, 5);
   await expect.poll(async () => (await snapshot(page)).fast).toBe(true);
   await expect.poll(async () => (await snapshot(page)).busy, { timeout: 40_000 }).toBe(false);
