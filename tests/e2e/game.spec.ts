@@ -611,6 +611,20 @@ test('the End Turn button ends the turn', async ({ page }) => {
   await expect.poll(async () => (await snapshot(page)).turn).toBe('alien');
 });
 
+test('?landscape=ship opens an alien ship map with no errors (M4.3)', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text());
+  });
+  await openGame(page, '?seed=7&landscape=ship');
+  const snap = await snapshot(page);
+  // The hull lines the top two rows; the field below has cover.
+  expect(snap.layout.slice(0, 2 * MAP_COLS)).toBe('h'.repeat(2 * MAP_COLS));
+  expect(snap.layout.slice(2 * MAP_COLS)).toMatch(/[tpc]/);
+  expect(errors).toEqual([]);
+});
+
 test('the title screen starts a campaign with its button', async ({ page }) => {
   await page.goto('./');
   await waitForScene(page, 'Title');

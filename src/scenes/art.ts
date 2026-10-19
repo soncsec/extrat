@@ -2,6 +2,7 @@ import type Phaser from 'phaser';
 import type { UnitKind } from '../logic/battle';
 import type { LandscapeId } from '../logic/landscapes';
 import type { PropKind } from '../logic/map';
+import { SHIP_TEXTURE } from './shipArt';
 
 /** Where each piece of art sits in its sheet. Pixel rectangles measured from the files. */
 export const FOREST_SHEET = {
@@ -76,7 +77,23 @@ export const LANDSCAPE_ART: Readonly<Record<LandscapeId, LandscapeArt>> = {
     decals: ['path', 'townFlowers'],
     prop: (kind, x, y) => (kind === 'shrub' ? alternate('shrubA', 'shrubB', x, y) : kind),
   },
+  ship: {
+    key: SHIP_TEXTURE.key,
+    // Mostly the same plate; the others break up the grid now and then.
+    ground: [...Array<string>(8).fill('plateA'), 'plateB', 'plateB', 'plateC', 'plateD'],
+    decals: ['grateA', 'grateB'],
+    prop: (kind, x, y) => {
+      if (kind === 'hull')
+        return HULL[(Math.imul(x + 3, 2654435761) >>> 0) % HULL.length] as string;
+      if (kind === 'tank') return TANKS[(x + y) % TANKS.length] as string;
+      return kind;
+    },
+  },
 };
+
+/** Hull pieces along the ship's wall: plain mostly, with lights and consoles here and there. */
+const HULL = ['hullA', 'hullB', 'hullC', 'hullA', 'hullB', 'hullLights', 'hullC', 'hullConsole'];
+const TANKS = ['tank1', 'tank2', 'tank3'];
 
 /** Adds the named frames to a loaded sheet's texture. */
 export function addFrames(

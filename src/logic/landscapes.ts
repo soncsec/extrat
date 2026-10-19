@@ -1,8 +1,8 @@
-import { FOREST_CHUNKS, TOWN_CHUNKS, type ChunkSet } from './chunks';
+import { FOREST_CHUNKS, SHIP_CHUNKS, TOWN_CHUNKS, type ChunkSet } from './chunks';
 import type { PropKind } from './map';
 
 /** The landscapes a mission can be fought in (more come with M4.3). */
-export type LandscapeId = 'forest' | 'town';
+export type LandscapeId = 'forest' | 'town' | 'ship';
 
 /** What a landscape's maps are made of. The art for each prop is in the scenes. */
 export interface Landscape {
@@ -10,6 +10,8 @@ export interface Landscape {
   name: string;
   /** The dense trees along the top edge. */
   edge: PropKind;
+  /** How the edge is drawn: wide trees on every other tile (default), or a wall on every tile. */
+  edgeDrawn?: 'trees' | 'wall';
   chunks: ChunkSet;
   /** What a chunk's '#' becomes: the first, the second (by FOREST.maybeTree), or nothing. */
   maybeTree: readonly [PropKind, PropKind];
@@ -37,6 +39,16 @@ export const LANDSCAPES: Readonly<Record<LandscapeId, Landscape>> = {
     maybeTree: ['autumn', 'cypress'],
     maybeCover: ['shrub', 'stone'],
     scatter: ['shrub', 'stone'],
+  },
+  ship: {
+    id: 'ship',
+    name: 'Alien ship',
+    edge: 'hull',
+    edgeDrawn: 'wall',
+    chunks: SHIP_CHUNKS,
+    maybeTree: ['pillar', 'pillar'],
+    maybeCover: ['crate', 'console'],
+    scatter: ['crate', 'console'],
   },
 };
 

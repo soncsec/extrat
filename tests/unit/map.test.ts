@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { FOREST, MAP_COLS, MAP_ROWS } from '../../src/config/tuning';
-import { chunkCell, FOREST_CHUNKS, TOWN_CHUNKS, type Chunk } from '../../src/logic/chunks';
+import {
+  chunkCell,
+  FOREST_CHUNKS,
+  SHIP_CHUNKS,
+  TOWN_CHUNKS,
+  type Chunk,
+} from '../../src/logic/chunks';
 import { landscapeId } from '../../src/logic/landscapes';
 import {
   generateForest,
@@ -354,5 +360,76 @@ describe('town landscape (M4.3)', () => {
     for (const bad of [null, '', 'moon', '__proto__', 'constructor', 'toString']) {
       expect(landscapeId(bad), String(bad)).toBeNull();
     }
+  });
+});
+
+describe('alien ship landscape (M4.3)', () => {
+  const ship = (seed: number): BattleMap => generateMap(seed, MAP_COLS, MAP_ROWS, 'ship');
+  const all = [...SHIP_CHUNKS.spawn, ...SHIP_CHUNKS.field];
+
+  // 1,000 maps: a few seconds on CI runners, like the other landscapes' tests.
+  it('makes a valid ship map for 1,000 seeds', () => {
+    for (let seed = 1; seed <= 1000; seed++) {
+      const map = ship(seed);
+      expect(map.landscape).toBe('ship');
+      expect(validateMap(map), `seed ${seed}`).toEqual([]);
+    }
+  }, 30_000);
+
+  it('has chunks of the right size whose tanks fill exactly their 3 x 2 footprint', () => {
+    for (const c of all) {
+      expect(c.rows, c.name).toHaveLength(FOREST.chunk.height);
+      const cells = c.rows.map((row) => [...row]);
+      const covered = new Set<string>();
+      cells.forEach((row, j) => {
+        expect(row, c.name).toHaveLength(FOREST.chunk.width);
+        row.forEach((ch, i) => {
+          expect(() => chunkCell(ch), `${c.name}: '${ch}'`).not.toThrow();
+          if (ch !== 'T') return;
+          expect(c.upright, `${c.name} has a tank, so it must stay upright`).toBe(true);
+          for (let dy = 0; dy < PROPS.tank.height; dy++) {
+            for (let dx = 0; dx < PROPS.tank.width; dx++) {
+              expect(cells[j - dy]?.[i + dx], `${c.name} footprint`).toBe(dx || dy ? '=' : 'T');
+              covered.add(`${i + dx},${j - dy}`);
+            }
+          }
+        });
+      });
+      cells.forEach((row, j) =>
+        row.forEach((ch, i) => {
+          if (ch === '=') expect(covered.has(`${i},${j}`), `${c.name} stray '='`).toBe(true);
+        }),
+      );
+    }
+  });
+
+  it('keeps tanks and pillars out of the spawn chunks', () => {
+    for (const c of SHIP_CHUNKS.spawn) expect(c.rows.join(''), c.name).not.toMatch(/[TP#]/);
+  });
+
+  it('lines the top with hull wall drawn on every tile of its bottom row', () => {
+    const map = ship(7);
+    const top = FOREST.treeLineRows;
+    for (let y = 0; y < top; y++) {
+      for (let x = 0; x < map.cols; x++) {
+        expect(tileAt(map, x, y)).toEqual({ prop: 'hull', anchor: y === top - 1 });
+      }
+    }
+  });
+
+  it('keeps every tank whole on 300 maps, and tanks do show up', () => {
+    let tanks = 0;
+    for (let seed = 1; seed <= 300; seed++) {
+      const map = ship(seed);
+      const anchors = map.tiles.filter((t) => t.prop === 'tank' && t.anchor).length;
+      const tiles = map.tiles.filter((t) => t.prop === 'tank').length;
+      expect(tiles, `seed ${seed}`).toBe(anchors * PROPS.tank.width * PROPS.tank.height);
+      tanks += anchors;
+    }
+    expect(tanks).toBeGreaterThan(300);
+  });
+
+  it('is a landscape name the URL accepts', () => {
+    expect(landscapeId('ship')).toBe('ship');
   });
 });

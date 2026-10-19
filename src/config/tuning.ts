@@ -58,8 +58,9 @@ export const PODS = {
 
 /**
  * The campaign's missions, in order (M5.1), with their landscape (an id from
- * logic/landscapes.ts). Coast, rocky hills, crash site and alien ship come in M4.3 and
- * the boss in M5.6; until then those missions use the forest. A gentle ramp
+ * logic/landscapes.ts). The final mission is on the alien ship (M4.3); coast, rocky hills
+ * and crash site come next, and until then those missions use the forest. The boss
+ * comes in M5.6. A gentle ramp
  * (owner decision 2026-10-18): more and bigger alien groups as the campaign goes on.
  *
  * `kinds` are the alien kinds that mission can field (M5.8, owner decision 2026-10-18):
@@ -82,7 +83,7 @@ export const MISSIONS = [
     kinds: ['walker', 'flyer', 'lizard', 'snake'],
   },
   {
-    landscape: 'forest',
+    landscape: 'ship',
     pods: { count: 3, size: 3 },
     kinds: ['walker', 'flyer', 'lizard', 'snake'],
   },
