@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { fitDesign } from './layout';
 import { buildPixelFont } from './pixelFont';
 import { buildPortraits } from './portraits';
+import { registerSounds } from './sfx';
 import { GAME_WIDTH } from '../config/tuning';
 import {
   addAnims,
@@ -95,6 +96,7 @@ export class PreloadScene extends Phaser.Scene {
     }
     buildPortraits(this.textures);
     buildPixelFont(this);
+    registerSounds(this);
     this.scene.start('Title');
   }
 }

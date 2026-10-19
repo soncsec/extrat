@@ -105,8 +105,8 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 
 ## M6 — Polish and release
 
-- [ ] M6.1 CC0 sound effects (owner approves the assets)
-- [ ] M6.2 Squad portraits from the pack; tooltips and first-mission hints *(owner 2026-10-18: the help screen is enough for now, so hints stay here)* *Portraits done: a helmet per marine in the info bar and on the squad page; tooltips and hints wait.*
+- [x] M6.1 Sound effects, made in code with Web Audio (owner, 2026-10-19: the pack has no audio): shots, hits, deaths, grenades, reloads, overwatch, alarms, poison, the boss, win and lose; SND/OFF button and M to mute (for the visit)
+- [ ] M6.2 Squad portraits (owner, 2026-10-19: the pack has none, so drawn in code: a helmet per marine, each told apart); tooltips and first-mission hints *(owner 2026-10-18: the help screen is enough for now, so hints stay here)* *Portraits done: a helmet per marine in the info bar and on the squad page; tooltips and hints wait.*
 - [ ] M6.3 Balance pass from play-tests
 - [ ] M6.4 Portal card image and status `coming-soon`, then `live`
 - [ ] M6.5 Static and dynamic security checks; production release with owner approval

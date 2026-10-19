@@ -87,6 +87,7 @@ import {
 } from './art';
 import { BLAST_TEXTURE } from './blastArt';
 import { PORTRAIT_SIZE, PORTRAIT_TEXTURE } from './portraits';
+import { isMuted, playSound, toggleMute } from './sfx';
 import {
   drawExposed,
   drawEye,
@@ -353,6 +354,16 @@ export class BattleScene extends Phaser.Scene {
     new PixelButton(this, MAP_WIDTH - 10, 10, '?', () => this.openHelp(), false).setDepth(
       DEPTH.hud,
     );
+    // Sound on or off (M6.1), beside it on the same edge row; M does the same.
+    const mute = new PixelButton(
+      this,
+      MAP_WIDTH - 37,
+      10,
+      soundLabel(),
+      () => mute.setLabel(soundLabel(toggleMute(this))),
+      false,
+    ).setDepth(DEPTH.hud);
+    this.input.keyboard?.on('keydown-M', () => mute.setLabel(soundLabel(toggleMute(this))));
     this.marker = this.add.graphics().setDepth(DEPTH.marker);
     this.rangeLayer = this.add.graphics().setDepth(DEPTH.range);
     // Over the fog, so the warning shows wherever it lands.
@@ -820,7 +831,9 @@ export class BattleScene extends Phaser.Scene {
     this.mode = 'move';
     this.pathLayer.clear();
     this.coverLayer.clear();
+    const before = this.state.selected;
     this.dispatch({ type: 'select', unitId });
+    if (this.state.selected !== before) playSound(this, 'select');
     this.drawSelection();
   }
 
@@ -895,6 +908,7 @@ export class BattleScene extends Phaser.Scene {
     ball.fillStyle(0x11141b, 1).fillRect(-2, -2, 4, 4);
     ball.fillStyle(0x6f8f3a, 1).fillRect(-1, -1, 2, 2);
     ball.setPosition(from.x, from.y);
+    playSound(this, 'throw');
     const flight = { t: 0 };
     await new Promise<void>((resolve) =>
       this.tweens.add({
@@ -913,6 +927,7 @@ export class BattleScene extends Phaser.Scene {
     );
     ball.destroy();
     this.fx.play(EFFECTS.blast.key, to.x, to.y, DEPTH.fx, { scale: 2 });
+    playSound(this, 'explosion');
     this.cameras.main.shake(160, 0.006);
     // The cover it wrecked goes up with it (M5.13).
     if (thrown.wrecks.length > 0) this.redrawMap();
@@ -933,6 +948,7 @@ export class BattleScene extends Phaser.Scene {
    */
   private async playCharge(): Promise<void> {
     this.drawCharge();
+    playSound(this, 'charge');
     await this.banner('OVERSEER CHARGING', '#ff6a5a');
     if (!this.chargeExplained) {
       this.chargeExplained = true;
@@ -955,6 +971,7 @@ export class BattleScene extends Phaser.Scene {
     ] as const) {
       this.fx.play(EFFECTS.blast.key, at.x + dx * TILE, at.y + dy * TILE, DEPTH.fx, { scale: 2 });
     }
+    playSound(this, 'blast');
     this.cameras.main.shake(260, 0.01);
     for (const hit of blast.hits) {
       const unit = unitById(this.state, hit.unitId);
@@ -1020,6 +1037,7 @@ export class BattleScene extends Phaser.Scene {
     view.watching = true;
     if (unit.kind === 'marine') view.sprite.play(`${MARINE_SHEET.key}-crouch`);
     const headY = view.sprite.y - SHEETS[unit.kind].height;
+    playSound(this, 'overwatch');
     floatText(this, view.sprite.x, headY - 6, 'OVERWATCH', '#ffd23a', DEPTH.fx);
     return new Promise((resolve) => this.time.delayedCall(500, resolve));
   }
@@ -1043,6 +1061,7 @@ export class BattleScene extends Phaser.Scene {
     if (!unit || !view) return Promise.resolve();
     view.sprite.play(`${MARINE_SHEET.key}-crouch`);
     const headY = view.sprite.y - SHEETS[unit.kind].height;
+    playSound(this, 'reload');
     floatText(this, view.sprite.x, headY - 6, 'RELOADED', '#dfe4ec', DEPTH.fx);
     return new Promise((resolve) => {
       this.time.delayedCall(500, () => {
@@ -1203,7 +1222,10 @@ export class BattleScene extends Phaser.Scene {
       else writeSave(next, null);
     }
     // Let the last death animation play first.
-    this.time.delayedCall(700, () => this.scene.launch('Result', result));
+    this.time.delayedCall(700, () => {
+      playSound(this, won ? 'win' : 'lose');
+      this.scene.launch('Result', result);
+    });
     return true;
   }
 
@@ -1275,6 +1297,7 @@ export class BattleScene extends Phaser.Scene {
         const headY = view.sprite.y - SHEETS[unit.kind].height;
         floatText(this, view.sprite.x, headY - 6, '!', '#ff5a4a', DEPTH.fx);
       }
+      playSound(this, 'spotted');
       await this.banner('ALIENS SPOTTED', '#ff6a5a');
     }
     for (const sc of scampers) {
@@ -1355,6 +1378,8 @@ export class BattleScene extends Phaser.Scene {
     if (shot.reaction) sv.watching = false;
     this.playAnim(sv, shooter.kind, 'shoot', shooter.facing);
     this.face(sv, shooter.facing);
+    // Claws make no sound until they land.
+    if (ability !== 'melee') playSound(this, shooter.side === 'marine' ? 'shot' : 'alienShot');
 
     const from = {
       x: sv.sprite.x + shooter.facing * sheet.muzzle.x,
@@ -1499,6 +1524,7 @@ export class BattleScene extends Phaser.Scene {
       floatText(this, view.sprite.x, headY - 6, `-${tick.damage} POISON`, '#7ad84a', DEPTH.fx);
     }
     if (ticks.some((t) => t.damage > 0)) {
+      playSound(this, 'poison');
       await new Promise<void>((resolve) => this.time.delayedCall(700, () => resolve()));
     }
   }
@@ -1524,6 +1550,7 @@ export class BattleScene extends Phaser.Scene {
     }
     const headY = tv.sprite.y - SHEETS[target.kind].height;
     tv.shownHp = shot.hpAfter;
+    playSound(this, 'miss');
     floatText(this, tv.sprite.x, headY - 6, 'MISS', '#dfe4ec', DEPTH.fx);
   }
 
@@ -1542,6 +1569,7 @@ export class BattleScene extends Phaser.Scene {
   ): void {
     const headY = tv.sprite.y - SHEETS[target.kind].height;
     tv.shownHp = hpAfter;
+    playSound(this, killed ? 'death' : 'hit');
     flash(this, tv.sprite);
     const text = crit ? `CRIT -${damage}` : `-${damage}`;
     floatText(this, tv.sprite.x, headY - 6, text, crit ? '#ffd23a' : '#ff6a5a', DEPTH.fx);
@@ -2107,4 +2135,9 @@ function tileUnder(kind: UnitKind, sprite: { x: number; y: number }): Point {
     x: Math.round(sprite.x / TILE - unitSize({ kind }) / 2),
     y: Math.round(sprite.y / TILE) - 1,
   };
+}
+
+/** The sound button's label: SND while sounds play, OFF while muted. */
+function soundLabel(muted = isMuted()): string {
+  return muted ? 'OFF' : 'SND';
 }
