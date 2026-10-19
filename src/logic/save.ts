@@ -150,6 +150,7 @@ export function restoreBattle(campaign: Campaign, saved: SavedBattle): BattleSta
   const fresh = createBattle(map, map.seed, {
     names: campaign.squad,
     pods: mission.pods,
+    kinds: mission.kinds,
     ranks: squadRanks(campaign),
   });
   if (saved.units.length !== fresh.units.length) return null;
