@@ -27,6 +27,7 @@ List every file copied into `public/assets/` here, one per line, as its path fro
 - `assets/fx/small-death.png`: Explosions and Magic, Grotto Escape 2 FX (enemy death)
 - `assets/lizard/lizard-hurt.png`: Warped, Grotto Escape 2 lizard (hurt)
 - `assets/snake/snake-hurt.png`: Warped, Grotto Escape 2 snake (hurt)
+- `assets/overseer/mech-unit.png`: Warped, Mech Unit (spritesheet): the final mission's boss
 - `assets/town/top-down-town-tileset.png`: TinyRPG, Top-Down Town (autumn trees, cottage, garden walls, shrubs, stumps, grass, cobble path)
 - `assets/ship/tileset-top-down-sci-fi.png`: Warped, Top-Down Dungeon Sci-Fi (floor plates, grates, hull wall with consoles)
 - `assets/ship/tank-1.png`: Warped, Scifi Lab (specimen tank 1)

@@ -224,6 +224,8 @@ export const UNITS = {
 export const BOSS = {
   /** Tiles on each side of its square footprint. */
   size: 2,
+  /** The alien groups guarding it: two groups of two (design section 5). */
+  escorts: { count: 2, size: 2 },
   /** The most damage a shot from in front of it does. */
   armourCap: 1,
   /** It starts charging its blast once its health is at or below this share of the most. */

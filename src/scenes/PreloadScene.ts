@@ -13,6 +13,7 @@ import {
   LIZARD_TONGUE_SHEET,
   LIZARD_WALK_SHEET,
   MARINE_SHEET,
+  OVERSEER_SHEET,
   SNAKE_HURT_SHEET,
   SNAKE_SHEET,
   SNAKE_SHOOT_SHEET,
@@ -37,6 +38,7 @@ export const CHARACTER_SHEETS = [
   SNAKE_WALK_SHEET,
   SNAKE_SHOOT_SHEET,
   SNAKE_HURT_SHEET,
+  OVERSEER_SHEET,
 ];
 
 /** Loads every image once, registers frames and animations, then opens the title. */
