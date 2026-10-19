@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { fitDesign } from './layout';
 import { GAME_HEIGHT, GAME_WIDTH, MISSIONS, TILE } from '../config/tuning';
 import { rankOf } from '../logic/battle';
 import { currentMission, isComplete, squadRanks, type Campaign } from '../logic/campaign';
@@ -87,14 +88,17 @@ export class BriefingScene extends Phaser.Scene {
   }
 
   private drawBackground(): void {
-    const cols = Math.ceil(GAME_WIDTH / TILE);
+    // Designed for GAME_WIDTH x GAME_HEIGHT; the grass reaches wherever the canvas shows more.
+    const view = fitDesign(this);
+    const x0 = Math.floor(view.x / TILE) - 1;
+    const x1 = Math.ceil((view.x + view.width) / TILE);
     const rows = Math.ceil(GAME_HEIGHT / TILE);
     for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
+      for (let x = x0; x < x1; x++) {
         this.add.image(x * TILE, y * TILE, FOREST_SHEET.key, 'grass').setOrigin(0);
       }
     }
-    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x11141b, 0.6).setOrigin(0);
+    this.add.rectangle(view.x, view.y, view.width, view.height, 0x11141b, 0.6).setOrigin(0);
   }
 
   private start(campaign: Campaign): void {

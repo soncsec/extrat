@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
 import './style.css';
-import { GAME_HEIGHT, GAME_WIDTH } from './config/tuning';
 import { fitZoom, pixelZoom } from './logic/scaling';
 import { BattleScene } from './scenes/BattleScene';
 import { BriefingScene } from './scenes/BriefingScene';
@@ -9,6 +8,7 @@ import { PreloadScene } from './scenes/PreloadScene';
 import { ResultScene } from './scenes/ResultScene';
 import { SquadScene } from './scenes/SquadScene';
 import { TitleScene } from './scenes/TitleScene';
+import { LAYOUT } from './scenes/layout';
 import { isTouchDevice } from './scenes/touch';
 
 /**
@@ -27,15 +27,16 @@ const view = (): { width: number; height: number } => ({
 const zoomForWindow = (): number => {
   const { width, height } = view();
   return isTouchDevice()
-    ? fitZoom(width, height, GAME_WIDTH, GAME_HEIGHT)
-    : pixelZoom(width, height, GAME_WIDTH, GAME_HEIGHT, window.devicePixelRatio);
+    ? fitZoom(width, height, LAYOUT.width, LAYOUT.height)
+    : pixelZoom(width, height, LAYOUT.width, LAYOUT.height, window.devicePixelRatio);
 };
 
 export const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game',
-  width: GAME_WIDTH,
-  height: GAME_HEIGHT,
+  // Phones and tablets: the info panel beside the map (see LAYOUT).
+  width: LAYOUT.width,
+  height: LAYOUT.height,
   backgroundColor: '#11141b',
   pixelArt: true,
   roundPixels: true,

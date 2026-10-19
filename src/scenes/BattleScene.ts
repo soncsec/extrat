@@ -7,6 +7,9 @@ import {
   GRENADE,
   GAME_WIDTH,
   HUD_HEIGHT,
+  HUD_SIDE_WIDTH,
+  MAP_HEIGHT,
+  MAP_WIDTH,
   MAP_COLS,
   MAP_ROWS,
   MISSIONS,
@@ -95,6 +98,7 @@ import {
 import type { BattleResult } from './ResultScene';
 import { CELL_W, PixelButton, PixelText } from './pixelFont';
 import { initialSeed, urlWord } from './seed';
+import { LAYOUT } from './layout';
 import { clearSave, writeSave } from './storage';
 import { isTouchDevice } from './touch';
 
@@ -173,6 +177,11 @@ export interface GameSnapshot {
 }
 
 /** Draw order: ground, dirt, markers, then everything standing, sorted by its bottom edge. */
+/** Margin inside the phone's side panel. */
+const SIDE_PAD = 5;
+/** Extra height for the side panel's buttons: bigger targets for a finger. */
+const SIDE_BUTTON_EXTRA = 6;
+
 /** The colour of the HUD's map line. */
 const MAP_LINE_COLOR = 0xa3adbd;
 
@@ -328,7 +337,7 @@ export class BattleScene extends Phaser.Scene {
     this.createHud();
     // Help for touchscreens, which have no H key. The top-right corner is always the
     // tree line, never a tile to move to.
-    new PixelButton(this, GAME_WIDTH - 10, 10, '?', () => this.openHelp(), false).setDepth(
+    new PixelButton(this, MAP_WIDTH - 10, 10, '?', () => this.openHelp(), false).setDepth(
       DEPTH.hud,
     );
     this.marker = this.add.graphics().setDepth(DEPTH.marker);
@@ -1211,7 +1220,7 @@ export class BattleScene extends Phaser.Scene {
 
   /** A large message across the middle of the map. */
   private banner(text: string, color: string): Promise<void> {
-    const t = new PixelText(this, GAME_WIDTH / 2, (MAP_ROWS * TILE) / 2, text, {
+    const t = new PixelText(this, MAP_WIDTH / 2, (MAP_ROWS * TILE) / 2, text, {
       color: Phaser.Display.Color.HexStringToColor(color).color,
       scale: 2,
       background: 0x11141b,
@@ -1623,7 +1632,7 @@ export class BattleScene extends Phaser.Scene {
       .setColor(odds ? (odds.flanked ? 0xffd23a : 0xf2a33a) : 0xa3adbd);
     // Keep the label on screen for units near the edges.
     const half = this.aimText.textWidth / 2 + 3;
-    const x = Math.min(Math.max(view.sprite.x, half + 2), GAME_WIDTH - half - 2);
+    const x = Math.min(Math.max(view.sprite.x, half + 2), MAP_WIDTH - half - 2);
     // ...and below the top edge, for tall units near it (the boss).
     const y = Math.max(this.aimText.textHeight / 2 + 2, view.sprite.y - height - 8);
     this.aimText.setPosition(x, y).setVisible(true);
@@ -1648,8 +1657,8 @@ export class BattleScene extends Phaser.Scene {
     lines.push('-'.repeat(17), line('HIT', `${odds.hit}%`));
     lines.push(line(odds.flanked ? 'CRIT (FLANK)' : 'CRIT', `${odds.crit}%`));
     this.oddsPanel.setText(lines.join('\n'));
-    const left = targetX > GAME_WIDTH / 2;
-    const x = left ? 8 : GAME_WIDTH - this.oddsPanel.textWidth - 8;
+    const left = targetX > MAP_WIDTH / 2;
+    const x = left ? 8 : MAP_WIDTH - this.oddsPanel.textWidth - 8;
     this.oddsPanel.setPosition(x, 2 * TILE + 6).setVisible(true);
   }
 
@@ -1905,18 +1914,33 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private createHud(): void {
-    const y = MAP_ROWS * TILE;
-    this.add.rectangle(0, y, GAME_WIDTH, HUD_HEIGHT, 0x11141b).setOrigin(0).setDepth(DEPTH.hud);
-    this.add.rectangle(0, y, GAME_WIDTH, 1, 0x2b3242).setOrigin(0).setDepth(DEPTH.hud);
-    this.unitText = new PixelText(this, 6, y + 5, '', {
+    const side = LAYOUT.hud === 'side';
+    // Under the map (desktop), or a panel beside it (phones and tablets).
+    const panel = side
+      ? { x: MAP_WIDTH, y: 0, width: HUD_SIDE_WIDTH, height: MAP_HEIGHT }
+      : { x: 0, y: MAP_HEIGHT, width: GAME_WIDTH, height: HUD_HEIGHT };
+    this.add
+      .rectangle(panel.x, panel.y, panel.width, panel.height, 0x11141b)
+      .setOrigin(0)
+      .setDepth(DEPTH.hud);
+    this.add
+      .rectangle(panel.x, panel.y, side ? 1 : panel.width, side ? panel.height : 1, 0x2b3242)
+      .setOrigin(0)
+      .setDepth(DEPTH.hud);
+    const y = panel.y;
+    // In the narrow panel, text breaks into lines (at its double spaces and between words).
+    const wrap = side ? Math.floor((HUD_SIDE_WIDTH - 2 * SIDE_PAD) / CELL_W) : 0;
+    this.unitText = new PixelText(this, panel.x + SIDE_PAD, y + 5, '', {
       color: 0xf2a33a,
       align: 'left',
       valign: 'top',
+      wrap,
     }).setDepth(DEPTH.hud);
-    this.mapText = new PixelText(this, 6, y + 19, '', {
+    this.mapText = new PixelText(this, panel.x + SIDE_PAD, y + 19, '', {
       color: MAP_LINE_COLOR,
       align: 'left',
       valign: 'top',
+      wrap,
     }).setDepth(DEPTH.hud);
     // Buttons sit on the info bar's second line; the key comes first, as on the title.
     const hudButton = (label: string, primary: boolean, onClick: () => void): PixelButton =>
@@ -1933,6 +1957,10 @@ export class BattleScene extends Phaser.Scene {
    * longest map line that fits to their left.
    */
   private layoutButtons(): void {
+    if (LAYOUT.hud === 'side') {
+      this.layoutSidePanel();
+      return;
+    }
     let right = GAME_WIDTH - 6;
     for (const b of [
       this.endTurnButton,
@@ -1947,17 +1975,51 @@ export class BattleScene extends Phaser.Scene {
       right -= b.buttonWidth + 4;
     }
     const room = right - this.mapText.x;
-    // While the boss's blast is charging, its warning takes the map line (M5.6).
-    // (The HUD is laid out once before the first battle state exists.)
+    const { lines, charging } = this.mapLineChoices();
+    const fits = lines.find((line) => line.length * CELL_W <= room);
+    this.mapText
+      .setText(fits ?? lines[lines.length - 1] ?? '')
+      .setColor(charging ? 0xff6a5a : MAP_LINE_COLOR);
+  }
+
+  /**
+   * The lines the map line can show now, longest first: while the boss's blast is
+   * charging, its warning (M5.6); otherwise the map's own. (The HUD is laid out once
+   * before the first battle state exists.)
+   */
+  private mapLineChoices(): { lines: string[]; charging: boolean } {
     const units = (this.state as BattleState | undefined)?.units ?? [];
     const charging = units.some((u) => u.hp > 0 && u.charging !== null);
     const lines = charging
       ? [this.chargeHint, 'Leave the red squares', 'Move!'].filter((l) => l !== '')
       : this.mapLines;
-    const fits = lines.find((line) => line.length * CELL_W <= room);
-    this.mapText
-      .setText(fits ?? lines[lines.length - 1] ?? '')
-      .setColor(charging ? 0xff6a5a : MAP_LINE_COLOR);
+    return { lines, charging };
+  }
+
+  /**
+   * Phones and tablets: buttons stacked at the foot of the side panel, full width and a
+   * little taller for a finger, with the map line just above them.
+   */
+  private layoutSidePanel(): void {
+    const width = HUD_SIDE_WIDTH - 2 * SIDE_PAD;
+    const centre = MAP_WIDTH + HUD_SIDE_WIDTH / 2;
+    let bottom = MAP_HEIGHT - SIDE_PAD;
+    for (const b of [
+      this.endTurnButton,
+      this.reloadButton,
+      this.overwatchButton,
+      this.grenadeButton,
+    ]) {
+      if (!b.visible) continue;
+      b.setBoxSize(width, SIDE_BUTTON_EXTRA);
+      // Whole pixels only, or the label's glyphs land between pixels and lose columns.
+      b.setPosition(Math.round(centre), Math.round(bottom - b.buttonHeight / 2));
+      bottom -= b.buttonHeight + 3;
+    }
+    const { lines, charging } = this.mapLineChoices();
+    // The longest line, broken to fit the panel.
+    this.mapText.setText(lines[0] ?? '').setColor(charging ? 0xff6a5a : MAP_LINE_COLOR);
+    this.mapText.setY(Math.round(bottom - this.mapText.textHeight - 4));
   }
 }
 

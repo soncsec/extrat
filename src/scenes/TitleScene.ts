@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import { isShort, TITLE_ROWS } from '../logic/layout';
+import { fitDesign, LAYOUT } from './layout';
 import { GAME_HEIGHT, GAME_WIDTH, TILE } from '../config/tuning';
 import { FOREST_SHEET, MARINE_SHEET, WALKER_SHEET } from './art';
 import { newCampaign } from '../logic/campaign';
@@ -17,22 +19,26 @@ export class TitleScene extends Phaser.Scene {
   }
 
   create(data: { damaged?: boolean } = {}): void {
-    const cols = Math.ceil(GAME_WIDTH / TILE);
+    // The screen is designed for GAME_WIDTH x GAME_HEIGHT; the forest reaches wherever
+    // the canvas shows more (phones, where the canvas is wider).
+    const view = fitDesign(this);
+    const x0 = Math.floor(view.x / TILE) - 1;
+    const x1 = Math.ceil((view.x + view.width) / TILE);
     const rows = Math.ceil(GAME_HEIGHT / TILE);
     for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
+      for (let x = x0; x < x1; x++) {
         this.add.image(x * TILE, y * TILE, FOREST_SHEET.key, 'grass').setOrigin(0);
       }
     }
     // A tree line along the top and bottom edges.
-    for (let x = 0; x < cols; x += 2) {
+    for (let x = x0 - (x0 & 1); x < x1; x += 2) {
       this.add.image(x * TILE + 8, 2 * TILE, FOREST_SHEET.key, 'pine').setOrigin(0.5, 1);
       this.add.image(x * TILE + 24, GAME_HEIGHT + 8, FOREST_SHEET.key, 'pine').setOrigin(0.5, 1);
     }
-    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x11141b, 0.55).setOrigin(0);
+    this.add.rectangle(view.x, view.y, view.width, view.height, 0x11141b, 0.55).setOrigin(0);
 
     // A marine and an alien face off on either side of the title.
-    const ground = GAME_HEIGHT - 70;
+    const ground = view.height - (isShort(LAYOUT) ? 52 : 70);
     this.add
       .sprite(70, ground, MARINE_SHEET.key)
       .setOrigin(MARINE_SHEET.originX, MARINE_SHEET.originY)
@@ -44,21 +50,30 @@ export class TitleScene extends Phaser.Scene {
       .play('walker-idle');
 
     const cx = GAME_WIDTH / 2;
-    pixelText(this, cx, 34, 'EXTRAT', 0xf2a33a, 5);
-    pixelText(this, cx, 64, 'Hunt the aliens hiding on Earth, one turn at a time.', 0xdfe4ec);
-    // The controls on a dark panel, so they read clearly over the forest.
-    this.add.rectangle(cx, 113, 312, 66, 0x05070f, 0.8).setStrokeStyle(1, 0x2b3242);
+    // Phones are shorter (the info panel sits beside the map there): the same screen,
+    // closer together.
+    const at = isShort(LAYOUT) ? TITLE_ROWS.short : TITLE_ROWS.tall;
+    pixelText(this, cx, at.title, 'EXTRAT', 0xf2a33a, 5);
     pixelText(
       this,
       cx,
-      113,
+      at.tagline,
+      'Hunt the aliens hiding on Earth, one turn at a time.',
+      0xdfe4ec,
+    );
+    // The controls on a dark panel, so they read clearly over the forest.
+    this.add.rectangle(cx, at.panel, 312, 66, 0x05070f, 0.8).setStrokeStyle(1, 0x2b3242);
+    pixelText(
+      this,
+      cx,
+      at.panel,
       (isTouchDevice()
         ? [
             'Tap a marine, then a blue tile twice to move:',
             'the first tap shows the path. Yellow: a dash.',
             'Tap an alien to aim, again to fire.',
             'Grenade, watch, reload and end turn are the',
-            'buttons under the map. ?: how to play.',
+            `buttons ${LAYOUT.hud === 'side' ? 'beside' : 'under'} the map. ?: how to play.`,
           ]
         : [
             'Click a marine, then a blue tile to move.',
@@ -75,7 +90,7 @@ export class TitleScene extends Phaser.Scene {
     const skirmish = urlNumber('seed') !== null;
     const stored = skirmish || urlNumber('campaign') !== null ? null : readSave();
     if (stored?.status === 'bad' || data.damaged) {
-      new PixelText(this, cx, 236, 'Saved campaign was damaged, so it was cleared.', {
+      new PixelText(this, cx, at.damaged, 'Saved campaign was damaged, so it was cleared.', {
         color: 0xff6a5a,
         background: 0x05070f,
         padding: 3,
@@ -83,16 +98,18 @@ export class TitleScene extends Phaser.Scene {
     }
     if (stored?.status === 'ok') {
       const save = stored.save;
-      pixelButton(this, cx, 166, 'CONTINUE', () => this.continue(save));
-      pixelButton(this, cx, 186, 'NEW CAMPAIGN', () => this.start(), false);
-      pixelButton(this, cx, 206, 'BACK TO GAMES', () => window.location.assign(PORTAL_URL), false);
-      pixelText(this, cx, 226, 'Enter: continue  N: new campaign  H: help', 0xa3adbd);
+      const [b1, b2, b3, hint] = at.saved;
+      pixelButton(this, cx, b1, 'CONTINUE', () => this.continue(save));
+      pixelButton(this, cx, b2, 'NEW CAMPAIGN', () => this.start(), false);
+      pixelButton(this, cx, b3, 'BACK TO GAMES', () => window.location.assign(PORTAL_URL), false);
+      pixelText(this, cx, hint, 'Enter: continue  N: new campaign  H: help', 0xa3adbd);
       this.input.keyboard?.once('keydown-ENTER', () => this.continue(save));
       this.input.keyboard?.once('keydown-N', () => this.start());
     } else {
-      pixelButton(this, cx, 172, skirmish ? 'START MISSION' : 'START CAMPAIGN', () => this.start());
-      pixelButton(this, cx, 194, 'BACK TO GAMES', () => window.location.assign(PORTAL_URL), false);
-      pixelText(this, cx, 214, 'Enter: start   H: how to play', 0xa3adbd);
+      const [b1, b2, hint] = at.fresh;
+      pixelButton(this, cx, b1, skirmish ? 'START MISSION' : 'START CAMPAIGN', () => this.start());
+      pixelButton(this, cx, b2, 'BACK TO GAMES', () => window.location.assign(PORTAL_URL), false);
+      pixelText(this, cx, hint, 'Enter: start   H: how to play', 0xa3adbd);
       this.input.keyboard?.once('keydown-ENTER', () => this.start());
     }
     const help = (): void => {
@@ -101,14 +118,14 @@ export class TitleScene extends Phaser.Scene {
     };
     this.input.keyboard?.on('keydown-H', help);
     // The same for touchscreens, which have no H key.
-    pixelButton(this, GAME_WIDTH - 10, 10, '?', help, false);
+    pixelButton(this, view.x + view.width - 10, 10, '?', help, false);
     // Phones and tablets: fullscreen hides the browser's bars and leaves more room for
     // the map. Not every browser allows it (iPhone Safari doesn't), so it shows only
     // where it works.
     if (isTouchDevice() && this.sys.game.device.fullscreen.available && !this.scale.isFullscreen) {
       const full = new PixelButton(this, 0, 10, 'FULL SCREEN', () => undefined, false);
       full.onRelease(() => this.scale.startFullscreen());
-      full.setX(Math.round(6 + full.buttonWidth / 2));
+      full.setX(Math.round(view.x + 6 + full.buttonWidth / 2));
     }
   }
 

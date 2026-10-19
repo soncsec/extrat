@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GAME_WIDTH, MAP_ROWS, MISSIONS, SKIRMISH, TILE } from '../config/tuning';
+import { MAP_ROWS, MAP_WIDTH, MISSIONS, SKIRMISH, TILE } from '../config/tuning';
 import { rankOf } from '../logic/battle';
 import {
   afterBattle,
@@ -40,9 +40,10 @@ export class ResultScene extends Phaser.Scene {
 
   create(result: BattleResult): void {
     const mapHeight = MAP_ROWS * TILE;
-    const cx = GAME_WIDTH / 2;
+    // Over the map (beside it, on phones, is the info panel).
+    const cx = MAP_WIDTH / 2;
     const cy = mapHeight / 2;
-    this.add.rectangle(0, 0, GAME_WIDTH, mapHeight, 0x11141b, 0.6).setOrigin(0);
+    this.add.rectangle(0, 0, MAP_WIDTH, mapHeight, 0x11141b, 0.6).setOrigin(0);
     // A campaign debrief has a second column: the squad's XP and ranks.
     const squad = result.campaign !== null;
     const width = squad ? 312 : 252;

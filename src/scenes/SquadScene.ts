@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { GAME_HEIGHT, GAME_WIDTH } from '../config/tuning';
+import { fitDesign } from './layout';
+import { GAME_WIDTH } from '../config/tuning';
 import { rankOf } from '../logic/battle';
 import { rankForXp, type Campaign } from '../logic/campaign';
 import { NO_SHAME, nicknameFor } from '../logic/shame';
@@ -20,9 +21,10 @@ export class SquadScene extends Phaser.Scene {
     this.from = data.from ?? 'Briefing';
     const c = data.campaign;
     const cx = GAME_WIDTH / 2;
-    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x05070f, 0.82).setOrigin(0);
+    const view = fitDesign(this);
+    this.add.rectangle(view.x, view.y, view.width, view.height, 0x05070f, 0.82).setOrigin(0);
     this.add
-      .rectangle(cx, GAME_HEIGHT / 2, GAME_WIDTH - 16, GAME_HEIGHT - 16, 0x0b0e15, 0.97)
+      .rectangle(cx, view.height / 2, GAME_WIDTH - 16, view.height - 16, 0x0b0e15, 0.97)
       .setStrokeStyle(1, 0x3d4760);
     pixelText(this, cx, 22, 'THE SQUAD', 0xf2a33a, 2);
     new PixelText(this, 24, 44, squadTable(c).join('\n'), {
@@ -36,7 +38,7 @@ export class SquadScene extends Phaser.Scene {
       color: 0xdfe4ec,
       valign: 'top',
     });
-    pixelText(this, cx, GAME_HEIGHT - 20, 'S, Esc or tap: back', 0xa3adbd);
+    pixelText(this, cx, view.height - 20, 'S, Esc or tap: back', 0xa3adbd);
 
     // The S press that opened this page may still be in the key queue: only later ones count.
     const opened = performance.now();

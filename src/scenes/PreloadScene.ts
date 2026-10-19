@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
+import { fitDesign } from './layout';
 import { buildPixelFont } from './pixelFont';
-import { GAME_HEIGHT, GAME_WIDTH } from '../config/tuning';
+import { GAME_WIDTH } from '../config/tuning';
 import {
   addAnims,
   addFrames,
@@ -48,10 +49,10 @@ export class PreloadScene extends Phaser.Scene {
   }
 
   preload(): void {
-    const bar = this.add
-      .rectangle(GAME_WIDTH / 2 - 60, GAME_HEIGHT / 2, 0, 4, 0xf2a33a)
-      .setOrigin(0, 0.5);
-    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, 122, 6).setStrokeStyle(1, 0x2b3242);
+    const view = fitDesign(this);
+    const mid = view.height / 2;
+    const bar = this.add.rectangle(GAME_WIDTH / 2 - 60, mid, 0, 4, 0xf2a33a).setOrigin(0, 0.5);
+    this.add.rectangle(GAME_WIDTH / 2, mid, 122, 6).setStrokeStyle(1, 0x2b3242);
     this.load.on('progress', (p: number) => bar.setSize(120 * p, 4));
 
     this.load.image(FOREST_SHEET.key, FOREST_SHEET.url);
