@@ -10,6 +10,10 @@ export default defineConfig({
   retries: 0,
   reporter: isCI ? [['list'], ['html', { open: 'never' }]] : 'list',
   timeout: 30_000,
+  // Waits for the game run on its clock, which slows when the frame rate drops. This
+  // machine is shared with other games' test runs (load averages of 50-70), so a wait
+  // gets 10 s rather than Playwright's 5 (T1). The checks themselves are unchanged.
+  expect: { timeout: 10_000 },
   use: {
     baseURL: `http://localhost:${PORT}/`,
     trace: 'retain-on-failure',
