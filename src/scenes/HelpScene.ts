@@ -21,8 +21,8 @@ const PAGES: readonly { title: string; lines: readonly string[] }[] = [
       'Grenade (G): pick a tile. Hits a 3 x 3 area,',
       "  and blows away the survivors' cover for a turn.",
       'Reload (R): 3 shots a clip, 1 action to reload.',
-      'Ranks: kills and wins earn XP, and ranks add',
-      '  aim and health. A replayed battle earns no XP.',
+      'Ranks: hits, kills and wins earn XP. Ranks add',
+      '  aim, health, grenades and ammo. Replays earn none.',
     ],
   },
   {

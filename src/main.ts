@@ -7,6 +7,7 @@ import { BriefingScene } from './scenes/BriefingScene';
 import { HelpScene } from './scenes/HelpScene';
 import { PreloadScene } from './scenes/PreloadScene';
 import { ResultScene } from './scenes/ResultScene';
+import { SquadScene } from './scenes/SquadScene';
 import { TitleScene } from './scenes/TitleScene';
 
 const zoomForWindow = (): number =>
@@ -34,7 +35,7 @@ export const game = new Phaser.Game({
     mode: Phaser.Scale.NONE,
     zoom: zoomForWindow(),
   },
-  scene: [PreloadScene, TitleScene, BriefingScene, BattleScene, ResultScene, HelpScene],
+  scene: [PreloadScene, TitleScene, BriefingScene, BattleScene, ResultScene, HelpScene, SquadScene],
 });
 
 window.addEventListener('resize', () => {
