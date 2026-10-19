@@ -37,3 +37,5 @@ List every file copied into `public/assets/` here, one per line, as its path fro
 Drawn for Extrat in the Top-Down Dungeon Sci-Fi palette (no file; painted when the game loads, `src/scenes/shipArt.ts`): the ship's crate, console and bulkhead pillar.
 
 Drawn for Extrat in the same palette, with soot and ember colours (no file; painted when the game loads on top of the forest tileset, `src/scenes/crashArt.ts`): the crash site's hull wreck, scrap and scorch marks.
+
+Drawn for Extrat in the Tiny RPG overworld's sea and sand colours and the forest's grass (no file; painted when the game loads on top of the forest tileset, `src/scenes/coastArt.ts`): the coast's sea, sand, beach edge, driftwood and rowboat, and sand-coloured copies of the forest's rocks and boulder.

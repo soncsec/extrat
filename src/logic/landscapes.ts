@@ -1,8 +1,15 @@
-import { CRASH_CHUNKS, FOREST_CHUNKS, SHIP_CHUNKS, TOWN_CHUNKS, type ChunkSet } from './chunks';
+import {
+  COAST_CHUNKS,
+  CRASH_CHUNKS,
+  FOREST_CHUNKS,
+  SHIP_CHUNKS,
+  TOWN_CHUNKS,
+  type ChunkSet,
+} from './chunks';
 import type { PropKind } from './map';
 
 /** The landscapes a mission can be fought in (more come with M4.3). */
-export type LandscapeId = 'forest' | 'town' | 'crash' | 'ship';
+export type LandscapeId = 'forest' | 'town' | 'coast' | 'crash' | 'ship';
 
 /** What a landscape's maps are made of. The art for each prop is in the scenes. */
 export interface Landscape {
@@ -19,6 +26,11 @@ export interface Landscape {
   maybeCover: readonly [PropKind, PropKind];
   /** The light cover scattered on top of the chunks (FOREST.scatter counts). */
   scatter: readonly [PropKind, PropKind];
+  /**
+   * Rows below the edge kept free of decals (the coast's beach: its dirt patches have
+   * grass drawn round them). Missing: decals may go anywhere below the edge.
+   */
+  bareRows?: number;
 }
 
 export const LANDSCAPES: Readonly<Record<LandscapeId, Landscape>> = {
@@ -39,6 +51,18 @@ export const LANDSCAPES: Readonly<Record<LandscapeId, Landscape>> = {
     maybeTree: ['autumn', 'cypress'],
     maybeCover: ['shrub', 'stone'],
     scatter: ['shrub', 'stone'],
+  },
+  coast: {
+    id: 'coast',
+    name: 'Coast',
+    edge: 'sea',
+    edgeDrawn: 'wall',
+    chunks: COAST_CHUNKS,
+    maybeTree: ['pine', 'oak'],
+    maybeCover: ['bush', 'rocks'],
+    scatter: ['bush', 'rocks'],
+    // The beach (three rows) and the row where it meets the grass.
+    bareRows: 4,
   },
   crash: {
     id: 'crash',

@@ -1,4 +1,5 @@
 import type Phaser from 'phaser';
+import { FOREST } from '../config/tuning';
 import type { UnitKind } from '../logic/battle';
 import type { LandscapeId } from '../logic/landscapes';
 import type { PropKind } from '../logic/map';
@@ -6,6 +7,10 @@ import { SHIP_TEXTURE } from './shipArt';
 
 /** The crash site's texture (crashArt.ts builds it from the forest sheet and drawn pieces). */
 export const CRASH_KEY = 'crash';
+/** The coast's texture (coastArt.ts builds it from the forest sheet and drawn pieces). */
+export const COAST_KEY = 'coast';
+/** The coast's sandy rows below the sea; the row after them is where sand meets grass. */
+const BEACH_ROWS = { first: FOREST.treeLineRows, last: FOREST.treeLineRows + 2 } as const;
 
 /** Where each piece of art sits in its sheet. Pixel rectangles measured from the files. */
 export const FOREST_SHEET = {
@@ -50,6 +55,8 @@ export interface LandscapeArt {
   key: string;
   /** Ground tiles, picked by position for a little variety. */
   ground: readonly string[];
+  /** The ground tile at a position, for landscapes whose ground changes by row. */
+  groundAt?(x: number, y: number, hash: number): string;
   /** Pictures for decal kinds 0 and 1 (walkable patches drawn on the ground). */
   decals: readonly [string, string];
   /** The frame for a prop at a tile. */
@@ -80,6 +87,24 @@ export const LANDSCAPE_ART: Readonly<Record<LandscapeId, LandscapeArt>> = {
     decals: ['path', 'townFlowers'],
     prop: (kind, x, y) => (kind === 'shrub' ? alternate('shrubA', 'shrubB', x, y) : kind),
   },
+  coast: {
+    key: COAST_KEY,
+    ground: ['grass'],
+    // Sand below the sea, then a row where the beach meets the grass, then grass.
+    groundAt: (_x, y, hash) => {
+      if (y <= BEACH_ROWS.last) return hash % 3 === 0 ? 'sandB' : 'sandA';
+      return y === BEACH_ROWS.last + 1 ? 'shore' : 'grass';
+    },
+    decals: ['dirt0', 'dirt1'],
+    prop: (kind, x, y) => {
+      if (kind === 'sea') return SEA[(Math.imul(x + 5, 2654435761) >>> 0) % SEA.length] as string;
+      // On the beach, rocks and boulders without the forest's ring of grass.
+      if (y <= BEACH_ROWS.last && kind === 'rocks') return 'rocksSand';
+      if (y <= BEACH_ROWS.last && kind === 'boulder') return 'boulderSand';
+      if (kind === 'bush') return alternate('bushA', 'bushB', x, y);
+      return kind;
+    },
+  },
   crash: {
     key: CRASH_KEY,
     ground: ['grass'],
@@ -108,6 +133,8 @@ export const LANDSCAPE_ART: Readonly<Record<LandscapeId, LandscapeArt>> = {
 /** Hull pieces along the ship's wall: plain mostly, with lights and consoles here and there. */
 const HULL = ['hullA', 'hullB', 'hullC', 'hullA', 'hullB', 'hullLights', 'hullC', 'hullConsole'];
 const TANKS = ['tank1', 'tank2', 'tank3'];
+/** The sea's pieces along the coast: each wave pattern shifted, so the edge doesn't repeat. */
+const SEA = ['seaA', 'seaB', 'seaC'];
 
 /** Adds the named frames to a loaded sheet's texture. */
 export function addFrames(
