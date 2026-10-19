@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import {
   ACTION_POINTS,
   ANIMATION,
+  BOSS,
   DEFAULT_SEED,
   GRENADE,
   GAME_WIDTH,
@@ -50,6 +51,9 @@ import {
   type Side,
   type Unit,
   type UnitKind,
+  footprint,
+  unitSize,
+  type BlastResult,
 } from '../logic/battle';
 import { planAlienAction } from '../logic/ai';
 import {
@@ -139,6 +143,9 @@ export interface GameSnapshot {
     /** An alien whose pod hasn't been spotted yet. */
     dormant: boolean;
     hidden: boolean;
+    /** The boss's armoured front and charged blast (M5.6); 0 and null for everyone else. */
+    front: -1 | 0 | 1;
+    charging: Point | null;
   }[];
   selected: string | null;
   /** Tiles the selected unit can move to now. */
@@ -165,6 +172,9 @@ export interface GameSnapshot {
 }
 
 /** Draw order: ground, dirt, markers, then everything standing, sorted by its bottom edge. */
+/** The colour of the HUD's map line. */
+const MAP_LINE_COLOR = 0xa3adbd;
+
 const DEPTH = {
   ground: 0,
   decal: 1,
@@ -246,12 +256,20 @@ export class BattleScene extends Phaser.Scene {
   private marker!: Phaser.GameObjects.Graphics;
   private chevron!: Phaser.GameObjects.Graphics;
   private rangeLayer!: Phaser.GameObjects.Graphics;
+  /** The red squares where the boss's charged blast will land (M5.6). */
+  private chargeLayer!: Phaser.GameObjects.Graphics;
   private pathLayer!: Phaser.GameObjects.Graphics;
   /** Cover shields for the hovered tile, drawn above units and trees. */
   private coverLayer!: Phaser.GameObjects.Graphics;
   private busy = false;
   /** The alien turn is playing at ANIMATION.fastForward speed (M5.11). */
   private fast = false;
+  /** A skirmish started with ?boss=1 (M5.6). */
+  private skirmishBoss = false;
+  /** The HUD has explained the boss's charge once this battle (M5.6). */
+  private chargeExplained = false;
+  /** That explanation, shown in the HUD until the blast goes off (empty: none). */
+  private chargeHint = '';
   private pips!: Phaser.GameObjects.Graphics;
   /** Reused sprites for hits, deaths, blasts and projectiles. */
   private fx!: FxPool;
@@ -303,6 +321,8 @@ export class BattleScene extends Phaser.Scene {
     this.landscape = this.campaign
       ? currentMission(this.campaign).landscape
       : (landscapeId(urlWord('landscape')) ?? 'forest');
+    // ?boss=1 adds the final mission's boss and two escort groups to a skirmish (M5.6).
+    this.skirmishBoss = !this.campaign && urlWord('boss') === '1';
     this.seeds = createRng(this.seed);
     this.createHud();
     // Help for touchscreens, which have no H key. The top-right corner is always the
@@ -312,6 +332,8 @@ export class BattleScene extends Phaser.Scene {
     );
     this.marker = this.add.graphics().setDepth(DEPTH.marker);
     this.rangeLayer = this.add.graphics().setDepth(DEPTH.range);
+    // Over the fog, so the warning shows wherever it lands.
+    this.chargeLayer = this.add.graphics().setDepth(DEPTH.fog + 0.5);
     this.pathLayer = this.add.graphics().setDepth(DEPTH.path);
     this.coverLayer = this.add.graphics().setDepth(DEPTH.overlay + 1);
     this.fogLayer = this.add.graphics().setDepth(DEPTH.fog);
@@ -496,6 +518,8 @@ export class BattleScene extends Phaser.Scene {
         maxHp: u.maxHp,
         seen: this.isSeen(u),
         dormant: u.dormant,
+        front: u.front,
+        charging: u.charging ? { x: u.charging.x, y: u.charging.y } : null,
         hidden: this.views.get(u.id)?.hidden ?? false,
       })),
       selected,
@@ -739,10 +763,11 @@ export class BattleScene extends Phaser.Scene {
       if (u.side !== 'alien') continue;
       const v = this.views.get(u.id);
       if (!v) continue;
-      // Where the sprite is now (it may be part-way along a move).
-      const x = Math.floor(v.sprite.x / TILE);
-      const y = Math.round(v.sprite.y / TILE) - 1;
-      const seen = this.vision.has(y * cols + x);
+      // Where the sprite is now (it may be part-way along a move); any tile of it counts.
+      const at = tileUnder(u.kind, v.sprite);
+      const seen = footprint({ kind: u.kind, ...at }).some((t) =>
+        this.vision.has(t.y * cols + t.x),
+      );
       v.sprite.setVisible(seen);
       if (!seen) v.ghost.setVisible(false);
     }
@@ -750,7 +775,8 @@ export class BattleScene extends Phaser.Scene {
 
   /** True if the squad can see this unit now (marines always see themselves). */
   private isSeen(unit: Unit): boolean {
-    return unit.side === 'marine' || this.vision.has(unit.y * this.state.map.cols + unit.x);
+    const cols = this.state.map.cols;
+    return unit.side === 'marine' || footprint(unit).some((t) => this.vision.has(t.y * cols + t.x));
   }
 
   /** Selects a marine (if the rules allow), leaving any aim or grenade mode. */
@@ -863,6 +889,69 @@ export class BattleScene extends Phaser.Scene {
     }
     await new Promise((resolve) => this.time.delayedCall(700, resolve));
     await this.playSighting([], thrown.scampers);
+  }
+
+  /**
+   * The boss starts charging (M5.6): the squares it will hit go red, and the first time
+   * the HUD says what to do about it.
+   */
+  private async playCharge(): Promise<void> {
+    this.drawCharge();
+    await this.banner('OVERSEER CHARGING', '#ff6a5a');
+    if (!this.chargeExplained) {
+      this.chargeExplained = true;
+      this.chargeHint = 'It fires next turn: leave the red squares';
+    }
+  }
+
+  /** The boss's charged blast goes off over the red squares (M5.6). */
+  private async playBlast(blast: BlastResult): Promise<void> {
+    const at = { x: blast.at.x * TILE + TILE / 2, y: blast.at.y * TILE + TILE / 2 };
+    // The red squares and the HUD's warning go as it fires.
+    this.drawCharge();
+    this.layoutButtons();
+    for (const [dx, dy] of [
+      [0, 0],
+      [-1, -1],
+      [1, 1],
+      [1, -1],
+      [-1, 1],
+    ] as const) {
+      this.fx.play(EFFECTS.blast.key, at.x + dx * TILE, at.y + dy * TILE, DEPTH.fx, { scale: 2 });
+    }
+    this.cameras.main.shake(260, 0.01);
+    for (const hit of blast.hits) {
+      const unit = unitById(this.state, hit.unitId);
+      const view = this.views.get(hit.unitId);
+      if (!unit || !view) continue;
+      this.showDamage(view, unit, hit.damage, hit.hpAfter, hit.killed, false, at);
+      view.exposed = !hit.killed;
+    }
+    await new Promise((resolve) => this.time.delayedCall(800, resolve));
+  }
+
+  /** Red squares wherever a living boss's charged blast will land. */
+  private drawCharge(): void {
+    const g = this.chargeLayer.clear();
+    for (const u of this.state.units) {
+      if (u.hp <= 0 || !u.charging) continue;
+      const r = Math.floor(BOSS.blast.radius);
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const x = u.charging.x + dx;
+          const y = u.charging.y + dy;
+          if (Math.hypot(dx, dy) > BOSS.blast.radius) continue;
+          if (x < 0 || y < 0 || x >= this.state.map.cols || y >= this.state.map.rows) continue;
+          g.fillStyle(0xff3a2a, 0.28).fillRect(x * TILE, y * TILE, TILE, TILE);
+          g.lineStyle(1, 0xff6a5a, 0.9).strokeRect(
+            x * TILE + 0.5,
+            y * TILE + 0.5,
+            TILE - 1,
+            TILE - 1,
+          );
+        }
+      }
+    }
   }
 
   /** Puts the selected marine on overwatch: uses its remaining action points. */
@@ -1007,6 +1096,10 @@ export class BattleScene extends Phaser.Scene {
           await this.playShot(next.lastShot);
         } else if (action.type === 'overwatch') {
           await this.playOverwatch(alien.id);
+        } else if (action.type === 'charge') {
+          await this.playCharge();
+        } else if (action.type === 'blast' && next.lastBlast) {
+          await this.playBlast(next.lastBlast);
         }
         this.updateAlienVisibility();
         this.updateHidden();
@@ -1172,10 +1265,7 @@ export class BattleScene extends Phaser.Scene {
     let facing: 1 | -1 = mirrored(view.sheet, 1) === view.sprite.flipX ? 1 : -1;
     this.playAnim(view, unit.kind, 'run', facing);
     const stepMs = 1000 / ANIMATION.runSpeed;
-    let from: Point = {
-      x: Math.floor(view.sprite.x / TILE),
-      y: Math.round(view.sprite.y / TILE) - 1,
-    };
+    let from: Point = tileUnder(unit.kind, view.sprite);
     for (const [i, p] of moved.path.entries()) {
       if (p.x !== from.x) {
         facing = p.x > from.x ? 1 : -1;
@@ -1184,9 +1274,9 @@ export class BattleScene extends Phaser.Scene {
       await new Promise<void>((resolve) =>
         this.tweens.add({
           targets: view.sprite,
-          x: p.x * TILE + TILE / 2,
-          y: (p.y + 1) * TILE,
-          duration: stepMs,
+          ...feetAt(unit.kind, p),
+          // The boss is heavy: each of its steps takes twice as long.
+          duration: stepMs * unitSize(unit),
           onUpdate: () => view.sprite.setDepth(DEPTH.standing + view.sprite.y + 0.5),
           onComplete: () => resolve(),
         }),
@@ -1511,23 +1601,25 @@ export class BattleScene extends Phaser.Scene {
     if (odds === null && why === null) return;
     if (odds) {
       drawReticle(this.aimLayer, view.sprite.x, view.sprite.y, height);
-      this.drawOdds(odds, view.sprite.x);
+      this.drawOdds(odds, view.sprite.x, target);
     }
     this.aimText
       .setText(
         odds
-          ? `${target.name.toUpperCase()} ${odds.hit}%${odds.flanked ? ' FLANKED' : ''}`
+          ? `${target.name.toUpperCase()} ${odds.hit}%${odds.armoured ? ' ARMOURED' : odds.flanked ? ' FLANKED' : ''}`
           : (why as string),
       )
       .setColor(odds ? (odds.flanked ? 0xffd23a : 0xf2a33a) : 0xa3adbd);
     // Keep the label on screen for units near the edges.
     const half = this.aimText.textWidth / 2 + 3;
     const x = Math.min(Math.max(view.sprite.x, half + 2), GAME_WIDTH - half - 2);
-    this.aimText.setPosition(x, view.sprite.y - height - 8).setVisible(true);
+    // ...and below the top edge, for tall units near it (the boss).
+    const y = Math.max(this.aimText.textHeight / 2 + 2, view.sprite.y - height - 8);
+    this.aimText.setPosition(x, y).setVisible(true);
   }
 
   /** The breakdown panel, on the side of the map away from the target. */
-  private drawOdds(odds: ShotOdds, targetX: number): void {
+  private drawOdds(odds: ShotOdds, targetX: number, target: Unit): void {
     const line = (label: string, value: string): string =>
       `${label.padEnd(12)}${value.padStart(5)}`;
     const signed = (n: number): string => (n > 0 ? `+${n}` : `${n}`);
@@ -1536,6 +1628,12 @@ export class BattleScene extends Phaser.Scene {
     if (odds.cover)
       lines.push(line(`${odds.cover.toUpperCase()} COVER`, signed(-odds.coverPenalty)));
     if (odds.exposed) lines.push(line('EXPOSED', 'NO CVR'));
+    // The boss (M5.6): its front plate, or the weak side the player found.
+    if (target.kind === 'overseer') {
+      lines.push(
+        odds.armoured ? line('ARMOURED', `MAX ${BOSS.armourCap}`) : line('WEAK SIDE', 'FULL'),
+      );
+    }
     lines.push('-'.repeat(17), line('HIT', `${odds.hit}%`));
     lines.push(line(odds.flanked ? 'CRIT (FLANK)' : 'CRIT', `${odds.crit}%`));
     this.oddsPanel.setText(lines.join('\n'));
@@ -1550,6 +1648,8 @@ export class BattleScene extends Phaser.Scene {
    */
   private startBattle(seed: number, resume: BattleState | undefined, replay: boolean): void {
     this.replaying = replay;
+    this.chargeExplained = false;
+    this.chargeHint = '';
     for (const o of this.mapObjects) o.destroy();
     for (const v of this.views.values()) {
       v.sprite.destroy();
@@ -1575,12 +1675,16 @@ export class BattleScene extends Phaser.Scene {
         map.seed,
         c && mission
           ? { names: c.squad, pods: mission.pods, kinds: mission.kinds, ranks: squadRanks(c) }
-          : {},
+          : this.skirmishBoss
+            ? { boss: true, pods: BOSS.escorts }
+            : {},
       );
     // A campaign saves as each of the squad's turns begins, this first one included.
     if (c) writeSave(c, this.state, replay);
     this.drawMap();
     for (const u of this.state.units) this.views.set(u.id, this.drawUnit(u));
+    // A resumed battle may have the boss's blast already charging.
+    this.drawCharge();
     this.updateHidden();
     this.drawSelection();
     this.explored.clear();
@@ -1637,10 +1741,10 @@ export class BattleScene extends Phaser.Scene {
   private drawUnit(u: Unit): UnitView {
     const sheet = SHEETS[u.kind];
     const flip = mirrored(sheet, u.facing);
-    const bottom = (u.y + 1) * TILE;
+    const { x: feetX, y: bottom } = feetAt(u.kind, u);
     const make = (): Phaser.GameObjects.Sprite =>
       this.add
-        .sprite(u.x * TILE + TILE / 2, bottom, sheet.key)
+        .sprite(feetX, bottom, sheet.key)
         .setOrigin(flip ? 1 - sheet.originX : sheet.originX, sheet.originY)
         .setFlipX(flip);
     // Units stand in front of props on the same row.
@@ -1674,12 +1778,14 @@ export class BattleScene extends Phaser.Scene {
         v.ghost.setVisible(false);
         continue;
       }
-      // The body: one tile wide, two tiles tall, standing on the unit's tile.
+      // The body: as wide as the unit stands, from its footprint's bottom row up to one
+      // tile above its top row (a two-tile-tall figure for everyone but the boss).
+      const size = unitSize(u);
       const body = new Phaser.Geom.Rectangle(
         u.x * TILE + 3,
-        (u.y - 1) * TILE + 4,
-        TILE - 6,
-        TILE * 2 - 4,
+        (u.y - size) * TILE + 4,
+        size * TILE - 6,
+        (size + 1) * TILE - 4,
       );
       const area = body.width * body.height;
       v.hidden = this.props.some((p) => {
@@ -1791,7 +1897,7 @@ export class BattleScene extends Phaser.Scene {
       valign: 'top',
     }).setDepth(DEPTH.hud);
     this.mapText = new PixelText(this, 6, y + 19, '', {
-      color: 0xa3adbd,
+      color: MAP_LINE_COLOR,
       align: 'left',
       valign: 'top',
     }).setDepth(DEPTH.hud);
@@ -1824,7 +1930,29 @@ export class BattleScene extends Phaser.Scene {
       right -= b.buttonWidth + 4;
     }
     const room = right - this.mapText.x;
-    const fits = this.mapLines.find((line) => line.length * CELL_W <= room);
-    this.mapText.setText(fits ?? this.mapLines[this.mapLines.length - 1] ?? '');
+    // While the boss's blast is charging, its warning takes the map line (M5.6).
+    // (The HUD is laid out once before the first battle state exists.)
+    const units = (this.state as BattleState | undefined)?.units ?? [];
+    const charging = units.some((u) => u.hp > 0 && u.charging !== null);
+    const lines = charging
+      ? [this.chargeHint, 'Leave the red squares', 'Move!'].filter((l) => l !== '')
+      : this.mapLines;
+    const fits = lines.find((line) => line.length * CELL_W <= room);
+    this.mapText
+      .setText(fits ?? lines[lines.length - 1] ?? '')
+      .setColor(charging ? 0xff6a5a : MAP_LINE_COLOR);
   }
+}
+
+/** Where a unit standing on anchor tile `p` has its feet: the middle of its footprint's bottom edge. */
+function feetAt(kind: UnitKind, p: Point): { x: number; y: number } {
+  return { x: (p.x + unitSize({ kind }) / 2) * TILE, y: (p.y + 1) * TILE };
+}
+
+/** The anchor tile a unit's sprite stands over (the inverse of feetAt). */
+function tileUnder(kind: UnitKind, sprite: { x: number; y: number }): Point {
+  return {
+    x: Math.round(sprite.x / TILE - unitSize({ kind }) / 2),
+    y: Math.round(sprite.y / TILE) - 1,
+  };
 }

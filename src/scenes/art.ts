@@ -159,6 +159,25 @@ export const WALKER_SHEET: CharacterSheet = {
   anims: { idle: { start: 0, count: 4, fps: 5 } },
 };
 
+/**
+ * The Overseer, the final mission's boss (M5.6): Warped's mech unit, ten 96 x 80 frames
+ * of a heavy walk. It stands on a 2 x 2 footprint, its feet at the middle of the square.
+ */
+export const OVERSEER_SHEET: CharacterSheet = {
+  key: 'overseer',
+  url: 'assets/overseer/mech-unit.png',
+  frameWidth: 96,
+  frameHeight: 80,
+  originX: 43 / 96,
+  originY: 1,
+  height: 64,
+  muzzle: { x: 23, y: 30 },
+  anims: {
+    idle: { start: 0, count: 1, fps: 1 },
+    run: { start: 0, count: 10, fps: 10 },
+  },
+};
+
 export const WALKER_WALK_SHEET: CharacterSheet = {
   key: 'walker-walk',
   url: 'assets/alien-walker/alien-enemy-walk.png',
@@ -284,9 +303,7 @@ export const UNIT_ANIMS: Readonly<Record<UnitKind, Partial<Record<AnimName, Char
     shoot: SNAKE_SHOOT_SHEET,
     hurt: SNAKE_HURT_SHEET,
   },
-  // Stand-in until the boss's own art lands (M5.6, second PR). No mission fields the
-  // boss before then.
-  overseer: { idle: WALKER_SHEET, run: WALKER_WALK_SHEET },
+  overseer: { idle: OVERSEER_SHEET, run: OVERSEER_SHEET },
 };
 
 /** The sheet that sets each kind's size: its height and muzzle. */
@@ -296,7 +313,7 @@ export const BASE_SHEETS: Readonly<Record<UnitKind, CharacterSheet>> = {
   flyer: FLYER_SHEET,
   lizard: LIZARD_SHEET,
   snake: SNAKE_SHEET,
-  overseer: WALKER_SHEET, // stand-in until the boss's art (M5.6, second PR)
+  overseer: OVERSEER_SHEET,
 };
 
 /** Registers a sheet's animations as `<key>-<name>`, once. */
