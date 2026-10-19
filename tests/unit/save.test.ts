@@ -244,6 +244,8 @@ describe('save version 2: XP, kills and replays (M5.2)', () => {
   if (!b) throw new Error('no battle');
   /** The campaign as saved before version 6: without the supply (M5.10). */
   const pre6 = without(good.campaign, 'supply');
+  /** The battle as saved before version 7: without wrecked cover (M5.13). */
+  const pre7 = without(b, 'wrecks') as Omit<typeof b, 'wrecks'>;
 
   it('keeps the squad`s XP and the replay flag', () => {
     const loaded = decodeSave(encodeSave(ranked, battle, true));
@@ -391,7 +393,7 @@ describe('save version 2: XP, kills and replays (M5.2)', () => {
   });
 
   it('still loads a version 5 save, with no supply', () => {
-    const v5 = { v: 5, campaign: pre6, battle: b };
+    const v5 = { v: 5, campaign: pre6, battle: pre7 };
     const loaded = decodeSave(JSON.stringify(v5));
     if (!loaded.ok || !loaded.save.battle) throw new Error('did not load');
     expect(loaded.save.v).toBe(SAVE_VERSION);
@@ -401,7 +403,7 @@ describe('save version 2: XP, kills and replays (M5.2)', () => {
   });
 
   it('still loads a version 4 save, with no boss fields', () => {
-    const v4 = { v: 4, campaign: pre6, battle: { ...b, units: b.units.map(preBoss) } };
+    const v4 = { v: 4, campaign: pre6, battle: { ...pre7, units: b.units.map(preBoss) } };
     const loaded = decodeSave(JSON.stringify(v4));
     if (!loaded.ok || !loaded.save.battle) throw new Error('did not load');
     expect(loaded.save.v).toBe(SAVE_VERSION);
@@ -410,14 +412,14 @@ describe('save version 2: XP, kills and replays (M5.2)', () => {
       true,
     );
     // A version 4 save carrying version 5's fields isn't one.
-    expect(decodes({ ...v4, battle: b })).toBe(false);
+    expect(decodes({ ...v4, battle: pre7 })).toBe(false);
   });
 
   it('still loads a version 3 save, with no deaths', () => {
     const v3 = {
       v: 3,
       campaign: without(pre6, 'deaths'),
-      battle: { ...b, units: b.units.map(preBoss) },
+      battle: { ...pre7, units: b.units.map(preBoss) },
     };
     const loaded = decodeSave(JSON.stringify(v3));
     if (!loaded.ok) throw new Error('did not load');
@@ -430,7 +432,7 @@ describe('save version 2: XP, kills and replays (M5.2)', () => {
     const v2 = {
       v: 2,
       campaign: without(pre6, 'deaths'),
-      battle: { ...b, units: b.units.map((u) => without(preBoss(u), 'hits')) },
+      battle: { ...pre7, units: b.units.map((u) => without(preBoss(u), 'hits')) },
     };
     const loaded = decodeSave(JSON.stringify(v2));
     if (!loaded.ok || !loaded.save.battle) throw new Error('did not load');
@@ -438,7 +440,7 @@ describe('save version 2: XP, kills and replays (M5.2)', () => {
     expect(loaded.save.battle.units.every((u) => u.hits === 0)).toBe(true);
     expect(loaded.save.battle.units.every((u) => typeof u.kills === 'number')).toBe(true);
     // A version 2 save with version 3's field isn't one.
-    expect(decodes({ ...v2, battle: b })).toBe(false);
+    expect(decodes({ ...v2, battle: { ...pre7, units: b.units.map(preBoss) } })).toBe(false);
   });
 
   it('rejects more kills than the other side has lost', () => {

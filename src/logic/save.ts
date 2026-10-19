@@ -2,6 +2,7 @@ import {
   ABILITIES,
   ACTION_POINTS,
   BOSS,
+  FOREST,
   MAP_COLS,
   MAP_ROWS,
   MISSIONS,
@@ -20,7 +21,7 @@ import {
   type Unit,
 } from './battle';
 import { currentMission, mapSeedFor, squadRanks, type Campaign } from './campaign';
-import { generateMap, isWalkable } from './map';
+import { blastOutcome, generateMap, isWalkable, type BattleMap } from './map';
 
 /**
  * The campaign save (M5.5, ADR-E6): one versioned JSON record in the browser.
@@ -31,12 +32,13 @@ import { generateMap, isWalkable } from './map';
  * checked. Anything unexpected (wrong version, an extra field, a number out of range,
  * a unit standing in a tree) rejects the whole save.
  */
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 /**
  * Older saves still load, checked just as strictly, with the fields they lack at their
  * starting values. Version 1 (M5.5) had no XP, kills or replay flag; version 2 (M5.2)
  * had no hit counts; version 3 (M5.9) had no death counts; version 4 (M5.3) had none
- * of the boss's front, charge or rest (M5.6); version 5 had no supply (M5.10).
+ * of the boss's front, charge or rest (M5.6); version 5 had no supply (M5.10); version 6
+ * had no wrecked cover (M5.13).
  */
 const OLDEST_VERSION = 1;
 /** A save larger than this isn't ours: it is rejected before parsing. */
@@ -71,6 +73,11 @@ export interface SavedBattle {
   units: SavedUnit[];
   /** Started with REPLAY: it earns no XP, even after a reload. */
   replay: boolean;
+  /**
+   * Cover grenades wrecked (M5.13): each tile (y * cols + x) once, in order, and what's
+   * there now (a trunk, or nothing). Empty before version 7.
+   */
+  wrecks: [number, 'trunk' | null][];
 }
 
 export interface Save {
@@ -120,6 +127,10 @@ export function encodeSave(campaign: Campaign, battle: BattleState | null, repla
             cooldown: u.cooldown,
           })),
           replay,
+          wrecks: (battle.map.wrecked ?? []).map((i): [number, 'trunk' | null] => [
+            i,
+            battle.map.tiles[i]?.prop === 'trunk' ? 'trunk' : null,
+          ]),
         }
       : null,
   };
@@ -159,8 +170,8 @@ export function decodeSave(text: string): LoadResult {
  */
 export function restoreBattle(campaign: Campaign, saved: SavedBattle): BattleState | null {
   const mission = currentMission(campaign);
-  const map = generateMap(campaign.mapSeed, MAP_COLS, MAP_ROWS, mission.landscape);
-  const fresh = createBattle(map, map.seed, {
+  const built = generateMap(campaign.mapSeed, MAP_COLS, MAP_ROWS, mission.landscape);
+  const fresh = createBattle(built, built.seed, {
     names: campaign.squad,
     pods: mission.pods,
     kinds: mission.kinds,
@@ -168,6 +179,9 @@ export function restoreBattle(campaign: Campaign, saved: SavedBattle): BattleSta
     boss: 'boss' in mission && mission.boss === true,
     supply: campaign.supply,
   });
+  // Units are checked against the map as grenades left it.
+  const map = rewreck(built, saved.wrecks);
+  if (!map) return null;
   if (saved.units.length !== fresh.units.length) return null;
   const byId = new Map(saved.units.map((u) => [u.id, u]));
   if (byId.size !== saved.units.length) return null;
@@ -214,6 +228,7 @@ export function restoreBattle(campaign: Campaign, saved: SavedBattle): BattleSta
   if (count('alien', (u) => u.hits) > count('marine', lost)) return null;
   const state: BattleState = {
     ...fresh,
+    map,
     units,
     turn: 'marine',
     round: saved.round,
@@ -229,6 +244,27 @@ export function restoreBattle(campaign: Campaign, saved: SavedBattle): BattleSta
   // A dormant alien the squad can already see would have been woken: not a real save.
   if (units.some((u) => u.dormant && u.hp > 0 && unitVisibleTo(state, 'marine', u))) return null;
   return state;
+}
+
+/**
+ * The map with a save's wrecked cover (M5.13) put back, or null if any of it couldn't
+ * have happened: a tile off the map, in the edge rows, listed twice, or whose prop a
+ * blast doesn't leave like that (only a tree leaves a trunk).
+ */
+function rewreck(map: BattleMap, wrecks: SavedBattle['wrecks']): BattleMap | null {
+  if (wrecks.length === 0) return map;
+  const tiles = [...map.tiles];
+  const wrecked: number[] = [];
+  for (const [i, to] of wrecks) {
+    if (i >= tiles.length || wrecked.includes(i)) return null;
+    if (Math.floor(i / map.cols) < FOREST.treeLineRows) return null;
+    const outcome = blastOutcome(tiles[i]?.prop ?? null);
+    // Blown down to a trunk; or blown away, a tree perhaps by a second grenade.
+    if (outcome === undefined || (to === 'trunk' && outcome !== 'trunk')) return null;
+    tiles[i] = to === 'trunk' ? { prop: 'trunk', anchor: true } : { prop: null, anchor: false };
+    wrecked.push(i);
+  }
+  return { ...map, tiles, wrecked };
 }
 
 function fail(reason: string): LoadResult {
@@ -319,7 +355,14 @@ function checkBattleShape(v: unknown, version: number): SavedBattle | null {
   const old = version < 2;
   if (
     !isRecord(v) ||
-    !hasOnly(v, old ? ['round', 'rng', 'units'] : ['round', 'rng', 'units', 'replay'])
+    !hasOnly(
+      v,
+      old
+        ? ['round', 'rng', 'units']
+        : version < 7
+          ? ['round', 'rng', 'units', 'replay']
+          : ['round', 'rng', 'units', 'replay', 'wrecks'],
+    )
   ) {
     return null;
   }
@@ -372,7 +415,25 @@ function checkBattleShape(v: unknown, version: number): SavedBattle | null {
       ...(boss ?? {}),
     });
   }
-  return { round, rng, units: out, replay };
+  const wrecks = version < 7 ? [] : checkWrecks(v.wrecks);
+  if (!wrecks) return null;
+  return { round, rng, units: out, replay, wrecks };
+}
+
+/** A save's wrecked cover (version 7): [tile, 'trunk' or null] pairs, each tile once. */
+function checkWrecks(v: unknown): SavedBattle['wrecks'] | null {
+  if (!Array.isArray(v) || v.length > MAP_COLS * MAP_ROWS) return null;
+  const out: SavedBattle['wrecks'] = [];
+  const seen = new Set<number>();
+  for (const w of v) {
+    if (!Array.isArray(w) || w.length !== 2) return null;
+    const [i, to] = w as unknown[];
+    if (!isInt(i, 0, MAP_COLS * MAP_ROWS - 1) || seen.has(i)) return null;
+    if (to !== 'trunk' && to !== null) return null;
+    seen.add(i);
+    out.push([i, to]);
+  }
+  return out;
 }
 
 /** A unit's boss fields from a version 5 save, or null if any is out of shape. */

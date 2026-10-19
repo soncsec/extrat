@@ -16,12 +16,14 @@ import {
 import { findPath, hasLineOfSight, reachable, type Point } from './grid';
 import {
   blocksSight,
+  blastProps,
   isWalkable,
   PROPS,
   spawnZone,
   tileAt,
   type BattleMap,
   type Cover,
+  type Wreck,
 } from './map';
 import { createRng, rngStep, type Rng } from './rng';
 
@@ -123,6 +125,8 @@ export interface ThrowResult {
   hits: { unitId: string; damage: number; hpAfter: number; killed: boolean }[];
   /** A blast wakes a hidden pod: its survivors scramble to cover. */
   scampers: Scamper[];
+  /** Cover the blast wrecked (M5.13): blown away, or a tree blown down to its trunk. */
+  wrecks: Wreck[];
 }
 
 /** The boss's charged blast going off (M5.6). */
@@ -733,7 +737,10 @@ export function blastTargets(state: BattleState, at: Point): Unit[] {
   );
 }
 
-/** Throws a grenade: fixed damage to everyone in the blast, survivors lose cover. */
+/**
+ * Throws a grenade: fixed damage to everyone in the blast, survivors lose cover, and
+ * the cover itself is wrecked (M5.13): small cover blown away, trees blown down.
+ */
 function throwGrenade(state: BattleState, unitId: string, at: Point): BattleState {
   const thrower = unitById(state, unitId);
   if (!thrower || !canThrow(state, unitId) || !inThrowRange(state, unitId, at)) return state;
@@ -758,19 +765,30 @@ function throwGrenade(state: BattleState, unitId: string, at: Point): BattleStat
     kills: after.kills + kills,
     hits: after.hits + enemyHits.length,
   });
-  // A blast in the fog wakes the pod it lands on.
+  // The cover goes before anyone scrambles, so a woken pod can't hide behind it.
+  const blasted = blastProps(next.map, at, GRENADE.radius);
+  next = { ...next, map: blasted.map };
+  // A blast in the fog wakes the pod it lands on, and any pod the squad can now see
+  // through the cover it blew away.
   const pods = [
-    ...new Set(
-      blastTargets(state, at)
+    ...new Set([
+      ...blastTargets(state, at)
         .filter((u) => u.dormant && u.pod !== null)
         .map((u) => u.pod as number),
-    ),
+      ...spottedPods(next),
+    ]),
   ];
   const woken = pods.length > 0 ? wakePods(next, pods) : { state: next, scampers: [] };
   next = woken.state;
   return {
     ...next,
-    lastThrow: { unitId, at: { x: at.x, y: at.y }, hits, scampers: woken.scampers },
+    lastThrow: {
+      unitId,
+      at: { x: at.x, y: at.y },
+      hits,
+      scampers: woken.scampers,
+      wrecks: blasted.wrecks,
+    },
   };
 }
 

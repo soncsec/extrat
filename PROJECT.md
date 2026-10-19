@@ -32,7 +32,7 @@ It is built mainly from the Ansimuz "Legacy Collection" pixel-art pack (CC0) and
 | Camera | Top-down grid of 16 px tiles. Characters are side-view sprites about two tiles tall that face left or right (art option A, owner decision 2026-10-17) |
 | Squad | 4 marines, each recolored so they can be told apart |
 | Turns | Player turn, then alien turn. Each marine has **2 actions** per turn |
-| Combat | Half and full cover depending on the shooter's direction; flanking; hit chance shown before shooting; overwatch; reload; grenades. Exact mechanics and numbers are Claude's to design (owner decision 2026-10-17) and live in `src/config/tuning.ts` |
+| Combat | Half and full cover depending on the shooter's direction; flanking; hit chance shown before shooting; overwatch; reload; grenades, which also wreck cover (owner, 2026-10-19). Exact mechanics and numbers are Claude's to design (owner decision 2026-10-17) and live in `src/config/tuning.ts` |
 | Aliens | Hidden by fog of war until spotted. Groups of aliens wake when they see the squad and **ambush** it. Several alien types (walker, flyer, lizard, snake) with their own abilities, introduced one kind per mission with the deadliest (snake) no earlier than mission 4 (owner, 2026-10-18); a mech boss in the final mission |
 | Maps | **Randomly generated** for each mission from a seed. Every map is checked automatically to be playable and fair |
 | Landscapes | One per mission: forest, town, coast, rocky hills, alien crash site, alien ship (final mission) |
@@ -93,6 +93,7 @@ It is built mainly from the Ansimuz "Legacy Collection" pixel-art pack (CC0) and
 | 2026-10-17 | Campaign save in localStorage (security decision, ADR-E6) |
 | 2026-10-19 | Supply pick after each won mission: +1 grenade, +1 health or +10 aim for every marine, next mission only. Wall of Shame starter content approved. Phones fill the screen (iPhone Safari test: the game was small and some taps did nothing) |
 | 2026-10-18 | PM review: alien kinds introduced one per mission (walkers first, snakes from mission 4 at the earliest); balance pass now, not in M6; XP per hit; a tangible perk per rank; resupply between missions (design to confirm); alien turn fast-forward; landscapes built in the order ship, crash site, coast, hills, none dropped; help screen is enough onboarding for now |
+| 2026-10-19 | Grenades wreck cover (a friend's suggestion): small cover blown away, trees blown down to a trunk (half cover), houses, wrecks, tanks, boulders and the map edge stand; scorch marks where cover was wrecked |
 | 2026-10-18 | Playable on phones and tablets with touch, as well as desktop. Tap to preview, tap again to act. Whole map on phones (zoom and drag only if needed after play-testing). Landscape only. Built before the Wall of Shame |
 
 ## 8. Open questions

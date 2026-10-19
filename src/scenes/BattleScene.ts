@@ -85,6 +85,7 @@ import {
   type AnimName,
   type CharacterSheet,
 } from './art';
+import { BLAST_TEXTURE } from './blastArt';
 import {
   drawExposed,
   drawEye,
@@ -908,6 +909,8 @@ export class BattleScene extends Phaser.Scene {
     ball.destroy();
     this.fx.play(EFFECTS.blast.key, to.x, to.y, DEPTH.fx, { scale: 2 });
     this.cameras.main.shake(160, 0.006);
+    // The cover it wrecked goes up with it (M5.13).
+    if (thrown.wrecks.length > 0) this.redrawMap();
     for (const hit of thrown.hits) {
       const unit = unitById(this.state, hit.unitId);
       const view = this.views.get(hit.unitId);
@@ -1737,11 +1740,27 @@ export class BattleScene extends Phaser.Scene {
     this.layoutButtons();
   }
 
+  /** Draws the map again as it now is (after a grenade wrecked some cover). */
+  private redrawMap(): void {
+    for (const o of this.mapObjects) o.destroy();
+    this.mapObjects = [];
+    this.props = [];
+    this.propTiles = [];
+    this.drawMap();
+    this.updateHidden();
+  }
+
   private drawMap(): void {
     const { map } = this.state;
     const art = LANDSCAPE_ART[map.landscape ?? 'forest'];
-    const add = (x: number, y: number, frame: string, depth: number): Phaser.GameObjects.Image => {
-      const img = this.add.image(x, y, art.key, frame).setDepth(depth);
+    const add = (
+      x: number,
+      y: number,
+      frame: string,
+      depth: number,
+      key: string = art.key,
+    ): Phaser.GameObjects.Image => {
+      const img = this.add.image(x, y, key, frame).setDepth(depth);
       this.mapObjects.push(img);
       return img;
     };
@@ -1755,6 +1774,12 @@ export class BattleScene extends Phaser.Scene {
     }
     for (const d of map.decals)
       add(d.x * TILE, d.y * TILE, art.decals[d.kind], DEPTH.decal).setOrigin(0);
+    // Where grenades wrecked cover (M5.13): scorched ground, the same on every landscape.
+    for (const i of map.wrecked ?? []) {
+      const x = (i % map.cols) * TILE;
+      const y = Math.floor(i / map.cols) * TILE;
+      add(x, y, 'scorch', DEPTH.decal, BLAST_TEXTURE.key).setOrigin(0);
+    }
     map.tiles.forEach((t, i) => {
       if (!t.prop || !t.anchor) return;
       const x = i % map.cols;
@@ -1762,7 +1787,13 @@ export class BattleScene extends Phaser.Scene {
       // The anchor is the bottom-left of the footprint: the sprite stands on its bottom row.
       const bottom = (y + 1) * TILE;
       const centerX = (x + PROPS[t.prop].width / 2) * TILE;
-      const img = add(centerX, bottom, art.prop(t.prop, x, y), DEPTH.standing + bottom);
+      // A tree's trunk, left by a grenade, is drawn the same on every landscape.
+      const img =
+        t.prop === 'trunk'
+          ? add(centerX, bottom, 'trunk', DEPTH.standing + bottom, BLAST_TEXTURE.key).setFlipX(
+              (x + y) % 2 === 1, // every other one mirrored, so a felled clump looks less stamped
+            )
+          : add(centerX, bottom, art.prop(t.prop, x, y), DEPTH.standing + bottom);
       this.props.push(img.setOrigin(0.5, 1));
       const { width, height } = PROPS[t.prop];
       const tiles: number[] = [];
