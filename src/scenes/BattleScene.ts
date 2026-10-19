@@ -1674,7 +1674,13 @@ export class BattleScene extends Phaser.Scene {
         map,
         map.seed,
         c && mission
-          ? { names: c.squad, pods: mission.pods, kinds: mission.kinds, ranks: squadRanks(c) }
+          ? {
+              names: c.squad,
+              pods: mission.pods,
+              kinds: mission.kinds,
+              ranks: squadRanks(c),
+              boss: 'boss' in mission && mission.boss,
+            }
           : this.skirmishBoss
             ? { boss: true, pods: BOSS.escorts }
             : {},

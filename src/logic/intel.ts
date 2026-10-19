@@ -36,6 +36,14 @@ export function missionIntel(mission: number): string[] {
     mission > 0 ? MISSIONS.slice(0, mission).flatMap((p) => p.kinds) : [],
   );
   const fresh = m.kinds.filter((k) => !seen.has(k));
+  // The final mission (M5.6): what the player must know to beat the boss.
+  if ('boss' in m && m.boss) {
+    return [
+      `Intel: the Overseer and ${m.pods.count} groups of ${m.pods.size}.`,
+      'Its front is armoured: flank it.',
+      'When it charges, leave the red squares.',
+    ];
+  }
   const list = listKinds(m.kinds);
   const lines = [`Intel: ${m.pods.count} groups of ${m.pods.size}.`, `Expect ${list}.`];
   for (const k of fresh) lines.push(WARNING[k]);

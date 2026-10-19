@@ -60,8 +60,10 @@ export class BriefingScene extends Phaser.Scene {
       cx,
       76,
       [
-        'Find the aliens hiding in the fog',
-        'and wipe them out.',
+        // The final mission is won when the boss falls, whatever its escorts do (M5.6).
+        ...('boss' in mission && mission.boss
+          ? ['Find the Overseer in the fog', 'and destroy it.']
+          : ['Find the aliens hiding in the fog', 'and wipe them out.']),
         ...missionIntel(campaign.mission),
         '',
         ...squadLines(campaign),
