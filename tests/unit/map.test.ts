@@ -3,6 +3,7 @@ import { FOREST, MAP_COLS, MAP_ROWS } from '../../src/config/tuning';
 import {
   chunkCell,
   FOREST_CHUNKS,
+  COAST_CHUNKS,
   CRASH_CHUNKS,
   SHIP_CHUNKS,
   TOWN_CHUNKS,
@@ -505,5 +506,77 @@ describe('crash site landscape (M4.3)', () => {
 
   it('is a known landscape name in the URL', () => {
     expect(landscapeId('crash')).toBe('crash');
+  });
+});
+
+describe('coast landscape (M4.3)', () => {
+  const coast = (seed: number): BattleMap => generateMap(seed, MAP_COLS, MAP_ROWS, 'coast');
+  const shore = COAST_CHUNKS.shore ?? [];
+  const all = [...COAST_CHUNKS.spawn, ...shore, ...COAST_CHUNKS.field];
+
+  it('makes a valid coast map for 1,000 seeds', () => {
+    for (let seed = 1; seed <= 1000; seed++) {
+      const map = coast(seed);
+      expect(map.landscape).toBe('coast');
+      expect(validateMap(map), `seed ${seed}`).toEqual([]);
+    }
+  }, 30_000);
+
+  it('has chunks of the right size, and boats two tiles wide', () => {
+    expect(shore.length).toBeGreaterThan(0);
+    for (const c of all) {
+      expect(c.rows, c.name).toHaveLength(FOREST.chunk.height);
+      for (const row of c.rows) {
+        expect(row, c.name).toHaveLength(FOREST.chunk.width);
+        for (const ch of row) expect(() => chunkCell(ch), `${c.name}: '${ch}'`).not.toThrow();
+        // Every boat 'R' has its rest '-' beside it, and every '-' follows an 'R' or 'B'.
+        [...row].forEach((ch, i) => {
+          if (ch === 'R') expect(row[i + 1], c.name).toBe('-');
+          if (ch === '-') expect('RB', c.name).toContain(row[i - 1]);
+        });
+      }
+    }
+  });
+
+  it('keeps boats and driftwood on the beach: only in its chunks', () => {
+    for (const c of [...COAST_CHUNKS.spawn, ...COAST_CHUNKS.field]) {
+      expect(c.rows.join(''), c.name).not.toMatch(/[Rd]/);
+    }
+    for (let seed = 1; seed <= 200; seed++) {
+      const map = coast(seed);
+      map.tiles.forEach((t, i) => {
+        const y = Math.floor(i / map.cols);
+        if (t.prop === 'boat' || t.prop === 'driftwood') {
+          expect(y, `seed ${seed}`).toBeLessThan(FOREST.treeLineRows + FOREST.chunk.height);
+        }
+      });
+    }
+  });
+
+  it('lines the top with sea, drawn on every tile of its bottom row', () => {
+    const map = coast(7);
+    const top = FOREST.treeLineRows;
+    for (let y = 0; y < top; y++) {
+      for (let x = 0; x < map.cols; x++) {
+        expect(tileAt(map, x, y)).toEqual({ prop: 'sea', anchor: y === top - 1 });
+      }
+    }
+  });
+
+  it('keeps dirt patches off the beach', () => {
+    for (let seed = 1; seed <= 200; seed++) {
+      for (const d of coast(seed).decals) {
+        expect(d.y, `seed ${seed}`).toBeGreaterThanOrEqual(FOREST.treeLineRows + 4);
+      }
+    }
+  });
+
+  it('leaves the other landscapes` maps exactly as they were', () => {
+    // The shore chunks and decal rows are the coast's own: the forest's map 1234 is fixed.
+    expect(generateMap(1234, MAP_COLS, MAP_ROWS, 'forest')).toEqual(gen(1234));
+  });
+
+  it('is a known landscape name in the URL', () => {
+    expect(landscapeId('coast')).toBe('coast');
   });
 });

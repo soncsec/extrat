@@ -140,8 +140,9 @@ describe('missions', () => {
     }
   }, 30_000);
 
-  it('include the town as mission 2, the crash site as 5, and end on the alien ship', () => {
+  it('include the town as mission 2, the coast as 3, the crash site as 5, and end on the alien ship', () => {
     expect(MISSIONS[1]?.landscape).toBe('town');
+    expect(MISSIONS[2]?.landscape).toBe('coast');
     expect(MISSIONS[4]?.landscape).toBe('crash');
     expect(MISSIONS[MISSIONS.length - 1]?.landscape).toBe('ship');
   });

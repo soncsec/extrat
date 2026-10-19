@@ -1768,7 +1768,9 @@ export class BattleScene extends Phaser.Scene {
       for (let x = 0; x < map.cols; x++) {
         // A fixed scramble of the position, so the ground doesn't show a pattern.
         const hash = (Math.imul(x + 1, 73856093) ^ Math.imul(y + 1, 19349663)) >>> 0;
-        const ground = art.ground[hash % art.ground.length] as string;
+        const ground = art.groundAt
+          ? art.groundAt(x, y, hash)
+          : (art.ground[hash % art.ground.length] as string);
         add(x * TILE, y * TILE, ground, DEPTH.ground).setOrigin(0);
       }
     }

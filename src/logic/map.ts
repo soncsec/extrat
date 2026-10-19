@@ -25,7 +25,10 @@ export type PropKind =
   | 'console'
   | 'wreck'
   | 'scrap'
-  | 'trunk';
+  | 'trunk'
+  | 'sea'
+  | 'driftwood'
+  | 'boat';
 export type Cover = 'half' | 'full';
 
 export interface PropInfo {
@@ -65,6 +68,10 @@ export const PROPS: Readonly<Record<PropKind, PropInfo>> = {
   scrap: { width: 1, height: 1, cover: 'half', blast: 'cleared' },
   // What's left of a tree a grenade blew down: half cover, cleared by another blast.
   trunk: { width: 1, height: 1, cover: 'half', blast: 'cleared' },
+  // Coast (M4.3): the sea along the top edge, driftwood and boats pulled up the beach.
+  sea: { width: 1, height: 1, cover: 'full', blast: 'stands' },
+  driftwood: { width: 1, height: 1, cover: 'half', blast: 'cleared' },
+  boat: { width: 2, height: 1, cover: 'full', blast: 'stands' },
 };
 
 export interface Tile {
@@ -294,7 +301,9 @@ function buildMap(
     for (let cx = 0; (cx + 1) * w <= cols; cx++) {
       const x0 = cx * w;
       const inSpawn = x0 <= westEdge || x0 + w - 1 >= eastEdge;
-      const chunk = rng.pick(inSpawn ? land.chunks.spawn : land.chunks.field);
+      // The top row of the field may have its own chunks (the coast's beach).
+      const shore = cy === 0 ? land.chunks.shore : undefined;
+      const chunk = rng.pick(inSpawn ? land.chunks.spawn : (shore ?? land.chunks.field));
       stamp(chunk, x0, top + cy * h, rng, opts, land, place);
     }
   }
@@ -306,7 +315,7 @@ function buildMap(
   for (let i = 0; i < opts.dirtPatches; i++) {
     map.decals.push({
       x: rng.int(0, cols - 3),
-      y: rng.int(top, rows - 3),
+      y: rng.int(top + (land.bareRows ?? 0), rows - 3),
       kind: rng.pick([0, 1] as const),
     });
   }

@@ -76,7 +76,7 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 
 - [x] M4.1 Chunk-based generator with seeded scatter (ADR-E3)
 - [x] M4.2 Validators: reachability, spawn distance, cover density; 1,000-seed test
-- [ ] M4.3 Landscapes: forest, town, coast, rocky hills, crash site, alien ship; missing tiles drawn by Claude to match. *Order (PM review, owner 2026-10-18): alien ship first (the boss needs it), then crash site, coast, rocky hills. None dropped. Built: forest, town, crash site (mission 5), alien ship (mission 6).*
+- [ ] M4.3 Landscapes: forest, town, coast, rocky hills, crash site, alien ship; missing tiles drawn by Claude to match. *Order (PM review, owner 2026-10-18): alien ship first (the boss needs it), then crash site, coast, rocky hills. None dropped. Built: forest, town, coast (mission 3), crash site (mission 5), alien ship (mission 6).*
 - [x] M4.4 Map seed shown in the debrief so a map can be replayed for bug reports
 
 **Acceptance criteria:** every landscape passes the 1,000-seed test; the owner plays one map per landscape on staging.

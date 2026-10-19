@@ -23,6 +23,10 @@ import type { PropKind } from './map';
  *   W  wreck: its bottom-left tile, with '=' on the rest of its 3 x 2 footprint
  *   j  scrap, junk from the wreck (half)    *  scrap or rocks    #  maybe a tree
  *
+ * Coast (M4.3), with the forest's trees, rocks and bushes:
+ *   d  driftwood (half)    R  rowboat: two tiles wide, 'R-' (full)
+ *   Driftwood and boats only in the beach (shore) chunks, so they stay on the sand.
+ *
  * All chunks of a landscape are the same size (CHUNK in tuning.ts). The generator may
  * mirror each one left to right, and top to bottom unless it's `upright` (a house).
  */
@@ -39,6 +43,8 @@ export interface ChunkSet {
   spawn: readonly Chunk[];
   /** Everything else: the ground the fight crosses. */
   field: readonly Chunk[];
+  /** Field chunks for the top row instead, where it differs (the coast's beach). */
+  shore?: readonly Chunk[];
 }
 
 /** What a picture character means. Random ones are settled by the generator. */
@@ -71,6 +77,8 @@ const LEGEND: Readonly<Record<string, ChunkCell>> = {
   v: { kind: 'prop', prop: 'console' },
   W: { kind: 'prop', prop: 'wreck' },
   j: { kind: 'prop', prop: 'scrap' },
+  d: { kind: 'prop', prop: 'driftwood' },
+  R: { kind: 'prop', prop: 'boat' },
   '*': { kind: 'maybeCover' },
   '#': { kind: 'maybeTree' },
 };
@@ -168,5 +176,35 @@ export const CRASH_CHUNKS: ChunkSet = {
     { name: 'impact', rows: ['......', '.j..j.', '......', '..*.#.'] },
     { name: 'copse', rows: ['..bb..', '.pop..', '.p#o..', '..*...'] },
     { name: 'rocky glade', rows: ['r...*.', '..o...', '......', '.r..j.'] },
+  ],
+};
+
+/**
+ * Coast: a beach below the sea, then woods. The top row of chunks is the beach, with
+ * boats pulled up the sand and driftwood; below it, the forest's trees and rocks.
+ * Spawn chunks stay light, as in the forest.
+ */
+export const COAST_CHUNKS: ChunkSet = {
+  spawn: [
+    { name: 'dunes', rows: ['......', '.b....', '....*.', '......'] },
+    { name: 'stones', rows: ['..r...', '......', '.b..*.', '......'] },
+    { name: 'scrub', rows: ['......', '..*b..', '......', '.r....'] },
+    { name: 'quiet stretch', rows: ['....*.', '......', '.*....', '...b..'] },
+  ],
+  shore: [
+    { name: 'boats', rows: ['......', '.R-...', '...*..', '..R-..'] },
+    { name: 'flotsam', rows: ['.d....', '...*..', '.d..r.', '......'] },
+    { name: 'beached boat', rows: ['..R-..', '......', '.*..d.', '......'] },
+    { name: 'rocky beach', rows: ['r...*.', '..B-..', '......', '.d..r.'] },
+    { name: 'open sand', rows: ['......', '..d...', '......', '...*..'] },
+  ],
+  field: [
+    { name: 'tree clump', rows: ['.pp...', '.opp..', '..#.b.', '......'] },
+    { name: 'clearing', rows: ['..b...', '......', '...*..', '.*....'] },
+    { name: 'boulders', rows: ['.B-...', '......', '....r.', '*..B-.'] },
+    { name: 'copse', rows: ['..bb..', '.pop..', '.p#o..', '..*...'] },
+    { name: 'rocky glade', rows: ['r...*.', '..o...', '......', '.r..b.'] },
+    { name: 'lone oak', rows: ['......', '..o*..', '.*....', '....r.'] },
+    { name: 'pines', rows: ['p...#.', 'o...pp', '.*....', '...b..'] },
   ],
 };

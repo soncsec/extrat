@@ -664,6 +664,20 @@ test('?landscape=ship opens an alien ship map with no errors (M4.3)', async ({ p
   expect(errors).toEqual([]);
 });
 
+test('?landscape=coast opens a coast map with no errors (M4.3)', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text());
+  });
+  await openGame(page, '?seed=11&landscape=coast');
+  const snap = await snapshot(page);
+  // The sea lines the top two rows; boats and driftwood lie on the beach below it.
+  expect(snap.layout.slice(0, 2 * MAP_COLS)).toBe('s'.repeat(2 * MAP_COLS));
+  expect(snap.layout.slice(2 * MAP_COLS, 6 * MAP_COLS)).toMatch(/[bd]/);
+  expect(errors).toEqual([]);
+});
+
 test('?landscape=crash opens a crash site map with no errors (M4.3)', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
