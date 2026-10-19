@@ -86,6 +86,7 @@ import {
   type CharacterSheet,
 } from './art';
 import { BLAST_TEXTURE } from './blastArt';
+import { PORTRAIT_SIZE, PORTRAIT_TEXTURE } from './portraits';
 import {
   drawExposed,
   drawEye,
@@ -187,6 +188,8 @@ export interface GameSnapshot {
 /** Draw order: ground, dirt, markers, then everything standing, sorted by its bottom edge. */
 /** Margin inside the phone's side panel. */
 const SIDE_PAD = 5;
+/** The selected marine's portrait (M6.2): its gap from the panel's edge and from the text. */
+const PORTRAIT_GAP = 4;
 /** Extra height for the side panel's buttons: bigger targets for a finger. */
 const SIDE_BUTTON_EXTRA = 6;
 
@@ -301,6 +304,8 @@ export class BattleScene extends Phaser.Scene {
   /** The map line, longest first: the longest that fits beside the buttons is shown. */
   private mapLines: string[] = [];
   private unitText!: PixelText;
+  /** The selected marine's portrait, left of the info bar (or atop the side panel). */
+  private portrait!: Phaser.GameObjects.Image;
   private endTurnButton!: PixelButton;
   private reloadButton!: PixelButton;
   private overwatchButton!: PixelButton;
@@ -1888,6 +1893,9 @@ export class BattleScene extends Phaser.Scene {
     const g = this.marker.clear();
     this.rangeLayer.clear();
     const unit = this.state.selected ? unitById(this.state, this.state.selected) : undefined;
+    const face = unit?.side === 'marine' && this.textures.get(PORTRAIT_TEXTURE.key).has(unit.name);
+    this.portrait.setVisible(face === true);
+    if (face && unit) this.portrait.setFrame(unit.name);
     if (this.aimTarget && !this.canShoot(this.aimTarget)) this.aimTarget = null;
     this.drawAim(this.aimTarget);
     if (!unit || this.busy) {
@@ -1950,9 +1958,23 @@ export class BattleScene extends Phaser.Scene {
     const clip = clipSize(unit);
     const ammo = clip === null || unit.ammo === null ? '' : `  AMMO ${unit.ammo}/${clip}`;
     const poison = unit.poison > 0 ? '  POISONED' : '';
+    // On the desktop bar, the line drops its least needed parts if it would run off.
+    const shortStatus = aimed === null ? ap : `SHOOT ${aimed}%`;
+    const head = `${marineLabel(unit)}  HP ${unit.hp}/${unit.maxHp}`;
     this.unitText.setText(
-      `${marineLabel(unit)}  HP ${unit.hp}/${unit.maxHp}  ${status}${ammo}${poison}`,
+      this.fitUnitLine([
+        `${head}  ${status}${ammo}${poison}`,
+        `${head}  ${shortStatus}${ammo}${poison}`,
+        `${head}  ${shortStatus}${poison}`,
+      ]),
     );
+  }
+
+  /** The first line that fits the info bar (the side panel wraps, so takes the first). */
+  private fitUnitLine(lines: readonly string[]): string {
+    if (LAYOUT.hud === 'side') return lines[0] ?? '';
+    const room = Math.floor((GAME_WIDTH - this.unitText.x - PORTRAIT_GAP) / CELL_W);
+    return lines.find((l) => l.length <= room) ?? lines[lines.length - 1] ?? '';
   }
 
   private createHud(): void {
@@ -1970,15 +1992,24 @@ export class BattleScene extends Phaser.Scene {
       .setOrigin(0)
       .setDepth(DEPTH.hud);
     const y = panel.y;
+    // The portrait sits at the bar's left end, or at the top of the side panel; the text
+    // starts right of it, or under it.
+    this.portrait = this.add
+      .image(panel.x + (side ? SIDE_PAD : PORTRAIT_GAP), y + PORTRAIT_GAP, PORTRAIT_TEXTURE.key)
+      .setOrigin(0)
+      .setDepth(DEPTH.hud)
+      .setVisible(false);
+    const textX = side ? panel.x + SIDE_PAD : PORTRAIT_GAP + PORTRAIT_SIZE + PORTRAIT_GAP;
+    const textY = side ? y + PORTRAIT_GAP + PORTRAIT_SIZE + PORTRAIT_GAP : y + 5;
     // In the narrow panel, text breaks into lines (at its double spaces and between words).
     const wrap = side ? Math.floor((HUD_SIDE_WIDTH - 2 * SIDE_PAD) / CELL_W) : 0;
-    this.unitText = new PixelText(this, panel.x + SIDE_PAD, y + 5, '', {
+    this.unitText = new PixelText(this, textX, textY, '', {
       color: 0xf2a33a,
       align: 'left',
       valign: 'top',
       wrap,
     }).setDepth(DEPTH.hud);
-    this.mapText = new PixelText(this, panel.x + SIDE_PAD, y + 19, '', {
+    this.mapText = new PixelText(this, textX, y + 19, '', {
       color: MAP_LINE_COLOR,
       align: 'left',
       valign: 'top',
