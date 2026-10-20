@@ -307,6 +307,8 @@ export class BattleScene extends Phaser.Scene {
   /** The map line, longest first: the longest that fits beside the buttons is shown. */
   private mapLines: string[] = [];
   private unitText!: PixelText;
+  /** The sound button (SND/OFF) by the ? button; M does the same. */
+  private muteButton!: PixelButton;
   /** The selected marine's portrait, left of the info bar (or atop the side panel). */
   private portrait!: Phaser.GameObjects.Image;
   private endTurnButton!: PixelButton;
@@ -356,7 +358,7 @@ export class BattleScene extends Phaser.Scene {
     new PixelButton(this, MAP_WIDTH - 10, 10, '?', () => this.openHelp(), false).setDepth(
       DEPTH.hud,
     );
-    // Sound on or off (M6.1), beside it on the same edge row; M does the same.
+    // Sound on or off (M6.1), beside it on the same edge row; M does the same (see onKey).
     const mute = new PixelButton(
       this,
       MAP_WIDTH - 37,
@@ -365,7 +367,7 @@ export class BattleScene extends Phaser.Scene {
       () => mute.setLabel(soundLabel(toggleMute(this))),
       false,
     ).setDepth(DEPTH.hud);
-    this.input.keyboard?.on('keydown-M', () => mute.setLabel(soundLabel(toggleMute(this))));
+    this.muteButton = mute;
     this.marker = this.add.graphics().setDepth(DEPTH.marker);
     this.rangeLayer = this.add.graphics().setDepth(DEPTH.range);
     // Over the fog, so the warning shows wherever it lands.
@@ -414,14 +416,19 @@ export class BattleScene extends Phaser.Scene {
     // 1-4 pick one directly, F aims at the best target and then the next. They use a
     // plain browser listener so they run in the order pressed: through Phaser's key
     // queue Firefox sometimes lost Shift, and mixing the two reordered quick presses.
-    // G and Esc are here too: they toggle and undo, so a press handled twice (seen once
-    // under heavy load) would cancel itself out or drop the selection.
+    // G, M and Esc are here too: they toggle and undo, so a press handled twice (Phaser
+    // hands queued key events over again when frames stall) would cancel itself out.
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Tab') e.preventDefault(); // keep the browser's focus where it is
       // Paused under the help screen (or stopped): keys belong to whatever is on top.
       if (!this.scene.isActive()) return;
       if ((e.key === 'h' || e.key === 'H') && !e.repeat) {
         this.openHelp();
+        return;
+      }
+      if ((e.key === 'm' || e.key === 'M') && !e.repeat) {
+        // Sound on or off: any time, the aliens' turn included.
+        this.muteButton.setLabel(soundLabel(toggleMute(this)));
         return;
       }
       if (e.key === 'Escape') {

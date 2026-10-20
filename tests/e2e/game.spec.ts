@@ -655,12 +655,30 @@ test('sound effects are made while loading, and M mutes them (M6.1)', async ({ p
   const before = await audio();
   expect(before?.sounds.length).toBeGreaterThanOrEqual(15);
   expect(before?.muted).toBe(false);
-  // Keys are handled on the game's next frame, which a loaded CI runner can hold up (T1).
-  const slow = { timeout: 30_000 };
   await page.keyboard.press('m');
-  await expect.poll(async () => (await audio())?.muted, slow).toBe(true);
+  await expect.poll(async () => (await audio())?.muted).toBe(true);
   await page.keyboard.press('m');
-  await expect.poll(async () => (await audio())?.muted, slow).toBe(false);
+  await expect.poll(async () => (await audio())?.muted).toBe(false);
+});
+
+test('each M press toggles once, even when frames stall (Phaser replays key events)', async ({
+  page,
+}) => {
+  await openGame(page, '?seed=42');
+  const muted = (): Promise<boolean | undefined> =>
+    page.evaluate(() => window.__game?.audio().muted);
+  // With no frame between them, Phaser hands the first press over again with the second.
+  await page.evaluate(() => window.__game?.pauseFrames(true));
+  await page.keyboard.press('m');
+  await page.keyboard.press('m');
+  await page.evaluate(() => window.__game?.pauseFrames(false));
+  await expect.poll(muted).toBe(false);
+  await page.evaluate(() => window.__game?.pauseFrames(true));
+  await page.keyboard.press('m');
+  await page.keyboard.press('m');
+  await page.keyboard.press('m');
+  await page.evaluate(() => window.__game?.pauseFrames(false));
+  await expect.poll(muted).toBe(true);
 });
 
 test('mute is remembered between visits; bad settings are ignored', async ({ page }) => {
