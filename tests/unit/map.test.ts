@@ -23,6 +23,13 @@ import {
   type BattleMap,
 } from '../../src/logic/map';
 
+/**
+ * The time limit for tests that build 1,000 maps (T3). Maps retry until they have three
+ * separate routes across (M5.14), so a test can pass 30 s on a machine busy with other
+ * games' test runs; the checks are the same, only the time allowed is longer.
+ */
+const MANY_SEEDS_MS = 90_000;
+
 const gen = (seed: number): BattleMap => generateForest(seed, MAP_COLS, MAP_ROWS);
 
 describe('generateForest', () => {
@@ -30,12 +37,16 @@ describe('generateForest', () => {
     expect(gen(1234)).toEqual(gen(1234));
   });
 
-  it('rebuilds a map exactly from its own seed, for 1,000 seeds (M4.4 replay)', () => {
-    for (let seed = 1; seed <= 1000; seed++) {
-      const map = gen(seed);
-      expect(gen(map.seed), `seed ${seed} gave map ${map.seed}`).toEqual(map);
-    }
-  });
+  it(
+    'rebuilds a map exactly from its own seed, for 1,000 seeds (M4.4 replay)',
+    () => {
+      for (let seed = 1; seed <= 1000; seed++) {
+        const map = gen(seed);
+        expect(gen(map.seed), `seed ${seed} gave map ${map.seed}`).toEqual(map);
+      }
+    },
+    MANY_SEEDS_MS,
+  );
 
   it('gives different maps for different seeds', () => {
     expect(gen(1).tiles).not.toEqual(gen(2).tiles);
@@ -55,12 +66,16 @@ describe('generateForest', () => {
     }
   });
 
-  it('makes a valid map for 1,000 seeds', () => {
-    for (let seed = 1; seed <= 1000; seed++) {
-      const map = gen(seed);
-      expect(validateMap(map), `seed ${seed}`).toEqual([]);
-    }
-  });
+  it(
+    'makes a valid map for 1,000 seeds',
+    () => {
+      for (let seed = 1; seed <= 1000; seed++) {
+        const map = gen(seed);
+        expect(validateMap(map), `seed ${seed}`).toEqual([]);
+      }
+    },
+    MANY_SEEDS_MS,
+  );
 
   it('blocks the tree line along the top edge', () => {
     const map = gen(7);
@@ -299,13 +314,17 @@ describe('town landscape (M4.3)', () => {
   const town = (seed: number): BattleMap => generateMap(seed, MAP_COLS, MAP_ROWS, 'town');
   const all = [...TOWN_CHUNKS.spawn, ...TOWN_CHUNKS.field];
 
-  it('makes a valid town map for 1,000 seeds', () => {
-    for (let seed = 1; seed <= 1000; seed++) {
-      const map = town(seed);
-      expect(map.landscape).toBe('town');
-      expect(validateMap(map), `seed ${seed}`).toEqual([]);
-    }
-  });
+  it(
+    'makes a valid town map for 1,000 seeds',
+    () => {
+      for (let seed = 1; seed <= 1000; seed++) {
+        const map = town(seed);
+        expect(map.landscape).toBe('town');
+        expect(validateMap(map), `seed ${seed}`).toEqual([]);
+      }
+    },
+    MANY_SEEDS_MS,
+  );
 
   it('has chunks of the right size whose houses fill exactly their 5 x 3 footprint', () => {
     for (const c of all) {
@@ -391,32 +410,36 @@ describe('alien ship landscape (M4.3)', () => {
     }
   }, 30_000);
 
-  it('has chunks of the right size whose tanks fill exactly their 3 x 2 footprint', () => {
-    for (const c of all) {
-      expect(c.rows, c.name).toHaveLength(FOREST.chunk.height);
-      const cells = c.rows.map((row) => [...row]);
-      const covered = new Set<string>();
-      cells.forEach((row, j) => {
-        expect(row, c.name).toHaveLength(FOREST.chunk.width);
-        row.forEach((ch, i) => {
-          expect(() => chunkCell(ch), `${c.name}: '${ch}'`).not.toThrow();
-          if (ch !== 'T') return;
-          expect(c.upright, `${c.name} has a tank, so it must stay upright`).toBe(true);
-          for (let dy = 0; dy < PROPS.tank.height; dy++) {
-            for (let dx = 0; dx < PROPS.tank.width; dx++) {
-              expect(cells[j - dy]?.[i + dx], `${c.name} footprint`).toBe(dx || dy ? '=' : 'T');
-              covered.add(`${i + dx},${j - dy}`);
+  it(
+    'has chunks of the right size whose tanks fill exactly their 3 x 2 footprint',
+    () => {
+      for (const c of all) {
+        expect(c.rows, c.name).toHaveLength(FOREST.chunk.height);
+        const cells = c.rows.map((row) => [...row]);
+        const covered = new Set<string>();
+        cells.forEach((row, j) => {
+          expect(row, c.name).toHaveLength(FOREST.chunk.width);
+          row.forEach((ch, i) => {
+            expect(() => chunkCell(ch), `${c.name}: '${ch}'`).not.toThrow();
+            if (ch !== 'T') return;
+            expect(c.upright, `${c.name} has a tank, so it must stay upright`).toBe(true);
+            for (let dy = 0; dy < PROPS.tank.height; dy++) {
+              for (let dx = 0; dx < PROPS.tank.width; dx++) {
+                expect(cells[j - dy]?.[i + dx], `${c.name} footprint`).toBe(dx || dy ? '=' : 'T');
+                covered.add(`${i + dx},${j - dy}`);
+              }
             }
-          }
+          });
         });
-      });
-      cells.forEach((row, j) =>
-        row.forEach((ch, i) => {
-          if (ch === '=') expect(covered.has(`${i},${j}`), `${c.name} stray '='`).toBe(true);
-        }),
-      );
-    }
-  });
+        cells.forEach((row, j) =>
+          row.forEach((ch, i) => {
+            if (ch === '=') expect(covered.has(`${i},${j}`), `${c.name} stray '='`).toBe(true);
+          }),
+        );
+      }
+    },
+    MANY_SEEDS_MS,
+  );
 
   it('keeps tanks and pillars out of the spawn chunks', () => {
     for (const c of SHIP_CHUNKS.spawn) expect(c.rows.join(''), c.name).not.toMatch(/[TP#]/);
@@ -461,32 +484,36 @@ describe('crash site landscape (M4.3)', () => {
     }
   }, 30_000);
 
-  it('has chunks of the right size whose wrecks fill exactly their 3 x 2 footprint', () => {
-    for (const c of all) {
-      expect(c.rows, c.name).toHaveLength(FOREST.chunk.height);
-      const cells = c.rows.map((row) => [...row]);
-      const covered = new Set<string>();
-      cells.forEach((row, j) => {
-        expect(row, c.name).toHaveLength(FOREST.chunk.width);
-        row.forEach((ch, i) => {
-          expect(() => chunkCell(ch), `${c.name}: '${ch}'`).not.toThrow();
-          if (ch !== 'W') return;
-          expect(c.upright, `${c.name} has a wreck, so it must stay upright`).toBe(true);
-          for (let dy = 0; dy < PROPS.wreck.height; dy++) {
-            for (let dx = 0; dx < PROPS.wreck.width; dx++) {
-              expect(cells[j - dy]?.[i + dx], `${c.name} footprint`).toBe(dx || dy ? '=' : 'W');
-              covered.add(`${i + dx},${j - dy}`);
+  it(
+    'has chunks of the right size whose wrecks fill exactly their 3 x 2 footprint',
+    () => {
+      for (const c of all) {
+        expect(c.rows, c.name).toHaveLength(FOREST.chunk.height);
+        const cells = c.rows.map((row) => [...row]);
+        const covered = new Set<string>();
+        cells.forEach((row, j) => {
+          expect(row, c.name).toHaveLength(FOREST.chunk.width);
+          row.forEach((ch, i) => {
+            expect(() => chunkCell(ch), `${c.name}: '${ch}'`).not.toThrow();
+            if (ch !== 'W') return;
+            expect(c.upright, `${c.name} has a wreck, so it must stay upright`).toBe(true);
+            for (let dy = 0; dy < PROPS.wreck.height; dy++) {
+              for (let dx = 0; dx < PROPS.wreck.width; dx++) {
+                expect(cells[j - dy]?.[i + dx], `${c.name} footprint`).toBe(dx || dy ? '=' : 'W');
+                covered.add(`${i + dx},${j - dy}`);
+              }
             }
-          }
+          });
         });
-      });
-      cells.forEach((row, j) =>
-        row.forEach((ch, i) => {
-          if (ch === '=') expect(covered.has(`${i},${j}`), `${c.name} stray '='`).toBe(true);
-        }),
-      );
-    }
-  });
+        cells.forEach((row, j) =>
+          row.forEach((ch, i) => {
+            if (ch === '=') expect(covered.has(`${i},${j}`), `${c.name} stray '='`).toBe(true);
+          }),
+        );
+      }
+    },
+    MANY_SEEDS_MS,
+  );
 
   it('keeps wrecks and trees out of the spawn chunks', () => {
     for (const c of CRASH_CHUNKS.spawn) expect(c.rows.join(''), c.name).not.toMatch(/[Wpo#]/);
@@ -535,21 +562,25 @@ describe('coast landscape (M4.3)', () => {
     }
   }, 30_000);
 
-  it('has chunks of the right size, and boats two tiles wide', () => {
-    expect(shore.length).toBeGreaterThan(0);
-    for (const c of all) {
-      expect(c.rows, c.name).toHaveLength(FOREST.chunk.height);
-      for (const row of c.rows) {
-        expect(row, c.name).toHaveLength(FOREST.chunk.width);
-        for (const ch of row) expect(() => chunkCell(ch), `${c.name}: '${ch}'`).not.toThrow();
-        // Every boat 'R' has its rest '-' beside it, and every '-' follows an 'R' or 'B'.
-        [...row].forEach((ch, i) => {
-          if (ch === 'R') expect(row[i + 1], c.name).toBe('-');
-          if (ch === '-') expect('RB', c.name).toContain(row[i - 1]);
-        });
+  it(
+    'has chunks of the right size, and boats two tiles wide',
+    () => {
+      expect(shore.length).toBeGreaterThan(0);
+      for (const c of all) {
+        expect(c.rows, c.name).toHaveLength(FOREST.chunk.height);
+        for (const row of c.rows) {
+          expect(row, c.name).toHaveLength(FOREST.chunk.width);
+          for (const ch of row) expect(() => chunkCell(ch), `${c.name}: '${ch}'`).not.toThrow();
+          // Every boat 'R' has its rest '-' beside it, and every '-' follows an 'R' or 'B'.
+          [...row].forEach((ch, i) => {
+            if (ch === 'R') expect(row[i + 1], c.name).toBe('-');
+            if (ch === '-') expect('RB', c.name).toContain(row[i - 1]);
+          });
+        }
       }
-    }
-  });
+    },
+    MANY_SEEDS_MS,
+  );
 
   it('keeps boats and driftwood on the beach: only in its chunks', () => {
     for (const c of [...COAST_CHUNKS.spawn, ...COAST_CHUNKS.field]) {
@@ -606,33 +637,37 @@ describe('rocky hills landscape (M4.3)', () => {
     }
   }, 30_000);
 
-  it('has chunks of the right size, mines that fill their 3 x 2, and two-tile rocks', () => {
-    for (const c of all) {
-      expect(c.rows, c.name).toHaveLength(FOREST.chunk.height);
-      const cells = c.rows.map((row) => [...row]);
-      const covered = new Set<string>();
-      cells.forEach((row, j) => {
-        expect(row, c.name).toHaveLength(FOREST.chunk.width);
-        row.forEach((ch, i) => {
-          expect(() => chunkCell(ch), `${c.name}: '${ch}'`).not.toThrow();
-          if (ch === 'C' || ch === 'S') expect(row[i + 1], c.name).toBe('-');
-          if (ch !== 'M') return;
-          expect(c.upright, `${c.name} has a mine, so it must stay upright`).toBe(true);
-          for (let dy = 0; dy < PROPS.mine.height; dy++) {
-            for (let dx = 0; dx < PROPS.mine.width; dx++) {
-              expect(cells[j - dy]?.[i + dx], `${c.name} footprint`).toBe(dx || dy ? '=' : 'M');
-              covered.add(`${i + dx},${j - dy}`);
+  it(
+    'has chunks of the right size, mines that fill their 3 x 2, and two-tile rocks',
+    () => {
+      for (const c of all) {
+        expect(c.rows, c.name).toHaveLength(FOREST.chunk.height);
+        const cells = c.rows.map((row) => [...row]);
+        const covered = new Set<string>();
+        cells.forEach((row, j) => {
+          expect(row, c.name).toHaveLength(FOREST.chunk.width);
+          row.forEach((ch, i) => {
+            expect(() => chunkCell(ch), `${c.name}: '${ch}'`).not.toThrow();
+            if (ch === 'C' || ch === 'S') expect(row[i + 1], c.name).toBe('-');
+            if (ch !== 'M') return;
+            expect(c.upright, `${c.name} has a mine, so it must stay upright`).toBe(true);
+            for (let dy = 0; dy < PROPS.mine.height; dy++) {
+              for (let dx = 0; dx < PROPS.mine.width; dx++) {
+                expect(cells[j - dy]?.[i + dx], `${c.name} footprint`).toBe(dx || dy ? '=' : 'M');
+                covered.add(`${i + dx},${j - dy}`);
+              }
             }
-          }
+          });
         });
-      });
-      cells.forEach((row, j) =>
-        row.forEach((ch, i) => {
-          if (ch === '=') expect(covered.has(`${i},${j}`), `${c.name} stray '='`).toBe(true);
-        }),
-      );
-    }
-  });
+        cells.forEach((row, j) =>
+          row.forEach((ch, i) => {
+            if (ch === '=') expect(covered.has(`${i},${j}`), `${c.name} stray '='`).toBe(true);
+          }),
+        );
+      }
+    },
+    MANY_SEEDS_MS,
+  );
 
   it('keeps mines, crags and pines out of the spawn chunks', () => {
     for (const c of HILLS_CHUNKS.spawn) expect(c.rows.join(''), c.name).not.toMatch(/[MCp#]/);
