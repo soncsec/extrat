@@ -289,14 +289,16 @@ export function createBattle(map: BattleMap, seed: number, setup: BattleSetup = 
   if (kinds.length > 0 && !kinds.includes(newest)) kinds[kindRng.int(0, kinds.length - 1)] = newest;
   const aliens = places.map(({ pod, ...p }, i): Unit => {
     const kind = kinds[i] as AlienKind;
+    // RECRUIT (M6.3): a point less health, never less than 1.
+    const alienHp = Math.max(1, UNITS[kind].hp + easier.alienHp);
     return {
       ...p,
       id: `a${i + 1}`,
       side: 'alien',
       kind,
       name: ALIEN_NAMES[kind],
-      hp: UNITS[kind].hp,
-      maxHp: UNITS[kind].hp,
+      hp: alienHp,
+      maxHp: alienHp,
       facing: -1,
       ap: ACTION_POINTS,
       move: UNITS[kind].move,
@@ -689,8 +691,9 @@ export function oddsBetween(
 ): ShotOdds {
   const stats = UNITS[shooter.kind];
   const scopes = shooter.side === 'marine' && state.supply ? SUPPLIES[state.supply].aim : 0;
-  // RECRUIT (M6.3): aliens aim worse.
-  const handicap = shooter.side === 'alien' ? DIFFICULTY[state.difficulty].alienAim : 0;
+  // RECRUIT (M6.3): aliens aim worse, marines better.
+  const level = DIFFICULTY[state.difficulty];
+  const handicap = shooter.side === 'alien' ? level.alienAim : level.marineAim;
   const aim = stats.aim + rankOf(shooter.rank).aim + scopes + handicap;
   // From the shooter's tile nearest the target that can see it, to that target tile.
   const line = sightLine(state.map, shooter, target) ?? { from: shooter, to: target };
@@ -935,6 +938,10 @@ function rollShot(
     rng = critRoll.state;
     crit = critRoll.value * 100 < odds.crit;
     damage = min + Math.floor(dmgRoll.value * (max - min + 1)) + (crit ? SHOOTING.critDamage : 0);
+    // RECRUIT (M6.3): alien hits do a point less, never less than 1.
+    if (shooter.side === 'alien') {
+      damage = Math.max(1, damage + DIFFICULTY[state.difficulty].alienDamage);
+    }
     // The boss's front plate stops most of a shot from ahead (M5.6).
     if (odds.armoured) damage = Math.min(damage, BOSS.armourCap);
   }

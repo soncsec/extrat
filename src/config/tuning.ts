@@ -92,8 +92,19 @@ export const PODS = {
  * listed is the new one, and the battle always fields at least one of it.
  */
 export const MISSIONS = [
-  { landscape: 'forest', pods: { count: 2, size: 2 }, kinds: ['walker'] },
-  { landscape: 'town', pods: { count: 2, size: 2 }, kinds: ['walker', 'flyer'] },
+  // recruitPods: the alien groups on RECRUIT, where they differ (owner, 2026-10-20).
+  {
+    landscape: 'forest',
+    pods: { count: 2, size: 2 },
+    recruitPods: { count: 1, size: 2 },
+    kinds: ['walker'],
+  },
+  {
+    landscape: 'town',
+    pods: { count: 2, size: 2 },
+    recruitPods: { count: 1, size: 2 },
+    kinds: ['walker', 'flyer'],
+  },
   { landscape: 'coast', pods: { count: 3, size: 2 }, kinds: ['walker', 'flyer', 'lizard'] },
   {
     landscape: 'hills',
@@ -116,6 +127,7 @@ export const MISSIONS = [
 ] as const satisfies readonly {
   landscape: string;
   pods: { count: number; size: number };
+  recruitPods?: { count: number; size: number };
   kinds: readonly (typeof ALIEN_KINDS)[number][];
   boss?: boolean;
 }[];
@@ -176,8 +188,27 @@ export const DIFFICULTY = {
     bossHp: -4,
     /** Added to the damage of the Overseer's charged blast. */
     blastDamage: -1,
+    /**
+     * Owner, 2026-10-20 (lost mission 1 on RECRUIT to walkers' claws: "much easier"):
+     * marines aim better, every alien but the boss has a point less health, and alien
+     * hits do a point less damage (never less than 1). Missions 1 and 2 also field one
+     * alien group, not two (MISSIONS' recruitPods).
+     */
+    marineAim: 15,
+    alienHp: -1,
+    alienDamage: -1,
   },
-  veteran: { name: 'VETERAN', alienAim: 0, marineHp: 0, grenades: 0, bossHp: 0, blastDamage: 0 },
+  veteran: {
+    name: 'VETERAN',
+    alienAim: 0,
+    marineHp: 0,
+    grenades: 0,
+    bossHp: 0,
+    blastDamage: 0,
+    marineAim: 0,
+    alienHp: 0,
+    alienDamage: 0,
+  },
 } as const;
 
 /**

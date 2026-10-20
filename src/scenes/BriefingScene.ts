@@ -69,7 +69,7 @@ export class BriefingScene extends Phaser.Scene {
     const retry = campaign.attempt > 0 ? `   Try ${campaign.attempt + 1}: a new map` : '';
     const level = DIFFICULTY[campaign.difficulty].name;
     pixelText(this, cx, 62, `${where}   ${level}${retry}`, 0xdfe4ec);
-    const intel = missionIntel(campaign.mission);
+    const intel = missionIntel(campaign.mission, campaign.difficulty);
     new PixelText(
       this,
       cx,

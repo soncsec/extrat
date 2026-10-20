@@ -48,3 +48,11 @@ describe('mission intel', () => {
     expect(missionIntel(99)).toEqual(missionIntel(MISSIONS.length - 1));
   });
 });
+
+describe('intel on RECRUIT (M6.3)', () => {
+  it('counts the groups the mission fields at that difficulty', () => {
+    expect(missionIntel(0, 'recruit')[0]).toBe('Intel: one group of 2.');
+    expect(missionIntel(0, 'veteran')[0]).toBe('Intel: 2 groups of 2.');
+    expect(missionIntel(2, 'recruit')[0]).toBe(missionIntel(2, 'veteran')[0]);
+  });
+});

@@ -1,5 +1,6 @@
 import { ABILITIES, MISSIONS } from '../config/tuning';
-import type { AlienKind } from './battle';
+import type { AlienKind, DifficultyId } from './battle';
+import { missionPods } from './campaign';
 
 /** Plural names for the briefing. */
 const PLURAL: Record<AlienKind, string> = {
@@ -28,7 +29,7 @@ export function listKinds(kinds: readonly AlienKind[]): string {
  * The briefing's intel for a mission (M5.8): how many aliens, which kinds, and a
  * warning about any kind the campaign hasn't fielded before.
  */
-export function missionIntel(mission: number): string[] {
+export function missionIntel(mission: number, difficulty: DifficultyId = 'veteran'): string[] {
   const m = MISSIONS[
     Math.min(Math.max(mission, 0), MISSIONS.length - 1)
   ] as (typeof MISSIONS)[number];
@@ -45,7 +46,10 @@ export function missionIntel(mission: number): string[] {
     ];
   }
   const list = listKinds(m.kinds);
-  const lines = [`Intel: ${m.pods.count} groups of ${m.pods.size}.`, `Expect ${list}.`];
+  const pods = missionPods(m, difficulty);
+  const groups =
+    pods.count === 1 ? `one group of ${pods.size}` : `${pods.count} groups of ${pods.size}`;
+  const lines = [`Intel: ${groups}.`, `Expect ${list}.`];
   for (const k of fresh) lines.push(WARNING[k]);
   return lines;
 }
