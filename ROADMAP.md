@@ -13,6 +13,7 @@ The order follows the risks: first prove the core fight is fun and readable with
 | M4 Maps and landscapes | Done (owner sign-off 2026-10-20) |
 | M5 Campaign | Done (owner sign-off 2026-10-20) |
 | M6 Polish and release | Done: a friend of the owner finished the campaign on production without help (owner, 2026-10-20). Version 1.0 complete |
+| M7 Music | In progress (after v1, owner 2026-10-20) |
 
 ## Main risks
 
@@ -114,9 +115,19 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 
 **Acceptance criteria:** the definition of success in PROJECT.md section 6 is met on production.
 
+## M7 — Music (after v1)
+
+*Owner, 2026-10-20: after version 1.0, add music. Retro synth (chiptune) made in code like the sound effects; a theme on the menus, battle music that turns tense once aliens are spotted, and a boss track; the SND button and M mute music with the effects.*
+
+- [x] M7.1 Music made in code: tracks written as notes and chords, rendered once (at 24 kHz, about 70 ms) into a seamless loop; the theme on the title, difficulty and briefing screens, fading out for battle
+- [ ] M7.2 Battle music: a calm loop while exploring, crossfading to a tense one while awake aliens are alive
+- [ ] M7.3 Boss track for the Overseer mission
+
+**Acceptance criteria:** the owner likes the music on the live site; it never plays while muted; no audio files or requests.
+
 ## Engineering (from the PM review, owner 2026-10-18)
 
 - [x] T1 Browser tests that play a whole alien turn get a 60 s limit (the other tests keep 30 s); the machine is shared with other games' test runs
 - [x] T2 `scripts/release.sh deploy` refuses unless a dry run passed for the same commit within the last hour
-- [x] T3 Unit tests that build 1,000 maps get a 90 s limit (the rest keep 30 s): since maps retry for three routes across (M5.14), the town test took 32 to 38 s on the shared machine and blocked a release dry run (2026-10-20)
+- [x] T4 Unit tests that build 1,000 maps get a 90 s limit (the rest keep 30 s): since maps retry for three routes across (M5.14), the town test took 32 to 38 s on the shared machine and blocked a release dry run (2026-10-20)
 - [x] T3 Battle prompt says TAP, not CLICK, on touch devices

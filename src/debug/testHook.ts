@@ -1,5 +1,6 @@
 import type Phaser from 'phaser';
 import type { BattleScene, GameSnapshot } from '../scenes/BattleScene';
+import { currentMusic } from '../scenes/music';
 import { isMuted } from '../scenes/sfx';
 
 /**
@@ -21,8 +22,8 @@ export interface TestHook {
   snapshot(): GameSnapshot | null;
   /** Stops or restarts the game's frames, as a hidden or overloaded browser may. */
   pauseFrames(paused: boolean): void;
-  /** The sound effects made while loading (M6.1), and whether sound is muted. */
-  audio(): { sounds: string[]; muted: boolean };
+  /** The sound effects made while loading (M6.1), whether sound is muted, and the music track playing (M7). */
+  audio(): { sounds: string[]; muted: boolean; music: string | null };
 }
 
 declare global {
@@ -48,6 +49,7 @@ export function installTestHook(game: Phaser.Game): void {
     audio: () => ({
       sounds: game.cache.audio.getKeys().filter((k) => k.startsWith('sfx-')),
       muted: isMuted(),
+      music: currentMusic(),
     }),
     snapshot: () => {
       const s = game.scene.getScene('Battle') as BattleScene | null;

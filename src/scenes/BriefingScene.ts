@@ -15,6 +15,7 @@ import { LANDSCAPES } from '../logic/landscapes';
 import { FOREST_SHEET } from './art';
 import { LINE_H, PixelButton, PixelText, pixelButton, pixelText } from './pixelFont';
 import { clearSave, writeSave } from './storage';
+import { playMusic } from './music';
 
 /** The note when a saved battle couldn't be resumed and the mission starts again. */
 const BATTLE_DROPPED = "Saved battle couldn't resume: start it again.";
@@ -29,6 +30,7 @@ export class BriefingScene extends Phaser.Scene {
   }
 
   create(data: { campaign: Campaign; battleDropped?: boolean }): void {
+    playMusic(this, 'theme');
     const campaign = data.campaign;
     this.drawBackground();
     const cx = GAME_WIDTH / 2;

@@ -238,6 +238,10 @@ export const SHAME = {
 export const AUDIO = {
   /** Loudness of every effect, 0 to 1. */
   volume: 0.5,
+  /** Loudness of the music (M7), 0 to 1: under the effects. */
+  music: 0.35,
+  /** How long one track takes to fade into the next, in milliseconds. */
+  musicFadeMs: 600,
 } as const;
 
 /** Squad and enemy sizes for the skirmish. */
