@@ -65,6 +65,7 @@ import {
   type DifficultyId,
 } from '../logic/battle';
 import { planAlienAction } from '../logic/ai';
+import { HINT_TEXT, HINT_WRAP, hintFor, hintsDone, type HintId } from '../logic/hints';
 import {
   afterBattle,
   awardXp,
@@ -134,6 +135,8 @@ export interface GameSnapshot {
   fast: boolean;
   /** The text of the unit line in the HUD, e.g. the prompt to pick a marine. */
   prompt: string;
+  /** The first-mission hint showing over the map (M6.2), or null. */
+  hint: HintId | null;
   /** Touch: the tile tapped once, whose preview shows until it is tapped again. */
   pending: Point | null;
   /** One character per tile, row by row: '.' free, or the first letter of the prop. */
@@ -201,6 +204,12 @@ const SIDE_BUTTON_EXTRA = 6;
 
 /** The colour of the HUD's map line. */
 const MAP_LINE_COLOR = 0xa3adbd;
+
+/**
+ * The first-mission hint box (M6.2): its text colour and padding, the gap between its
+ * panel and the map's edge, and the top of its spot under the sound and help buttons.
+ */
+const HINT = { color: 0xf2c94a, padding: 4, margin: 2, belowButtons: 22 } as const;
 
 const DEPTH = {
   ground: 0,
@@ -297,6 +306,13 @@ export class BattleScene extends Phaser.Scene {
   private chargeExplained = false;
   /** That explanation, shown in the HUD until the blast goes off (empty: none). */
   private chargeHint = '';
+  /** First-mission hints (M6.2): shown in the campaign's first mission only. */
+  private hintsOn = false;
+  /** The hints the player has acted on this battle. */
+  private hintsDone = new Set<HintId>();
+  /** The hint showing over the map, or null. */
+  private hint: HintId | null = null;
+  private hintBox!: PixelText;
   private pips!: Phaser.GameObjects.Graphics;
   /** Reused sprites for hits, deaths, blasts and projectiles. */
   private fx!: FxPool;
@@ -543,6 +559,7 @@ export class BattleScene extends Phaser.Scene {
       replaying: this.replaying,
       fast: this.fast,
       prompt: this.unitText.text,
+      hint: this.hint,
       pending: this.pending,
       mapSeed: map.seed,
       layout: map.tiles.map((t) => (t.prop ? t.prop[0] : '.')).join(''),
@@ -761,6 +778,7 @@ export class BattleScene extends Phaser.Scene {
     const moved = next.lastMove;
     if (next === this.state || !moved) return;
     this.state = next;
+    this.noteHints({ type: 'move', unitId, to });
     void this.run(async () => {
       await this.playMove(moved);
       await this.playSighting(moved.spotted, moved.scampers);
@@ -775,6 +793,7 @@ export class BattleScene extends Phaser.Scene {
     const shot = next.lastShot;
     if (next === this.state || !shot) return;
     this.state = next;
+    this.noteHints({ type: 'shoot', unitId: shooterId, targetId });
     this.aimTarget = null;
     this.drawAim(null);
     void this.run(() => this.playShot(shot));
@@ -902,6 +921,7 @@ export class BattleScene extends Phaser.Scene {
     const thrown = next.lastThrow;
     if (next === this.state || !thrown) return;
     this.state = next;
+    this.noteHints({ type: 'throw', unitId: id, at });
     this.mode = 'move';
     void this.run(() => this.playThrow(thrown));
   }
@@ -1026,6 +1046,7 @@ export class BattleScene extends Phaser.Scene {
     const next = apply(this.state, { type: 'overwatch', unitId: id });
     if (next === this.state) return;
     this.state = next;
+    this.noteHints({ type: 'overwatch', unitId: id });
     this.aimTarget = null;
     this.drawAim(null);
     void this.run(() => this.playOverwatch(id));
@@ -1061,6 +1082,7 @@ export class BattleScene extends Phaser.Scene {
     const next = apply(this.state, { type: 'reload', unitId: id });
     if (next === this.state) return;
     this.state = next;
+    this.noteHints({ type: 'reload', unitId: id });
     this.aimTarget = null;
     this.drawAim(null);
     void this.run(() => this.playReload(id));
@@ -1141,6 +1163,7 @@ export class BattleScene extends Phaser.Scene {
     this.aimTarget = null;
     this.drawAim(null);
     this.state = apply(this.state, { type: 'endTurn' });
+    this.noteHints({ type: 'endTurn' });
     this.busy = true;
     this.pathLayer.clear();
     this.coverLayer.clear();
@@ -1726,6 +1749,8 @@ export class BattleScene extends Phaser.Scene {
     this.replaying = replay;
     this.chargeExplained = false;
     this.chargeHint = '';
+    this.hintsOn = this.campaign?.mission === 0;
+    this.hintsDone = new Set();
     for (const o of this.mapObjects) o.destroy();
     for (const v of this.views.values()) {
       v.sprite.destroy();
@@ -1794,6 +1819,55 @@ export class BattleScene extends Phaser.Scene {
     this.propTiles = [];
     this.drawMap();
     this.updateHidden();
+  }
+
+  /** Marks the hints a player action has done (M6.2). */
+  private noteHints(action: Action): void {
+    if (!this.hintsOn) return;
+    for (const id of hintsDone(this.state, action)) this.hintsDone.add(id);
+  }
+
+  /**
+   * Shows the hint for this moment over the map (M6.2), on the squad's turn between
+   * animations: at the top of the map, or at the bottom while a marine stands near the
+   * top, so it never covers the squad.
+   */
+  private showHint(playerTurn: boolean): void {
+    this.hint = this.hintsOn && playerTurn ? hintFor(this.state, this.hintsDone) : null;
+    if (!this.hint) {
+      this.hintBox.setVisible(false);
+      return;
+    }
+    const text = HINT_TEXT[this.hint][isTouchDevice() ? 'touch' : 'mouse'];
+    this.hintBox.setText(text).setVisible(true);
+    // Where it covers the fewest marines (each drawn over its own tile and the one
+    // above): the first of these spots, in order, when there's a tie. The top spots stay
+    // clear of the sound and help buttons in the top-right corner.
+    const w = this.hintBox.textWidth + 2 * HINT.padding;
+    const h = this.hintBox.textHeight + 2 * HINT.padding;
+    const m = HINT.margin;
+    const [mid, right] = [(MAP_WIDTH - w) / 2, MAP_WIDTH - w - m];
+    const bottom = MAP_ROWS * TILE - h - m;
+    const spots = [
+      { x: mid, y: m },
+      { x: mid, y: bottom },
+      { x: right, y: HINT.belowButtons },
+      { x: right, y: bottom },
+      { x: m, y: bottom },
+      { x: m, y: m },
+    ];
+    const marines = this.state.units.filter((u) => u.side === 'marine' && u.hp > 0);
+    const covered = (at: { x: number; y: number }): number =>
+      marines.filter(
+        (u) =>
+          (u.x + 1) * TILE > at.x &&
+          u.x * TILE < at.x + w &&
+          (u.y + 1) * TILE > at.y &&
+          (u.y - 1) * TILE < at.y + h,
+      ).length;
+    let best = spots[0] as { x: number; y: number };
+    for (const spot of spots) if (covered(spot) < covered(best)) best = spot;
+    this.hintBox.setPosition(Math.round(best.x + w / 2), Math.round(best.y + HINT.padding));
   }
 
   /**
@@ -1931,6 +2005,7 @@ export class BattleScene extends Phaser.Scene {
 
   private drawSelection(): void {
     const playerTurn = this.state.turn === 'marine' && !this.busy && !this.over;
+    this.showHint(playerTurn);
     if (!this.busy) {
       // Between animations the drawn exposure catches up with the rules (turn changes).
       for (const u of this.state.units) {
@@ -2074,6 +2149,17 @@ export class BattleScene extends Phaser.Scene {
       valign: 'top',
       wrap,
     }).setDepth(DEPTH.hud);
+    // First-mission hints (M6.2), over the map: placed in showHint.
+    this.hintBox = new PixelText(this, MAP_WIDTH / 2, 0, '', {
+      color: HINT.color,
+      valign: 'top',
+      wrap: HINT_WRAP,
+      background: 0x05070f,
+      backgroundAlpha: 0.85,
+      padding: HINT.padding,
+    })
+      .setDepth(DEPTH.hud)
+      .setVisible(false);
     // Buttons sit on the info bar's second line; the key comes first, as on the title.
     const hudButton = (label: string, primary: boolean, onClick: () => void): PixelButton =>
       new PixelButton(this, 0, y + 22, label, onClick, primary).setDepth(DEPTH.hud);
