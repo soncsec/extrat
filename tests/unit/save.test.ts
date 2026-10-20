@@ -242,8 +242,10 @@ describe('save version 2: XP, kills and replays (M5.2)', () => {
   const good = raw(ranked, battle);
   const b = good.battle;
   if (!b) throw new Error('no battle');
-  /** The campaign as saved before version 6: without the supply (M5.10). */
-  const pre6 = without(good.campaign, 'supply');
+  /** The campaign as saved before version 8: without the difficulty (M6.3). */
+  const pre8 = without(good.campaign, 'difficulty');
+  /** The campaign as saved before version 6: also without the supply (M5.10). */
+  const pre6 = without(pre8, 'supply');
   /** The battle as saved before version 7: without wrecked cover (M5.13). */
   const pre7 = without(b, 'wrecks') as Omit<typeof b, 'wrecks'>;
 
@@ -392,6 +394,24 @@ describe('save version 2: XP, kills and replays (M5.2)', () => {
     expect(decodes({ ...first, campaign: { ...first.campaign, supply: 'scopes' } })).toBe(false);
   });
 
+  it('keeps the difficulty, and loads saves from before it as VETERAN (M6.3)', () => {
+    const recruit = { ...ranked, difficulty: 'recruit' as const };
+    const loaded = decodeSave(encodeSave(recruit, null));
+    expect(loaded.ok && loaded.save.campaign.difficulty).toBe('recruit');
+    const v7 = { v: 7, campaign: pre8, battle: b };
+    const old = decodeSave(JSON.stringify(v7));
+    expect(old.ok && old.save.campaign.difficulty).toBe('veteran');
+    // A version 7 save carrying version 8's field isn't one; nor is an unknown difficulty.
+    expect(decodes({ ...v7, campaign: good.campaign })).toBe(false);
+    for (const bad of ['easy', 'RECRUIT', null, 1, true, {}]) {
+      expect(
+        decodes({ ...good, campaign: { ...good.campaign, difficulty: bad } }),
+        String(bad),
+      ).toBe(false);
+    }
+    expect(decodes({ ...good, campaign: without(good.campaign, 'difficulty') })).toBe(false);
+  });
+
   it('still loads a version 5 save, with no supply', () => {
     const v5 = { v: 5, campaign: pre6, battle: pre7 };
     const loaded = decodeSave(JSON.stringify(v5));
@@ -399,7 +419,7 @@ describe('save version 2: XP, kills and replays (M5.2)', () => {
     expect(loaded.save.v).toBe(SAVE_VERSION);
     expect(loaded.save.campaign.supply).toBeNull();
     // A version 5 save carrying version 6's field isn't one.
-    expect(decodes({ ...v5, campaign: good.campaign })).toBe(false);
+    expect(decodes({ ...v5, campaign: pre8 })).toBe(false);
   });
 
   it('still loads a version 4 save, with no boss fields', () => {

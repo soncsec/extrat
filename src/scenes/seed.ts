@@ -1,3 +1,5 @@
+import { DIFFICULTY } from '../config/tuning';
+import type { DifficultyId } from '../logic/battle';
 /**
  * A whole number from the URL, such as `?seed=123`, in any capitalisation (the debrief
  * shows links as ?SEED=123: the pixel font has only capitals). Null if it's missing or
@@ -34,4 +36,10 @@ export function urlWord(key: string, search: string = window.location.search): s
   const params = [...new URLSearchParams(search)];
   const raw = params.find(([k]) => k.toLowerCase() === key)?.[1] ?? null;
   return raw === null ? null : raw.toLowerCase().slice(0, 32);
+}
+
+/** ?difficulty=recruit or veteran (M6.3), checked against the list; null otherwise. */
+export function urlDifficulty(search: string = window.location.search): DifficultyId | null {
+  const word = urlWord('difficulty', search);
+  return word !== null && Object.hasOwn(DIFFICULTY, word) ? (word as DifficultyId) : null;
 }

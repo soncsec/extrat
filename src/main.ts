@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import './style.css';
 import { fitZoom, pixelZoom } from './logic/scaling';
 import { BattleScene } from './scenes/BattleScene';
+import { DifficultyScene } from './scenes/DifficultyScene';
 import { BriefingScene } from './scenes/BriefingScene';
 import { HelpScene } from './scenes/HelpScene';
 import { PreloadScene } from './scenes/PreloadScene';
@@ -48,7 +49,16 @@ export const game = new Phaser.Game({
     mode: Phaser.Scale.NONE,
     zoom: zoomForWindow(),
   },
-  scene: [PreloadScene, TitleScene, BriefingScene, BattleScene, ResultScene, HelpScene, SquadScene],
+  scene: [
+    PreloadScene,
+    TitleScene,
+    DifficultyScene,
+    BriefingScene,
+    BattleScene,
+    ResultScene,
+    HelpScene,
+    SquadScene,
+  ],
 });
 
 /**

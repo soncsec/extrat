@@ -95,6 +95,7 @@ It is built mainly from the Ansimuz "Legacy Collection" pixel-art pack (CC0) and
 | 2026-10-18 | PM review: alien kinds introduced one per mission (walkers first, snakes from mission 4 at the earliest); balance pass now, not in M6; XP per hit; a tangible perk per rank; resupply between missions (design to confirm); alien turn fast-forward; landscapes built in the order ship, crash site, coast, hills, none dropped; help screen is enough onboarding for now |
 | 2026-10-19 | Grenades wreck cover (a friend's suggestion): small cover blown away, trees blown down to a trunk (half cover), houses, wrecks, tanks, boulders and the map edge stand; scorch marks where cover was wrecked |
 | 2026-10-19 | Sound effects made in code (Web Audio, no files) since the pack has no audio; squad portraits drawn in code since the pack has none. Rocky hills use the pack's Tiny RPG Mountain tileset |
+| 2026-10-19 | Difficulty: the owner found the game very difficult. A new campaign picks RECRUIT (default: aliens aim worse, marines tougher, a weaker Overseer) or VETERAN (the game as first tuned). The boss practice battle sends a veteran squad. Mute is remembered between visits (settings key, ADR-E6 amended) |
 | 2026-10-18 | Playable on phones and tablets with touch, as well as desktop. Tap to preview, tap again to act. Whole map on phones (zoom and drag only if needed after play-testing). Landscape only. Built before the Wall of Shame |
 
 ## 8. Open questions

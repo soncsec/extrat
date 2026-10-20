@@ -12,11 +12,13 @@ import {
 import {
   clipSize,
   createBattle,
+  DIFFICULTY_IDS,
   footprint,
   MARINE_NAMES,
   SUPPLY_IDS,
   unitVisibleTo,
   type BattleState,
+  type DifficultyId,
   type SupplyId,
   type Unit,
 } from './battle';
@@ -32,13 +34,14 @@ import { blastOutcome, generateMap, isWalkable, type BattleMap } from './map';
  * checked. Anything unexpected (wrong version, an extra field, a number out of range,
  * a unit standing in a tree) rejects the whole save.
  */
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 8;
 /**
  * Older saves still load, checked just as strictly, with the fields they lack at their
  * starting values. Version 1 (M5.5) had no XP, kills or replay flag; version 2 (M5.2)
  * had no hit counts; version 3 (M5.9) had no death counts; version 4 (M5.3) had none
  * of the boss's front, charge or rest (M5.6); version 5 had no supply (M5.10); version 6
- * had no wrecked cover (M5.13).
+ * had no wrecked cover (M5.13); version 7 had no difficulty (M6.3): such campaigns were
+ * played as tuned then, so they load as VETERAN.
  */
 const OLDEST_VERSION = 1;
 /** A save larger than this isn't ours: it is rejected before parsing. */
@@ -102,6 +105,7 @@ export function encodeSave(campaign: Campaign, battle: BattleState | null, repla
       xp: [...campaign.xp],
       deaths: [...campaign.deaths],
       supply: campaign.supply,
+      difficulty: campaign.difficulty,
     },
     battle: battle
       ? {
@@ -178,6 +182,7 @@ export function restoreBattle(campaign: Campaign, saved: SavedBattle): BattleSta
     ranks: squadRanks(campaign),
     boss: 'boss' in mission && mission.boss === true,
     supply: campaign.supply,
+    difficulty: campaign.difficulty,
   });
   // Units are checked against the map as grenades left it.
   const map = rewreck(built, saved.wrecks);
@@ -295,13 +300,17 @@ function checkCampaign(v: unknown, version: number): Campaign | null {
       ? [...CAMPAIGN_KEYS, 'xp']
       : version < 6
         ? [...CAMPAIGN_KEYS, 'xp', 'deaths']
-        : [...CAMPAIGN_KEYS, 'xp', 'deaths', 'supply'];
+        : version < 8
+          ? [...CAMPAIGN_KEYS, 'xp', 'deaths', 'supply']
+          : [...CAMPAIGN_KEYS, 'xp', 'deaths', 'supply', 'difficulty'];
   if (!isRecord(v) || !hasOnly(v, keys)) return null;
   const { seed, mission, attempt, mapSeed, squad } = v;
   const xp = old ? noXp() : v.xp;
   const deaths = version < 4 ? noXp() : v.deaths;
   // Before version 6 there was no supply: the next briefing offers one if it's due.
   const supply = version < 6 ? null : v.supply;
+  const difficulty = version < 8 ? 'veteran' : v.difficulty;
+  if (!(DIFFICULTY_IDS as readonly unknown[]).includes(difficulty)) return null;
   if (!isInt(seed, 0, 0xffffffff)) return null;
   // A completed campaign isn't saved, so the mission is always one still to play.
   if (!isInt(mission, 0, MISSIONS.length - 1)) return null;
@@ -328,6 +337,7 @@ function checkCampaign(v: unknown, version: number): Campaign | null {
     xp: [...(xp as number[])],
     deaths: [...(deaths as number[])],
     supply: supply as SupplyId | null,
+    difficulty: difficulty as DifficultyId,
   };
 }
 

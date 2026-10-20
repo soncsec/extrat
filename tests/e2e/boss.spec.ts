@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { GAME_WIDTH, TILE } from '../../src/config/tuning';
+import { BOSS_PRACTICE, GAME_WIDTH, GRENADE, RANKS, TILE } from '../../src/config/tuning';
 import type { GameSnapshot } from '../../src/scenes/BattleScene';
 
 /*
@@ -80,6 +80,14 @@ test('?boss=1 puts the boss on the ship, dormant, its front to the west', async 
   const s = await snapshot(page);
   const boss = bossOf(s);
   expect(boss).toMatchObject({ dormant: true, front: -1, charging: null, hp: 12, maxHp: 12 });
+  // A practice squad like one that fought its way here: Sergeants, with a grenades supply.
+  const marines = s.units.filter((u) => u.side === 'marine');
+  expect(marines.every((u) => u.rank === BOSS_PRACTICE.rank)).toBe(true);
+  expect(
+    marines.every(
+      (u) => u.grenades === GRENADE.perMarine + (RANKS[BOSS_PRACTICE.rank]?.grenades ?? 0) + 1,
+    ),
+  ).toBe(true);
   expect(s.units.filter((u) => u.side === 'alien')).toHaveLength(5);
   // Nobody else stands on any of its four tiles.
   const tiles = [0, 1].flatMap((i) => [0, 1].map((j) => ({ x: boss.x + i, y: boss.y - j })));
