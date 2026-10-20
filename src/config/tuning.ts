@@ -52,8 +52,16 @@ export const FOREST = {
   minSquadCover: 4,
   /** The two spawn zones must be at least this many steps apart on foot. */
   minSpawnSteps: 14,
-  /** Seeds tried before giving up on a valid map. */
-  maxAttempts: 50,
+  /**
+   * Separate routes (sharing no tile) from one spawn zone to the other: the field is
+   * never cut down to a gap or two the squad must queue through (owner, 2026-10-20).
+   */
+  minCrossings: 3,
+  /**
+   * Seeds tried before settling for the most open map that passes every other check
+   * (towns, crowded with houses, often need more than 50 for three routes across).
+   */
+  maxAttempts: 200,
 } as const;
 
 /**

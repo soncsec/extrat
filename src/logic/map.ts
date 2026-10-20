@@ -129,6 +129,7 @@ export interface ForestOptions {
   minSpawnTiles: number;
   minSquadCover: number;
   minSpawnSteps: number;
+  minCrossings: number;
   maxAttempts: number;
 }
 
@@ -182,13 +183,26 @@ export function generateMap(
   opts: ForestOptions = FOREST,
 ): BattleMap {
   const land = LANDSCAPES[landscape];
+  // The map with the most routes across among those that fail only on that count: used
+  // if no seed gives a map that passes everything.
+  let best: { map: BattleMap; routes: number } | null = null;
   for (let attempt = 0; attempt < opts.maxAttempts; attempt++) {
     const s = (seed + attempt * 7919) >>> 0;
     const map = buildMap(s, cols, rows, land, opts);
-    if (validateMap(map, opts).length === 0) return map;
+    const problems = validateMap(map, opts);
+    if (problems.length === 0) return map;
+    if (problems.length === 1 && problems[0]?.endsWith(ROUTES_PROBLEM)) {
+      const west = spawnZone(cols, 'west', opts);
+      const routes = separateRoutes(map, west, spawnZone(cols, 'east', opts), opts.minCrossings);
+      if (!best || routes > best.routes) best = { map, routes };
+    }
   }
+  if (best) return best.map;
   throw new Error(`no valid ${land.name.toLowerCase()} map for seed ${seed}`);
 }
+
+/** The end of the problem reported when too few separate routes cross the map. */
+const ROUTES_PROBLEM = 'separate routes cross the map';
 
 /** Problems that make a map unplayable; an empty list means the map is fine. */
 export function validateMap(map: BattleMap, opts: ForestOptions = FOREST): string[] {
@@ -222,6 +236,17 @@ export function validateMap(map: BattleMap, opts: ForestOptions = FOREST): strin
   // The sides must start a fair walk apart.
   const steps = stepsBetween(map, free, westZone, spawnZone(map.cols, 'east', opts));
   if (steps < opts.minSpawnSteps) problems.push(`spawn zones are only ${steps} steps apart`);
+
+  // Enough separate ways across, not one gap between the trees and houses.
+  const crossings = separateRoutes(
+    map,
+    westZone,
+    spawnZone(map.cols, 'east', opts),
+    opts.minCrossings,
+  );
+  if (crossings < opts.minCrossings) {
+    problems.push(`only ${crossings} ${ROUTES_PROBLEM}`);
+  }
   return problems;
 }
 
@@ -426,4 +451,73 @@ export function blastOutcome(prop: PropKind | null): 'trunk' | null | undefined 
   const info = PROPS[prop];
   if (info.width !== 1 || info.height !== 1 || info.blast === 'stands') return undefined;
   return info.blast === 'trunk' ? 'trunk' : null;
+}
+
+/**
+ * How many routes from columns `from` to columns `to` share no tile (counted up to
+ * `enough`, then it stops). The smallest number of tiles that, blocked, would cut the
+ * two sides apart (Menger's theorem): a max flow through the free tiles, each tile
+ * able to carry one route.
+ */
+export function separateRoutes(
+  map: BattleMap,
+  from: [number, number],
+  to: [number, number],
+  enough: number,
+): number {
+  const n = map.cols * map.rows;
+  // Each tile is two nodes, in (2i) and out (2i + 1), joined by an edge for one route.
+  const source = 2 * n;
+  const sink = 2 * n + 1;
+  const edges: { to: number; cap: number }[] = [];
+  const out: number[][] = Array.from({ length: 2 * n + 2 }, () => []);
+  const link = (a: number, b: number, cap: number): void => {
+    out[a]?.push(edges.length);
+    edges.push({ to: b, cap });
+    out[b]?.push(edges.length);
+    edges.push({ to: a, cap: 0 });
+  };
+  for (let y = 0; y < map.rows; y++) {
+    for (let x = 0; x < map.cols; x++) {
+      if (!isWalkable(map, x, y)) continue;
+      const i = y * map.cols + x;
+      link(2 * i, 2 * i + 1, 1);
+      if (x >= from[0] && x <= from[1]) link(source, 2 * i, 1);
+      if (x >= to[0] && x <= to[1]) link(2 * i + 1, sink, 1);
+      for (const [dx, dy] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ] as const) {
+        if (isWalkable(map, x + dx, y + dy)) link(2 * i + 1, 2 * ((y + dy) * map.cols + x + dx), 1);
+      }
+    }
+  }
+  let flow = 0;
+  while (flow < enough) {
+    // A breadth-first search for a route with room left (Edmonds-Karp).
+    const via = new Array<number>(2 * n + 2).fill(-1);
+    const queue = [source];
+    via[source] = -2;
+    for (let head = 0; head < queue.length && via[sink] === -1; head++) {
+      const v = queue[head] as number;
+      for (const e of out[v] ?? []) {
+        const edge = edges[e] as { to: number; cap: number };
+        if (edge.cap > 0 && via[edge.to] === -1) {
+          via[edge.to] = e;
+          queue.push(edge.to);
+        }
+      }
+    }
+    if (via[sink] === -1) break;
+    for (let v = sink; v !== source;) {
+      const e = via[v] as number;
+      (edges[e] as { cap: number }).cap -= 1;
+      (edges[e ^ 1] as { cap: number }).cap += 1;
+      v = (edges[e ^ 1] as { to: number }).to;
+    }
+    flow++;
+  }
+  return flow;
 }
