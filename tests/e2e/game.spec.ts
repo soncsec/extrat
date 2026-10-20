@@ -1202,6 +1202,40 @@ test('a campaign saved between missions resumes at the next briefing', async ({ 
   expect((await snapshot(page)).campaign).toMatchObject({ mission: 1, attempt: 0 });
 });
 
+test('mission 1 teaches with hints that go once done; skirmishes and mission 2 have none (M6.2)', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await openGame(page);
+  expect((await snapshot(page)).hint).toBe('move');
+  // Move a marine one action's worth: the move hint is done.
+  const marine = (await snapshot(page)).units.find((u) => u.side === 'marine');
+  if (!marine) throw new Error('no marine');
+  await clickTile(page, marine.x, marine.y);
+  await expect.poll(async () => (await snapshot(page)).reachable.length).toBeGreaterThan(0);
+  const to = (await snapshot(page)).reachable.find((t) => t.cost === 1);
+  if (!to) throw new Error('nowhere to move');
+  await clickTile(page, to.x, to.y);
+  await expect
+    .poll(async () => {
+      const s = await snapshot(page);
+      return s.units.some((u) => u.id === marine.id && (u.x !== marine.x || u.y !== marine.y));
+    })
+    .toBe(true);
+  await expect.poll(async () => (await snapshot(page)).hint, { timeout: 15_000 }).not.toBe('move');
+  // Mission 2: no hints.
+  await wipeOut(page, 'alien');
+  await page.keyboard.press('Enter');
+  await pickSupply(page);
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Battle');
+  expect((await snapshot(page)).campaign?.mission).toBe(1);
+  expect((await snapshot(page)).hint).toBeNull();
+  // A skirmish: no hints.
+  await openGame(page, '?seed=42');
+  expect((await snapshot(page)).hint).toBeNull();
+});
+
 test('a won mission brings a supply drop for every marine, next mission only (M5.10)', async ({
   page,
 }) => {
