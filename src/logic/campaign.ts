@@ -125,6 +125,17 @@ export function pickSupply(c: Campaign, supply: SupplyId): Campaign {
   return { ...c, supply };
 }
 
+/**
+ * The alien groups a mission fields at this difficulty (M6.3): RECRUIT has fewer in the
+ * first missions.
+ */
+export function missionPods(
+  mission: (typeof MISSIONS)[number],
+  difficulty: DifficultyId,
+): { count: number; size: number } {
+  return difficulty === 'recruit' && 'recruitPods' in mission ? mission.recruitPods : mission.pods;
+}
+
 /** The highest rank this much XP has earned (an index into RANKS). */
 export function rankForXp(xp: number): number {
   let rank = 0;

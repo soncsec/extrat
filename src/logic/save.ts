@@ -22,7 +22,7 @@ import {
   type SupplyId,
   type Unit,
 } from './battle';
-import { currentMission, mapSeedFor, squadRanks, type Campaign } from './campaign';
+import { currentMission, mapSeedFor, missionPods, squadRanks, type Campaign } from './campaign';
 import { blastOutcome, generateMap, isWalkable, type BattleMap } from './map';
 
 /**
@@ -177,7 +177,7 @@ export function restoreBattle(campaign: Campaign, saved: SavedBattle): BattleSta
   const built = generateMap(campaign.mapSeed, MAP_COLS, MAP_ROWS, mission.landscape);
   const fresh = createBattle(built, built.seed, {
     names: campaign.squad,
-    pods: mission.pods,
+    pods: missionPods(mission, campaign.difficulty),
     kinds: mission.kinds,
     ranks: squadRanks(campaign),
     boss: 'boss' in mission && mission.boss === true,

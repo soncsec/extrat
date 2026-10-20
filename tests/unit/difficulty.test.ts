@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { BOSS, DIFFICULTY, GRENADE, MAP_COLS, MAP_ROWS, UNITS } from '../../src/config/tuning';
+import {
+  BOSS,
+  DIFFICULTY,
+  GRENADE,
+  MAP_COLS,
+  MAP_ROWS,
+  MISSIONS,
+  UNITS,
+} from '../../src/config/tuning';
 import {
   apply,
   createBattle,
@@ -9,7 +17,7 @@ import {
   type DifficultyId,
   type Unit,
 } from '../../src/logic/battle';
-import { currentMission, newCampaign } from '../../src/logic/campaign';
+import { currentMission, missionPods, newCampaign } from '../../src/logic/campaign';
 import { decodeSave, encodeSave, restoreBattle } from '../../src/logic/save';
 import { generateForest, generateMap, type BattleMap } from '../../src/logic/map';
 
@@ -67,13 +75,13 @@ describe('difficulty (M6.3, owner 2026-10-19)', () => {
     expect(where('recruit')).toEqual(where('veteran'));
   });
 
-  it('takes aim off RECRUIT aliens only', () => {
+  it('takes aim off RECRUIT aliens, and gives it to RECRUIT marines', () => {
     const veteran = shotOdds(duel('veteran'), 'a', 'm');
     const recruit = shotOdds(duel('recruit'), 'a', 'm');
     expect(recruit?.aim).toBe((veteran?.aim ?? 0) + DIFFICULTY.recruit.alienAim);
     const marineAim = (d: DifficultyId): number | undefined =>
       shotOdds({ ...duel(d), turn: 'marine' }, 'm', 'a')?.aim;
-    expect(marineAim('recruit')).toBe(marineAim('veteran'));
+    expect(marineAim('recruit')).toBe((marineAim('veteran') ?? 0) + DIFFICULTY.recruit.marineAim);
   });
 
   it('makes the RECRUIT Overseer weaker', () => {
@@ -110,6 +118,47 @@ describe('difficulty (M6.3, owner 2026-10-19)', () => {
     expect(blastOn('recruit')).toBe(BOSS.blast.damage + DIFFICULTY.recruit.blastDamage);
   });
 
+  it('gives RECRUIT aliens (not the boss) a point less health, and weaker hits', () => {
+    const map = generateForest(5, MAP_COLS, MAP_ROWS);
+    const aliens = (d: DifficultyId): Unit[] =>
+      createBattle(map, map.seed, { difficulty: d }).units.filter((u) => u.side === 'alien');
+    for (const a of aliens('recruit')) {
+      expect(a.maxHp).toBe(Math.max(1, UNITS[a.kind].hp + DIFFICULTY.recruit.alienHp));
+    }
+    for (const a of aliens('veteran')) expect(a.maxHp).toBe(UNITS[a.kind].hp);
+    // A sure hit by the flyer at the marine: on RECRUIT, a point less (never under 1).
+    const hitOn = (d: DifficultyId): number => {
+      const s = duel(d);
+      const sure = {
+        ...s,
+        units: s.units.map((u) => (u.id === 'a' ? { ...u, kind: 'walker' as const, x: 3 } : u)),
+      };
+      for (let rng = 1; rng < 200; rng++) {
+        const shot = apply(
+          { ...sure, rng },
+          { type: 'shoot', unitId: 'a', targetId: 'm' },
+        ).lastShot;
+        if (shot?.hit && !shot.crit) return shot.damage;
+      }
+      return -1;
+    };
+    const veteranHit = hitOn('veteran');
+    expect(veteranHit).toBeGreaterThan(0);
+    expect(hitOn('recruit')).toBeGreaterThanOrEqual(1);
+    expect(hitOn('recruit')).toBeLessThanOrEqual(
+      Math.max(1, veteranHit + DIFFICULTY.recruit.alienDamage),
+    );
+  });
+
+  it('fields one alien group in missions 1 and 2 on RECRUIT, the usual on VETERAN', () => {
+    for (const [i, mission] of MISSIONS.entries()) {
+      const recruit = missionPods(mission, 'recruit');
+      const veteran = missionPods(mission, 'veteran');
+      expect(veteran).toEqual(mission.pods);
+      expect(recruit.count, `mission ${i + 1}`).toBe(i < 2 ? 1 : mission.pods.count);
+    }
+  });
+
   it('lists RECRUIT and VETERAN, and VETERAN changes nothing', () => {
     expect(DIFFICULTY_IDS).toEqual(['recruit', 'veteran']);
     const { name, ...changes } = DIFFICULTY.veteran;
@@ -122,7 +171,7 @@ describe('difficulty (M6.3, owner 2026-10-19)', () => {
     const map = generateMap(c.mapSeed, MAP_COLS, MAP_ROWS, currentMission(c).landscape);
     const battle = createBattle(map, map.seed, {
       names: c.squad,
-      pods: currentMission(c).pods,
+      pods: missionPods(currentMission(c), c.difficulty),
       kinds: currentMission(c).kinds,
       difficulty: c.difficulty,
     });

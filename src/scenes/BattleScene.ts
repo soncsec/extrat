@@ -70,6 +70,7 @@ import {
   battleXp,
   currentMission,
   isComplete,
+  missionPods,
   squadRanks,
   type Campaign,
 } from '../logic/campaign';
@@ -1749,7 +1750,7 @@ export class BattleScene extends Phaser.Scene {
         c && mission
           ? {
               names: c.squad,
-              pods: mission.pods,
+              pods: missionPods(mission, c.difficulty),
               kinds: mission.kinds,
               ranks: squadRanks(c),
               boss: 'boss' in mission && mission.boss,
