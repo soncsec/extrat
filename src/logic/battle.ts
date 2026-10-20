@@ -845,10 +845,12 @@ function fireBlast(state: BattleState, unitId: string): BattleState {
   const at = boss.charging;
   const hits: BlastResult['hits'] = [];
   let next = state;
+  // RECRUIT (M6.3, owner 2026-10-19: the blast lost them the boss fight): it hurts less.
+  const damage = BOSS.blast.damage + DIFFICULTY[state.difficulty].blastDamage;
   for (const target of blastArea(state, at)) {
     if (target.id === boss.id) continue;
-    const hp = Math.max(0, target.hp - BOSS.blast.damage);
-    hits.push({ unitId: target.id, damage: BOSS.blast.damage, hpAfter: hp, killed: hp === 0 });
+    const hp = Math.max(0, target.hp - damage);
+    hits.push({ unitId: target.id, damage, hpAfter: hp, killed: hp === 0 });
     next = replaceUnit(next, { ...target, hp, exposed: hp > 0, overwatch: false });
   }
   const after = unitById(next, unitId) as Unit;

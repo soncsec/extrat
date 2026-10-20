@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { DIFFICULTY, GRENADE, MAP_COLS, MAP_ROWS, UNITS } from '../../src/config/tuning';
+import { BOSS, DIFFICULTY, GRENADE, MAP_COLS, MAP_ROWS, UNITS } from '../../src/config/tuning';
 import {
+  apply,
   createBattle,
   DIFFICULTY_IDS,
   shotOdds,
@@ -85,6 +86,28 @@ describe('difficulty (M6.3, owner 2026-10-19)', () => {
     expect(boss('recruit')?.maxHp).toBe(UNITS.overseer.hp + DIFFICULTY.recruit.bossHp);
     expect(boss('recruit')?.hp).toBe(boss('recruit')?.maxHp);
     expect(boss('recruit')?.maxHp ?? 0).toBeGreaterThan(0);
+  });
+
+  it('softens the RECRUIT Overseer`s blast', () => {
+    const map = generateMap(9, MAP_COLS, MAP_ROWS, 'ship');
+    const blastOn = (d: DifficultyId): number => {
+      const s = createBattle(map, map.seed, { boss: true, difficulty: d });
+      const boss = s.units.find((u) => u.kind === 'overseer') as Unit;
+      const marine = s.units.find((u) => u.side === 'marine') as Unit;
+      // A marine standing where the charged blast lands, on the boss's turn.
+      const at = { x: marine.x, y: marine.y };
+      const ready: BattleState = {
+        ...s,
+        turn: 'alien',
+        units: s.units.map((u) =>
+          u.id === boss.id ? { ...u, dormant: false, charging: at, ap: 2 } : u,
+        ),
+      };
+      const after = apply(ready, { type: 'blast', unitId: boss.id });
+      return after.lastBlast?.hits.find((h) => h.unitId === marine.id)?.damage ?? 0;
+    };
+    expect(blastOn('veteran')).toBe(BOSS.blast.damage);
+    expect(blastOn('recruit')).toBe(BOSS.blast.damage + DIFFICULTY.recruit.blastDamage);
   });
 
   it('lists RECRUIT and VETERAN, and VETERAN changes nothing', () => {

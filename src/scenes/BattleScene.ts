@@ -1755,7 +1755,7 @@ export class BattleScene extends Phaser.Scene {
                 pods: BOSS.escorts,
                 ranks: Array.from({ length: SKIRMISH.marines }, () => BOSS_PRACTICE.rank),
                 supply: BOSS_PRACTICE.supply,
-                difficulty: urlDifficulty() ?? 'veteran',
+                difficulty: urlDifficulty() ?? BOSS_PRACTICE.difficulty,
               }
             : { difficulty: urlDifficulty() ?? 'veteran' },
       );
