@@ -70,11 +70,14 @@ describe('music made in code (M7)', () => {
     for (const [id, track] of Object.entries(TRACKS)) {
       const samples = renderTrack(track, RATE);
       expect(samples.length, id).toBe(Math.round(loopLength(track) * RATE));
+      // One check at the end, not one a sample: a loop is hundreds of thousands of them.
       let peak = 0;
+      let finite = true;
       for (const v of samples) {
-        expect(Number.isFinite(v), id).toBe(true);
+        if (!Number.isFinite(v)) finite = false;
         peak = Math.max(peak, Math.abs(v));
       }
+      expect(finite, `${id} has only numbers`).toBe(true);
       expect(peak, id).toBeLessThanOrEqual(PEAK + 1e-6);
       expect(peak, `${id} is audible`).toBeGreaterThan(0.2);
       expect(renderTrack(track, RATE)).toEqual(samples);
