@@ -8,7 +8,8 @@ import type { GameSnapshot } from '../../src/scenes/BattleScene';
  * a fixed seed puts the boss and two escort groups on the alien ship.
  */
 
-const BOSS_SKIRMISH = '?seed=7&landscape=ship&boss=1';
+// VETERAN: the boss at full strength. The plain link is RECRUIT (checked below).
+const BOSS_SKIRMISH = '?seed=7&landscape=ship&boss=1&difficulty=veteran';
 
 async function snapshot(page: Page): Promise<GameSnapshot> {
   const snap = await page.evaluate(() => window.__game?.snapshot() ?? null);
@@ -135,4 +136,20 @@ test('the boss charges at half health, the squad sees the warning, then it blast
     )
     .toBe(true);
   expect(errors).toEqual([]);
+});
+
+test('the plain practice link is RECRUIT: a weaker Overseer (M6.3)', async ({ page }) => {
+  await page.goto('./?seed=7&landscape=ship&boss=1');
+  await expect
+    .poll(() => page.evaluate(() => window.__game?.scene() ?? null), { timeout: 15_000 })
+    .toBe('Title');
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(() => page.evaluate(() => window.__game?.snapshot()?.units.length ?? 0), {
+      timeout: 15_000,
+    })
+    .toBeGreaterThan(0);
+  const s = await page.evaluate(() => window.__game?.snapshot());
+  const boss = s?.units.find((u) => u.kind === 'overseer');
+  expect(boss?.maxHp).toBe(8);
 });

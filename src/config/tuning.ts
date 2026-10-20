@@ -153,7 +153,8 @@ export const SUPPLIES = {
 /**
  * How hard the campaign is (M6.3, owner 2026-10-19: "very difficult"), picked when it
  * starts. RECRUIT is the default; VETERAN is the game as first tuned. Skirmish links
- * (?seed=) are VETERAN unless they say otherwise, so old links play the same.
+ * (?seed=) are VETERAN unless they say otherwise, so old links play the same; the boss
+ * practice link is RECRUIT, like a new campaign.
  */
 export const DIFFICULTY = {
   recruit: {
@@ -165,15 +166,18 @@ export const DIFFICULTY = {
     grenades: 1,
     /** Added to the Overseer's health. */
     bossHp: -4,
+    /** Added to the damage of the Overseer's charged blast. */
+    blastDamage: -1,
   },
-  veteran: { name: 'VETERAN', alienAim: 0, marineHp: 0, grenades: 0, bossHp: 0 },
+  veteran: { name: 'VETERAN', alienAim: 0, marineHp: 0, grenades: 0, bossHp: 0, blastDamage: 0 },
 } as const;
 
 /**
  * The boss practice battle (?boss=1): a squad like one that fought its way to mission 6
- * (owner, 2026-10-19), not rookies. `rank` is an index into RANKS (3: Sergeant).
+ * (owner, 2026-10-19), not rookies, at the campaign's default difficulty (unless the
+ * link says ?difficulty=). `rank` is an index into RANKS (3: Sergeant).
  */
-export const BOSS_PRACTICE = { rank: 3, supply: 'grenades' } as const;
+export const BOSS_PRACTICE = { rank: 3, supply: 'grenades', difficulty: 'recruit' } as const;
 
 /** The Wall of Shame (M5.3): shame is cosmetic only (owner decision 2026-10-17). */
 export const SHAME = {
