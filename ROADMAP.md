@@ -1,6 +1,6 @@
 # Extrat — Roadmap
 
-> **Status:** APPROVED by owner 2026-10-17. Every milestone ends with something playable on staging (https://soncsec.github.io/extrat/).
+> **Status:** APPROVED by owner 2026-10-17. Every milestone ends with something playable on staging (https://soncsec.github.io/extrat/). Version 1.0 complete 2026-10-20: every milestone done and the definition of success met on production.
 
 The order follows the risks: first prove the core fight is fun and readable with the real art (M1, M2), then the aliens (M3), then random maps (M4), then the campaign (M5), then polish and release (M6).
 
@@ -12,7 +12,7 @@ The order follows the risks: first prove the core fight is fun and readable with
 | M3 Aliens and ambush | Done (owner sign-off 2026-10-20) |
 | M4 Maps and landscapes | Done (owner sign-off 2026-10-20) |
 | M5 Campaign | Done (owner sign-off 2026-10-20) |
-| M6 Polish and release | All tasks done (M6.3 signed off and tooltips dropped by the owner, 2026-10-20); acceptance: a stranger finishes the campaign on production (a friend of the owner is playing, 2026-10-20) |
+| M6 Polish and release | Done: a friend of the owner finished the campaign on production without help (owner, 2026-10-20). Version 1.0 complete |
 
 ## Main risks
 
