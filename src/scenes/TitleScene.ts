@@ -5,7 +5,7 @@ import { GAME_HEIGHT, GAME_WIDTH, TILE } from '../config/tuning';
 import { FOREST_SHEET, MARINE_SHEET, WALKER_SHEET } from './art';
 import { newCampaign } from '../logic/campaign';
 import { restoreBattle, type Save } from '../logic/save';
-import { clearSave, readSave } from './storage';
+import { readSave, writeSave } from './storage';
 import { isTouchDevice } from './touch';
 import { randomSeed, urlDifficulty, urlNumber } from './seed';
 import { PixelButton, PixelText, pixelButton, pixelText } from './pixelFont';
@@ -18,7 +18,7 @@ export class TitleScene extends Phaser.Scene {
     super('Title');
   }
 
-  create(data: { damaged?: boolean } = {}): void {
+  create(): void {
     // The screen is designed for GAME_WIDTH x GAME_HEIGHT; the forest reaches wherever
     // the canvas shows more (phones, where the canvas is wider).
     const view = fitDesign(this);
@@ -89,7 +89,7 @@ export class TitleScene extends Phaser.Scene {
     // given campaign; otherwise the saved campaign can be continued, or a new one begun.
     const skirmish = urlNumber('seed') !== null;
     const stored = skirmish || urlNumber('campaign') !== null ? null : readSave();
-    if (stored?.status === 'bad' || data.damaged) {
+    if (stored?.status === 'bad') {
       new PixelText(this, cx, at.damaged, 'Saved campaign was damaged, so it was cleared.', {
         color: 0xff6a5a,
         background: 0x05070f,
@@ -155,9 +155,11 @@ export class TitleScene extends Phaser.Scene {
     }
     const resume = restoreBattle(save.campaign, save.battle);
     if (!resume) {
-      // It passed the shape checks but doesn't fit its map: not ours. Clear it and say so.
-      clearSave();
-      this.scene.restart({ damaged: true });
+      // The battle passed the shape checks but doesn't fit its map or mission (a game
+      // update can change a mission's aliens). Nothing of it is used: the campaign,
+      // checked on its own, goes back to this mission's briefing (owner, 2026-10-20).
+      writeSave(save.campaign, null);
+      this.scene.start('Briefing', { campaign: save.campaign, battleDropped: true });
       return;
     }
     this.scene.start('Battle', { campaign: save.campaign, resume, replay: save.battle.replay });

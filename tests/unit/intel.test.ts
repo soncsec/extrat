@@ -53,6 +53,19 @@ describe('intel on RECRUIT (M6.3)', () => {
   it('counts the groups the mission fields at that difficulty', () => {
     expect(missionIntel(0, 'recruit')[0]).toBe('Intel: one group of 2.');
     expect(missionIntel(0, 'veteran')[0]).toBe('Intel: 2 groups of 2.');
-    expect(missionIntel(2, 'recruit')[0]).toBe(missionIntel(2, 'veteran')[0]);
+    expect(missionIntel(2, 'recruit')[0]).toBe('Intel: 2 groups of 2.');
+    expect(missionIntel(2, 'veteran')[0]).toBe('Intel: 3 groups of 2.');
+  });
+
+  it('counts the boss`s escort groups at that difficulty', () => {
+    const last = MISSIONS.length - 1;
+    expect(missionIntel(last, 'recruit')[0]).toBe('Intel: the Overseer and one group of 2.');
+    expect(missionIntel(last, 'veteran')[0]).toBe('Intel: the Overseer and 2 groups of 2.');
+  });
+
+  it('fits the briefing panel on RECRUIT too', () => {
+    for (let i = 0; i < MISSIONS.length; i++) {
+      for (const l of missionIntel(i, 'recruit')) expect(l.length, l).toBeLessThanOrEqual(46);
+    }
   });
 });

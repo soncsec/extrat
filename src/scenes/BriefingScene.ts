@@ -16,6 +16,9 @@ import { FOREST_SHEET } from './art';
 import { LINE_H, PixelButton, PixelText, pixelButton, pixelText } from './pixelFont';
 import { clearSave, writeSave } from './storage';
 
+/** The note when a saved battle couldn't be resumed and the mission starts again. */
+const BATTLE_DROPPED = "Saved battle couldn't resume: start it again.";
+
 /**
  * Before each campaign mission: which mission, where, what to expect and who's going.
  * After the last one it shows the campaign victory instead (M5.1).
@@ -25,7 +28,7 @@ export class BriefingScene extends Phaser.Scene {
     super('Briefing');
   }
 
-  create(data: { campaign: Campaign }): void {
+  create(data: { campaign: Campaign; battleDropped?: boolean }): void {
     const campaign = data.campaign;
     this.drawBackground();
     const cx = GAME_WIDTH / 2;
@@ -95,7 +98,10 @@ export class BriefingScene extends Phaser.Scene {
     pixelButton(this, cx - 50, 176, 'START MISSION', () => this.start(campaign));
     pixelButton(this, cx + 26, 176, 'SQUAD', () => this.squad(campaign), false);
     pixelButton(this, cx + 76, 176, 'TITLE', () => this.toTitle(), false);
-    pixelText(this, cx, 196, 'Enter: start   S: squad   Esc: title', 0xa3adbd);
+    // CONTINUE found a saved battle it couldn't resume (TitleScene): the note takes the
+    // place of the key hints.
+    if (data.battleDropped) pixelText(this, cx, 196, BATTLE_DROPPED, 0xff6a5a);
+    else pixelText(this, cx, 196, 'Enter: start   S: squad   Esc: title', 0xa3adbd);
     this.input.keyboard?.once('keydown-ENTER', () => this.start(campaign));
     this.input.keyboard?.once('keydown-ESC', () => this.toTitle());
     this.input.keyboard?.on('keydown-S', () => this.squad(campaign));

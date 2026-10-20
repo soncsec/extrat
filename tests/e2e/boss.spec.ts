@@ -152,6 +152,8 @@ test('the plain practice link is RECRUIT: a weaker Overseer (M6.3)', async ({ pa
   const s = await page.evaluate(() => window.__game?.snapshot());
   const boss = s?.units.find((u) => u.kind === 'overseer');
   expect(boss?.maxHp).toBe(8);
+  // One escort group of 2, as in the RECRUIT campaign (owner, 2026-10-20).
+  expect(s?.units.filter((u) => u.side === 'alien' && u.kind !== 'overseer')).toHaveLength(2);
 });
 
 test('the boss battle starts on any map, wherever the Overseer stands', async ({ page }) => {
