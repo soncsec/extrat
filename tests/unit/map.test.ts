@@ -16,6 +16,7 @@ import {
   generateMap,
   isWalkable,
   PROPS,
+  separateRoutes,
   spawnZone,
   tileAt,
   validateMap,
@@ -119,7 +120,16 @@ describe('validateMap', () => {
     decals: [],
   });
   // Small maps for the older checks; the squad-cover and distance checks have their own tests.
-  const opts = { ...FOREST, spawnCols: 2, minSpawnTiles: 5, minSquadCover: 0, minSpawnSteps: 0 };
+  // Each test below breaks one rule on a tiny map, too small for three routes across:
+  // that rule has a test of its own.
+  const opts = {
+    ...FOREST,
+    spawnCols: 2,
+    minSpawnTiles: 5,
+    minSquadCover: 0,
+    minSpawnSteps: 0,
+    minCrossings: 0,
+  };
 
   it('accepts an open map', () => {
     expect(validateMap(empty(8, 4), opts)).toEqual([]);
@@ -348,7 +358,9 @@ describe('town landscape (M4.3)', () => {
       const tiles = map.tiles.filter((t) => t.prop === 'house').length;
       expect(tiles).toBe(anchors * PROPS.house.width * PROPS.house.height);
     }
-    expect(houses).toBeGreaterThan(100); // houses do show up
+    // Houses do show up. (101+ before maps needed three routes across, owner 2026-10-20:
+    // maps with houses in a line are the ones turned down, so now 98 on these seeds.)
+    expect(houses).toBeGreaterThan(80);
   });
 
   it('leaves forest maps exactly as they were', () => {
@@ -654,4 +666,53 @@ describe('rocky hills landscape (M4.3)', () => {
   it('is a known landscape name in the URL', () => {
     expect(landscapeId('hills')).toBe('hills');
   });
+});
+
+describe('routes across the map (owner, 2026-10-20: one gap to cross)', () => {
+  const empty = (cols: number, rows: number): BattleMap => ({
+    cols,
+    rows,
+    seed: 0,
+    tiles: Array.from({ length: cols * rows }, () => ({ prop: null, anchor: false })),
+    decals: [],
+  });
+  const opts = {
+    ...FOREST,
+    spawnCols: 2,
+    minSpawnTiles: 5,
+    minSquadCover: 0,
+    minSpawnSteps: 0,
+    minCrossings: 3,
+  };
+
+  it('counts routes that share no tile, and reports a map with too few', () => {
+    const map = empty(10, 6);
+    const zones = (): number =>
+      separateRoutes(map, spawnZone(10, 'west', opts), spawnZone(10, 'east', opts), 10);
+    expect(zones()).toBe(6);
+    // A wall down column 5 with gaps at rows 1 and 4: two routes.
+    for (let y = 0; y < 6; y++)
+      if (y !== 1 && y !== 4) map.tiles[y * 10 + 5] = { prop: 'pine', anchor: true };
+    expect(zones()).toBe(2);
+    expect(validateMap(map, opts)).toEqual(['only 2 separate routes cross the map']);
+    // A third gap: three routes, enough.
+    map.tiles[2 * 10 + 5] = { prop: null, anchor: false };
+    expect(zones()).toBe(3);
+    expect(validateMap(map, opts)).toEqual([]);
+  });
+
+  it('gives every landscape at least three routes across, on 300 maps each', () => {
+    for (const land of ['forest', 'town', 'coast', 'hills', 'crash', 'ship'] as const) {
+      for (let seed = 1; seed <= 300; seed++) {
+        const map = generateMap(seed, MAP_COLS, MAP_ROWS, land);
+        const routes = separateRoutes(
+          map,
+          spawnZone(MAP_COLS, 'west'),
+          spawnZone(MAP_COLS, 'east'),
+          FOREST.minCrossings,
+        );
+        expect(routes, `${land} ${seed}`).toBeGreaterThanOrEqual(FOREST.minCrossings);
+      }
+    }
+  }, 60_000);
 });
