@@ -118,4 +118,5 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 
 - [x] T1 Browser tests that play a whole alien turn get a 60 s limit (the other tests keep 30 s); the machine is shared with other games' test runs
 - [x] T2 `scripts/release.sh deploy` refuses unless a dry run passed for the same commit within the last hour
+- [x] T3 Unit tests that build 1,000 maps get a 90 s limit (the rest keep 30 s): since maps retry for three routes across (M5.14), the town test took 32 to 38 s on the shared machine and blocked a release dry run (2026-10-20)
 - [x] T3 Battle prompt says TAP, not CLICK, on touch devices
