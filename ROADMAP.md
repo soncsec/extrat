@@ -7,12 +7,12 @@ The order follows the risks: first prove the core fight is fun and readable with
 | Milestone | Status |
 |---|---|
 | M0 Setup | Done |
-| M1 Walking skeleton | Built; owner: "looks great so far" (2026-10-17), full play-test notes pending |
-| M2 Tactical core | Built; waiting for the owner's play-test |
-| M3 Aliens and ambush | Built; waiting for the owner's play-test |
-| M4 Maps and landscapes | In progress |
-| M5 Campaign | In progress (PM review 2026-10-18 added M5.8–M5.11) |
-| M6 Polish and release | In progress |
+| M1 Walking skeleton | Done (owner sign-off 2026-10-20) |
+| M2 Tactical core | Done (owner sign-off 2026-10-20) |
+| M3 Aliens and ambush | Done (owner sign-off 2026-10-20) |
+| M4 Maps and landscapes | Done (owner sign-off 2026-10-20) |
+| M5 Campaign | Done (owner sign-off 2026-10-20) |
+| M6 Polish and release | All tasks done (M6.3 signed off and tooltips dropped by the owner, 2026-10-20); acceptance: a stranger finishes the campaign on production (a friend of the owner is playing, 2026-10-20) |
 
 ## Main risks
 
@@ -85,7 +85,7 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 
 *Order changed (owner, 2026-10-18): a playable campaign skeleton on forest maps comes before the other landscapes (M4.3), then one landscape per PR. Mission ramp (owner decision): missions 1-2 two groups of 2 aliens, 3-4 three of 2, 5 three of 3, 6 the boss (three of 3 until M5.6). The debrief keeps REPLAY (same map) in the campaign.*
 
-- [ ] M5.1 Campaign of 6 missions, one per landscape; briefing and debrief screens. *Loop, briefing, debrief and mission ramp built; each mission has its own landscape (M4.3).*
+- [x] M5.1 Campaign of 6 missions, one per landscape; briefing and debrief screens. *Loop, briefing, debrief and mission ramp built; each mission has its own landscape (M4.3). Signed off by the owner, 2026-10-20.*
 - [x] M5.2 XP, ranks and stat increases. *Kills and wins earn XP; five ranks add aim and health; a replayed battle earns no XP (owner, 2026-10-18).*
 - [x] M5.3 Fallen marines return next mission; Wall of Shame (nicknames, death counts, debrief jokes). *Starter nicknames and jokes approved by the owner (2026-10-19).*
 - [x] M5.4 Squad wiped out: retry the mission on a new map
@@ -107,8 +107,8 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 ## M6 — Polish and release
 
 - [x] M6.1 Sound effects, made in code with Web Audio (owner, 2026-10-19: the pack has no audio): shots, hits, deaths, grenades, reloads, overwatch, alarms, poison, the boss, win and lose; SND/OFF button and M to mute, remembered between visits (owner, 2026-10-19)
-- [ ] M6.2 Squad portraits (owner, 2026-10-19: the pack has none, so drawn in code: a helmet per marine, each told apart); tooltips and first-mission hints *(owner 2026-10-18: the help screen is enough for now, so hints stay here)* *Portraits done: a helmet per marine in the info bar and on the squad page. First-mission hints done (owner, 2026-10-20: "go"): in the campaign's first mission, one short hint at a time (move, cover, shoot, grenade, reload, end turn, watch), each gone once the player does it; placed over the map where it covers no marine. Tooltips wait.*
-- [ ] M6.3 Balance pass from play-tests *(owner, 2026-10-19: "very difficult". Done so far: RECRUIT difficulty picked at campaign start, the default (aliens aim 15 worse, marines +1 health and +1 grenade, the Overseer 8 health and a 2-damage blast; owner 2026-10-20, lost mission 1 to claws, "much easier": marines +15 aim, aliens -1 health and -1 damage per hit, missions 1-2 one alien group; owner 2026-10-20, "mission feels good": a smoother RECRUIT ramp of 2, 2, 4, 4 and 6 aliens, and the boss with one escort group, on the practice link too); VETERAN is the game as first tuned. The boss practice link sends Sergeants with a grenades supply, on RECRUIT unless the link says otherwise (owner nearly beat it, lost to the blast). More tuning from the next play-test.)*
+- [x] M6.2 Squad portraits (owner, 2026-10-19: the pack has none, so drawn in code: a helmet per marine, each told apart); tooltips and first-mission hints *(owner 2026-10-18: the help screen is enough for now, so hints stay here)* *Portraits done: a helmet per marine in the info bar and on the squad page. First-mission hints done (owner, 2026-10-20: "go"): in the campaign's first mission, one short hint at a time (move, cover, shoot, grenade, reload, end turn, watch), each gone once the player does it; placed over the map where it covers no marine. Tooltips dropped (owner, 2026-10-20: hints and the help screen "are enough").*
+- [x] M6.3 Balance pass from play-tests *(owner, 2026-10-19: "very difficult". Done so far: RECRUIT difficulty picked at campaign start, the default (aliens aim 15 worse, marines +1 health and +1 grenade, the Overseer 8 health and a 2-damage blast; owner 2026-10-20, lost mission 1 to claws, "much easier": marines +15 aim, aliens -1 health and -1 damage per hit, missions 1-2 one alien group; owner 2026-10-20, "mission feels good": a smoother RECRUIT ramp of 2, 2, 4, 4 and 6 aliens, and the boss with one escort group, on the practice link too); VETERAN is the game as first tuned. The boss practice link sends Sergeants with a grenades supply, on RECRUIT unless the link says otherwise (owner nearly beat it, lost to the blast). Signed off by the owner, 2026-10-20.)*
 - [x] M6.4 Portal card image and status `coming-soon`, then `live` *(the card is live with its image; owner, 2026-10-19: ok)*
 - [x] M6.5 Static and dynamic security checks; production release with owner approval *(every release runs gitleaks, npm audit, CodeQL and ZAP; owner signed off 2026-10-19)*
 

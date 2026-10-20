@@ -97,6 +97,7 @@ It is built mainly from the Ansimuz "Legacy Collection" pixel-art pack (CC0) and
 | 2026-10-19 | Sound effects made in code (Web Audio, no files) since the pack has no audio; squad portraits drawn in code since the pack has none. Rocky hills use the pack's Tiny RPG Mountain tileset |
 | 2026-10-19 | Difficulty: the owner found the game very difficult. A new campaign picks RECRUIT (default: aliens aim worse, marines tougher, a weaker Overseer) or VETERAN (the game as first tuned). The boss practice battle sends a veteran squad. Mute is remembered between visits (settings key, ADR-E6 amended) |
 | 2026-10-18 | Playable on phones and tablets with touch, as well as desktop. Tap to preview, tap again to act. Whole map on phones (zoom and drag only if needed after play-testing). Landscape only. Built before the Wall of Shame |
+| 2026-10-20 | Milestones M1 to M5 and the M6.3 balance pass signed off. RECRUIT ramp: 2, 2, 4, 4 and 6 aliens, then the boss with one escort group. A saved battle that no longer fits is dropped and the campaign kept (ADR-E6 amended). First-mission hints added; tooltips dropped (hints and the help screen are enough). The town keeps its number of houses |
 
 ## 8. Open questions
 
