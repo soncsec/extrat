@@ -86,5 +86,7 @@ The campaign state is saved as JSON in `localStorage` under one key, at the star
 
 **Amended 2026-10-19 (owner approved):** the player's settings are kept under a second key, `extrat.settings`: a version number and whether sound is muted, nothing else. They are checked like the save; anything but exactly that shape gives the defaults.
 
+**Amended 2026-10-20 (owner approved):** a saved battle that passes the shape checks but doesn't fit its map or mission (for example after an update changes a mission's aliens) is dropped on CONTINUE, and nothing of it is used. The campaign, which is checked on its own, is kept and goes back to that mission's briefing with a note. Before, the whole save was cleared.
+
 - **Alternative: IndexedDB.** More capacity than needed and a more complex API.
 - **Alternative: a server and accounts.** Breaks ADR-001 (static sites, no backend) and would add personal data.

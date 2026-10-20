@@ -6,6 +6,7 @@ import {
   currentMission,
   isComplete,
   mapSeedFor,
+  missionPods,
   newCampaign,
   type Campaign,
 } from '../../src/logic/campaign';
@@ -107,6 +108,39 @@ describe('missions', () => {
             `seed ${seed} pod ${pod}`,
           ).toHaveLength(m.pods.size);
         }
+      }
+    }
+  }, 30_000);
+
+  it('fit every mission`s RECRUIT alien groups on 200 maps, the new kind among them', () => {
+    for (const [i, m] of MISSIONS.entries()) {
+      const pods = missionPods(m, 'recruit');
+      const boss = 'boss' in m && m.boss;
+      // The kind this mission brings in (the last listed), if it brings one.
+      const before: readonly string[] = MISSIONS[i - 1]?.kinds ?? [];
+      const last = m.kinds[m.kinds.length - 1];
+      const fresh = last && !before.includes(last) ? last : null;
+      for (let seed = 1; seed <= 200; seed++) {
+        const map = generateMap(seed, MAP_COLS, MAP_ROWS, m.landscape);
+        const b = createBattle(map, map.seed, {
+          pods,
+          kinds: m.kinds,
+          boss,
+          difficulty: 'recruit',
+        });
+        const aliens = b.units.filter((u) => u.side === 'alien' && u.kind !== 'overseer');
+        expect(aliens, `seed ${seed}`).toHaveLength(pods.count * pods.size);
+        for (let pod = 0; pod < pods.count; pod++) {
+          expect(
+            aliens.filter((a) => a.pod === pod),
+            `seed ${seed} pod ${pod}`,
+          ).toHaveLength(pods.size);
+        }
+        if (fresh)
+          expect(
+            aliens.some((a) => a.kind === fresh),
+            `seed ${seed}`,
+          ).toBe(true);
       }
     }
   }, 30_000);

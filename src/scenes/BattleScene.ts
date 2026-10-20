@@ -47,6 +47,7 @@ import {
   unitById,
   visibleTiles,
   type Action,
+  type BattleSetup,
   type BattleState,
   type MoveResult,
   type Scamper,
@@ -61,6 +62,7 @@ import {
   footprint,
   unitSize,
   type BlastResult,
+  type DifficultyId,
 } from '../logic/battle';
 import { planAlienAction } from '../logic/ai';
 import {
@@ -1758,13 +1760,7 @@ export class BattleScene extends Phaser.Scene {
               difficulty: c.difficulty,
             }
           : this.skirmishBoss
-            ? {
-                boss: true,
-                pods: BOSS.escorts,
-                ranks: Array.from({ length: SKIRMISH.marines }, () => BOSS_PRACTICE.rank),
-                supply: BOSS_PRACTICE.supply,
-                difficulty: urlDifficulty() ?? BOSS_PRACTICE.difficulty,
-              }
+            ? this.bossPractice(urlDifficulty() ?? BOSS_PRACTICE.difficulty)
             : { difficulty: urlDifficulty() ?? 'veteran' },
       );
     // A campaign saves as each of the squad's turns begins, this first one included.
@@ -1798,6 +1794,21 @@ export class BattleScene extends Phaser.Scene {
     this.propTiles = [];
     this.drawMap();
     this.updateHidden();
+  }
+
+  /**
+   * The boss practice link (?boss=1): the final mission's fight, on the link's difficulty
+   * (so on RECRUIT, one escort group, as in the campaign), with a ranked squad.
+   */
+  private bossPractice(difficulty: DifficultyId): BattleSetup {
+    const final = MISSIONS[MISSIONS.length - 1] as (typeof MISSIONS)[number];
+    return {
+      boss: true,
+      pods: missionPods(final, difficulty),
+      ranks: Array.from({ length: SKIRMISH.marines }, () => BOSS_PRACTICE.rank),
+      supply: BOSS_PRACTICE.supply,
+      difficulty,
+    };
   }
 
   private drawMap(): void {

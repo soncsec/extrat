@@ -150,12 +150,36 @@ describe('difficulty (M6.3, owner 2026-10-19)', () => {
     );
   });
 
-  it('fields one alien group in missions 1 and 2 on RECRUIT, the usual on VETERAN', () => {
-    for (const [i, mission] of MISSIONS.entries()) {
-      const recruit = missionPods(mission, 'recruit');
-      const veteran = missionPods(mission, 'veteran');
-      expect(veteran).toEqual(mission.pods);
-      expect(recruit.count, `mission ${i + 1}`).toBe(i < 2 ? 1 : mission.pods.count);
+  it('fields fewer aliens on RECRUIT, the usual on VETERAN', () => {
+    // Owner, 2026-10-20: one group of 2 in missions 1-2, then 4, 4 and 6 aliens, and the
+    // boss with one escort group.
+    const groups = (d: DifficultyId): [number, number][] =>
+      MISSIONS.map((m) => {
+        const p = missionPods(m, d);
+        return [p.count, p.size];
+      });
+    expect(groups('recruit')).toEqual([
+      [1, 2],
+      [1, 2],
+      [2, 2],
+      [2, 2],
+      [2, 3],
+      [1, 2],
+    ]);
+    expect(groups('veteran')).toEqual(MISSIONS.map((m) => [m.pods.count, m.pods.size]));
+  });
+
+  it('never fields more aliens on RECRUIT than on VETERAN, and ramps up to the boss', () => {
+    const aliens = (d: DifficultyId): number[] =>
+      MISSIONS.map((m) => missionPods(m, d).count * missionPods(m, d).size);
+    const recruit = aliens('recruit');
+    const veteran = aliens('veteran');
+    for (let i = 0; i < MISSIONS.length; i++) {
+      expect(recruit[i], `mission ${i + 1}`).toBeLessThanOrEqual(veteran[i] as number);
+    }
+    // The ramp: never fewer than the mission before, up to the boss's mission.
+    for (let i = 1; i < MISSIONS.length - 1; i++) {
+      expect(recruit[i], `mission ${i + 1}`).toBeGreaterThanOrEqual(recruit[i - 1] as number);
     }
   });
 

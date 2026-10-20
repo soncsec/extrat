@@ -1269,31 +1269,46 @@ test('a damaged save is cleared with a message, never loaded', async ({ page }) 
   }
 });
 
-test('a save that passes the shape checks but not the map is cleared on continue', async ({
+test('a saved battle that doesn`t fit its map is dropped on continue, the campaign kept', async ({
   page,
 }) => {
+  // Owner, 2026-10-20: the campaign (checked on its own) goes back to the mission's
+  // briefing; nothing of the battle is used.
   await openGame(page);
   // Move a living marine into a blocked tile in the saved copy.
   const s = await snapshot(page);
   const blocked = [...s.layout].findIndex((c) => c !== '.');
-  await page.evaluate(
+  const campaign = await page.evaluate(
     ([k, i, cols]) => {
       const save = JSON.parse(window.localStorage.getItem(k as string) ?? '{}');
       const m = save.battle.units.find((u: { id: string }) => u.id.startsWith('m'));
       m.x = (i as number) % (cols as number);
       m.y = Math.floor((i as number) / (cols as number));
       window.localStorage.setItem(k as string, JSON.stringify(save));
+      return save.campaign;
     },
     [SAVE_KEY, blocked, MAP_COLS],
   );
   await page.reload();
   await waitForScene(page, 'Title');
   await page.keyboard.press('Enter'); // CONTINUE
-  await waitForScene(page, 'Title'); // back on the title, with the message
-  await expect
-    .poll(() => page.evaluate((k) => window.localStorage.getItem(k), SAVE_KEY))
-    .toBeNull();
-  expect(await activeScenes(page)).toEqual(['Title']);
+  await waitForScene(page, 'Briefing');
+  expect(await activeScenes(page)).toEqual(['Briefing']);
+  // The save keeps the campaign as it was, with no battle.
+  const saved = await page.evaluate(
+    (k) => JSON.parse(window.localStorage.getItem(k) ?? '{}'),
+    SAVE_KEY,
+  );
+  expect(saved.battle).toBeNull();
+  expect(saved.campaign).toEqual(campaign);
+  // The mission starts again on its own map, the marine where it belongs.
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Battle');
+  const fresh = await snapshot(page);
+  expect(fresh.campaign).toMatchObject({ mission: campaign.mission, attempt: campaign.attempt });
+  for (const m of fresh.units.filter((u) => u.side === 'marine')) {
+    expect(fresh.layout[m.y * MAP_COLS + m.x]).toBe('.');
+  }
 });
 
 test('a skirmish (?seed=) never touches the campaign save', async ({ page }) => {

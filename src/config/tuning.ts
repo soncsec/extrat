@@ -92,7 +92,9 @@ export const PODS = {
  * listed is the new one, and the battle always fields at least one of it.
  */
 export const MISSIONS = [
-  // recruitPods: the alien groups on RECRUIT, where they differ (owner, 2026-10-20).
+  // recruitPods: the alien groups on RECRUIT, where they differ (owner, 2026-10-20: one
+  // group in missions 1-2, then a smoother ramp of 4, 4 and 6 aliens, and the boss with
+  // one escort group).
   {
     landscape: 'forest',
     pods: { count: 2, size: 2 },
@@ -105,15 +107,22 @@ export const MISSIONS = [
     recruitPods: { count: 1, size: 2 },
     kinds: ['walker', 'flyer'],
   },
-  { landscape: 'coast', pods: { count: 3, size: 2 }, kinds: ['walker', 'flyer', 'lizard'] },
+  {
+    landscape: 'coast',
+    pods: { count: 3, size: 2 },
+    recruitPods: { count: 2, size: 2 },
+    kinds: ['walker', 'flyer', 'lizard'],
+  },
   {
     landscape: 'hills',
     pods: { count: 3, size: 2 },
+    recruitPods: { count: 2, size: 2 },
     kinds: ['walker', 'flyer', 'lizard', 'snake'],
   },
   {
     landscape: 'crash',
     pods: { count: 3, size: 3 },
+    recruitPods: { count: 2, size: 3 },
     kinds: ['walker', 'flyer', 'lizard', 'snake'],
   },
   // The final mission (M5.6, docs/boss-design.md): the Overseer on the alien ship, with
@@ -121,6 +130,7 @@ export const MISSIONS = [
   {
     landscape: 'ship',
     pods: { count: 2, size: 2 },
+    recruitPods: { count: 1, size: 2 },
     kinds: ['walker', 'flyer', 'lizard', 'snake'],
     boss: true,
   },
