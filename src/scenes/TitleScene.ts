@@ -9,6 +9,7 @@ import { readSave, writeSave } from './storage';
 import { isTouchDevice } from './touch';
 import { randomSeed, urlDifficulty, urlNumber } from './seed';
 import { PixelButton, PixelText, pixelButton, pixelText } from './pixelFont';
+import { playMusic } from './music';
 
 /** Where the games portal lives, relative to this game's folder (games.soncrant.com/extrat/). */
 export const PORTAL_URL = '../';
@@ -19,6 +20,7 @@ export class TitleScene extends Phaser.Scene {
   }
 
   create(): void {
+    playMusic(this, 'theme');
     // The screen is designed for GAME_WIDTH x GAME_HEIGHT; the forest reaches wherever
     // the canvas shows more (phones, where the canvas is wider).
     const view = fitDesign(this);

@@ -5,6 +5,7 @@ import { newCampaign } from '../logic/campaign';
 import { FOREST_SHEET } from './art';
 import { fitDesign } from './layout';
 import { PixelButton, PixelText, pixelText } from './pixelFont';
+import { playMusic } from './music';
 
 /**
  * How hard the new campaign is (M6.3, owner 2026-10-19), picked before its first
@@ -16,6 +17,7 @@ export class DifficultyScene extends Phaser.Scene {
   }
 
   create(data: { seed: number }): void {
+    playMusic(this, 'theme');
     const view = fitDesign(this);
     const rows = Math.ceil(view.height / TILE);
     for (let y = 0; y < rows; y++) {

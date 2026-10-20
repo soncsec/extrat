@@ -661,6 +661,29 @@ test('sound effects are made while loading, and M mutes them (M6.1)', async ({ p
   await expect.poll(async () => (await audio())?.muted).toBe(false);
 });
 
+test('the theme plays on the menus and fades out for the battle (M7.1)', async ({ page }) => {
+  const music = (): Promise<string | null | undefined> =>
+    page.evaluate(() => window.__game?.audio().music);
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('./');
+  await waitForScene(page, 'Title');
+  await expect.poll(music).toBe('theme');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Difficulty');
+  expect(await music()).toBe('theme');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Briefing');
+  expect(await music()).toBe('theme');
+  await page.keyboard.press('Enter');
+  await waitForScene(page, 'Battle');
+  await expect.poll(music).toBeNull();
+  // M mutes the music with the effects: one switch for all sound.
+  await page.keyboard.press('m');
+  await expect.poll(async () => page.evaluate(() => window.__game?.audio().muted)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
 test('each M press toggles once, even when frames stall (Phaser replays key events)', async ({
   page,
 }) => {

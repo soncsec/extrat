@@ -24,7 +24,7 @@ import {
 } from '../../src/logic/map';
 
 /**
- * The time limit for tests that build 1,000 maps (T3). Maps retry until they have three
+ * The time limit for tests that build 1,000 maps (T4). Maps retry until they have three
  * separate routes across (M5.14), so a test can pass 30 s on a machine busy with other
  * games' test runs; the checks are the same, only the time allowed is longer.
  */

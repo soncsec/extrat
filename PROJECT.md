@@ -45,7 +45,7 @@ It is built mainly from the Ansimuz "Legacy Collection" pixel-art pack (CC0) and
 | Controls | Mouse: select, move, target. A few keyboard shortcuts (for example next marine, end turn, choose action, cancel). Touch: tap a tile once to preview the move (path, cost, cover), tap it again to move; everything the keys do has an on-screen button |
 | Screens | Title, squad (with Wall of Shame), mission briefing, battle, debrief, campaign victory, game over |
 | Navigation | A link back to the games portal from the title screen |
-| Audio | Sound effects made in code with Web Audio (owner, 2026-10-19: the pack has no audio), with a mute button. No music in v1 (planned later) |
+| Audio | Sound effects made in code with Web Audio (owner, 2026-10-19: the pack has no audio), with a mute button. Music after v1 (owner, 2026-10-20): retro synth made in code, on the menus and in battle, muted by the same button |
 | Art | Legacy pack: Warped space marine and aliens, TinyRPG top-down terrain, Warped sci-fi interior, explosions and hit effects, Warped portraits. Claude draws missing terrain pieces in matching style |
 | Display | Native pixel art, fits the browser window. On desktops every art pixel covers a whole number of the screen's own pixels. Phones and tablets fill the screen, even if art pixels come out very slightly uneven, with the info panel beside the map rather than under it (owner, 2026-10-19). Phones and tablets: landscape only, with a notice to turn the device when held upright |
 
@@ -53,7 +53,6 @@ It is built mainly from the Ansimuz "Legacy Collection" pixel-art pack (CC0) and
 
 - Base building, research, world map, weapon upgrades or a shop (a simple resupply between missions is in scope, owner 2026-10-18)
 - Permadeath, multiple difficulty levels
-- Music (planned after v1)
 - Gamepad controls
 - Portrait (upright) play on phones
 - Multiplayer, online leaderboards, accounts, payments, analytics
@@ -99,6 +98,7 @@ It is built mainly from the Ansimuz "Legacy Collection" pixel-art pack (CC0) and
 | 2026-10-18 | Playable on phones and tablets with touch, as well as desktop. Tap to preview, tap again to act. Whole map on phones (zoom and drag only if needed after play-testing). Landscape only. Built before the Wall of Shame |
 | 2026-10-20 | Milestones M1 to M5 and the M6.3 balance pass signed off. RECRUIT ramp: 2, 2, 4, 4 and 6 aliens, then the boss with one escort group. A saved battle that no longer fits is dropped and the campaign kept (ADR-E6 amended). First-mission hints added; tooltips dropped (hints and the help screen are enough). The town keeps its number of houses |
 | 2026-10-20 | Definition of success met: a friend of the owner, new to the game, finished all six missions on games.soncrant.com without help. Version 1.0 complete |
+| 2026-10-20 | After v1: music. Retro synth made in code (no files); a theme on the menus, calm and tense battle music, a boss track; the SND button and M mute music with the effects (settings unchanged) |
 
 ## 8. Open questions
 

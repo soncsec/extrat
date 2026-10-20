@@ -111,6 +111,7 @@ import { initialSeed, urlDifficulty, urlWord } from './seed';
 import { LAYOUT } from './layout';
 import { clearSave, writeSave } from './storage';
 import { isTouchDevice } from './touch';
+import { playMusic } from './music';
 
 /** A tile a unit can move to, and the action points that costs (2 means a dash). */
 export interface MoveTile extends Point {
@@ -361,6 +362,8 @@ export class BattleScene extends Phaser.Scene {
     resume?: BattleState;
     replay?: boolean;
   }): void {
+    // The theme fades out; battle music comes with M7.2.
+    playMusic(this, null);
     this.fx = new FxPool(this);
     this.campaign = data.campaign ?? null;
     this.seed = this.campaign?.mapSeed ?? data.seed ?? initialSeed();
