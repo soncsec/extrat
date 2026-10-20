@@ -153,3 +153,23 @@ test('the plain practice link is RECRUIT: a weaker Overseer (M6.3)', async ({ pa
   const boss = s?.units.find((u) => u.kind === 'overseer');
   expect(boss?.maxHp).toBe(8);
 });
+
+test('the boss battle starts on any map, wherever the Overseer stands', async ({ page }) => {
+  test.setTimeout(90_000);
+  // Its idle animation is a single frame: drawing it once crashed on two maps in three.
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  for (const seed of [1, 2, 3, 4, 5, 6]) {
+    await page.goto(`./?seed=${seed}&landscape=ship&boss=1`);
+    await expect
+      .poll(() => page.evaluate(() => window.__game?.scene() ?? null), { timeout: 15_000 })
+      .toBe('Title');
+    await page.keyboard.press('Enter');
+    await expect
+      .poll(() => page.evaluate(() => window.__game?.snapshot()?.units.length ?? 0), {
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(0);
+  }
+  expect(errors).toEqual([]);
+});

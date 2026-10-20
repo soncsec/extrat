@@ -1866,7 +1866,10 @@ export class BattleScene extends Phaser.Scene {
         .setFlipX(flip);
     // Units stand in front of props on the same row.
     const sprite = make().setDepth(DEPTH.standing + bottom + 0.5);
-    sprite.play({ key: `${sheet.key}-idle`, startFrame: (u.x + u.y) % 3 });
+    // Neighbours start their idle at different frames, so they don't move in step: but
+    // never past the animation's last frame (the Overseer's idle is a single frame).
+    const idleFrames = sheet.anims.idle?.count ?? 1;
+    sprite.play({ key: `${sheet.key}-idle`, startFrame: (u.x + u.y) % Math.min(3, idleFrames) });
     const ghost = make()
       .setDepth(DEPTH.ghost)
       .setTint(GHOST_COLOR[u.side])
