@@ -19,6 +19,8 @@ export interface TestHook {
   /** Slows down (or speeds up) the battle's animations, for frame-by-frame visual checks. */
   setSpeed(scale: number): void;
   snapshot(): GameSnapshot | null;
+  /** Stops or restarts the game's frames, as a hidden or overloaded browser may. */
+  pauseFrames(paused: boolean): void;
   /** The sound effects made while loading (M6.1), and whether sound is muted. */
   audio(): { sounds: string[]; muted: boolean };
 }
@@ -42,6 +44,7 @@ export function installTestHook(game: Phaser.Game): void {
     },
     setAmmo: (unitId, ammo) =>
       (game.scene.getScene('Battle') as BattleScene).debugSetAmmo(unitId, ammo),
+    pauseFrames: (paused) => (paused ? game.loop.sleep() : game.loop.wake()),
     audio: () => ({
       sounds: game.cache.audio.getKeys().filter((k) => k.startsWith('sfx-')),
       muted: isMuted(),
