@@ -65,6 +65,7 @@ import {
   type DifficultyId,
 } from '../logic/battle';
 import { planAlienAction } from '../logic/ai';
+import { battleMood } from '../logic/mood';
 import { HINT_TEXT, HINT_WRAP, hintFor, hintsDone, type HintId } from '../logic/hints';
 import {
   afterBattle,
@@ -111,7 +112,7 @@ import { initialSeed, urlDifficulty, urlWord } from './seed';
 import { LAYOUT } from './layout';
 import { clearSave, writeSave } from './storage';
 import { isTouchDevice } from './touch';
-import { playMusic } from './music';
+import { ensureRendered, playMusic, type TrackId } from './music';
 
 /** A tile a unit can move to, and the action points that costs (2 means a dash). */
 export interface MoveTile extends Point {
@@ -210,6 +211,9 @@ const MAP_LINE_COLOR = 0xa3adbd;
  * The first-mission hint box (M6.2): its text colour and padding, the gap between its
  * panel and the map's edge, and the top of its spot under the sound and help buttons.
  */
+/** How long after the battle starts the tense track is rendered (M7.2). */
+const MUSIC_PREPARE_MS = 500;
+
 const HINT = { color: 0xf2c94a, padding: 4, margin: 2, belowButtons: 22 } as const;
 
 const DEPTH = {
@@ -311,6 +315,8 @@ export class BattleScene extends Phaser.Scene {
   private hintsOn = false;
   /** The hints the player has acted on this battle. */
   private hintsDone = new Set<HintId>();
+  /** The battle's music (M7.2): undefined until the battle has started it. */
+  private music: TrackId | null | undefined = undefined;
   /** The hint showing over the map, or null. */
   private hint: HintId | null = null;
   private hintBox!: PixelText;
@@ -362,8 +368,6 @@ export class BattleScene extends Phaser.Scene {
     resume?: BattleState;
     replay?: boolean;
   }): void {
-    // The theme fades out; battle music comes with M7.2.
-    playMusic(this, null);
     this.fx = new FxPool(this);
     this.campaign = data.campaign ?? null;
     this.seed = this.campaign?.mapSeed ?? data.seed ?? initialSeed();
@@ -1291,7 +1295,8 @@ export class BattleScene extends Phaser.Scene {
       if (hp <= 0) v.sprite.setAlpha(0);
     }
     this.refreshVision();
-    if (!this.busy) this.checkEnd();
+    // As after a real kill: the battle may be over, or the screen (and music) changes.
+    if (!this.busy && !this.checkEnd()) this.drawSelection();
   }
 
   /** A large message across the middle of the map. */
@@ -1753,6 +1758,7 @@ export class BattleScene extends Phaser.Scene {
     this.chargeExplained = false;
     this.chargeHint = '';
     this.hintsOn = this.campaign?.mission === 0;
+    this.music = undefined;
     this.hintsDone = new Set();
     for (const o of this.mapObjects) o.destroy();
     for (const v of this.views.values()) {
@@ -1822,6 +1828,22 @@ export class BattleScene extends Phaser.Scene {
     this.propTiles = [];
     this.drawMap();
     this.updateHidden();
+  }
+
+  /**
+   * The battle's music (M7.2): calm while every alien waits hidden, tense while any is
+   * awake, none once the battle is over (the result screen plays its jingle).
+   */
+  private updateMusic(): void {
+    const track = this.over ? null : battleMood(this.state);
+    if (track === this.music) return;
+    const first = this.music === undefined;
+    this.music = track;
+    playMusic(this, track);
+    // Render the tense track now, while nothing moves, not when the aliens appear.
+    if (first && track === 'calm') {
+      this.time.delayedCall(MUSIC_PREPARE_MS, () => ensureRendered(this, 'tense'));
+    }
   }
 
   /** Marks the hints a player action has done (M6.2). */
@@ -2009,6 +2031,7 @@ export class BattleScene extends Phaser.Scene {
   private drawSelection(): void {
     const playerTurn = this.state.turn === 'marine' && !this.busy && !this.over;
     this.showHint(playerTurn);
+    this.updateMusic();
     if (!this.busy) {
       // Between animations the drawn exposure catches up with the rules (turn changes).
       for (const u of this.state.units) {

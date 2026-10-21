@@ -120,7 +120,7 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 *Owner, 2026-10-20: after version 1.0, add music. Retro synth (chiptune) made in code like the sound effects; a theme on the menus, battle music that turns tense once aliens are spotted, and a boss track; the SND button and M mute music with the effects.*
 
 - [x] M7.1 Music made in code: tracks written as notes and chords, rendered once (at 24 kHz, about 70 ms) into a seamless loop; the theme on the title, difficulty and briefing screens, fading out for battle
-- [ ] M7.2 Battle music: a calm loop while exploring, crossfading to a tense one while awake aliens are alive
+- [x] M7.2 Battle music: a calm loop while every alien waits hidden, crossfading to a tense one while any is awake (same key, tempo and chords); none on the result screen (owner, 2026-10-20, after previews: "Good, keep them")
 - [ ] M7.3 Boss track for the Overseer mission
 
 **Acceptance criteria:** the owner likes the music on the live site; it never plays while muted; no audio files or requests.
