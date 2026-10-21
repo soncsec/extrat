@@ -10,7 +10,7 @@ import { AUDIO } from '../config/tuning';
  * the sound effects. No audio files, nothing fetched.
  */
 
-export type TrackId = 'theme' | 'calm' | 'tense';
+export type TrackId = 'theme' | 'calm' | 'tense' | 'boss';
 
 type Tone = 'square' | 'triangle' | 'sine';
 type Drum = 'kick' | 'snare' | 'hat';
@@ -203,10 +203,59 @@ const TENSE: Track = {
   ],
 };
 
+/** The Overseer's fight (M7.3): E minor, fast, every part driving. */
+const BOSS: Track = {
+  bpm: 140,
+  chords: ['Em', 'Em', 'C', 'D', 'Em', 'Em', 'C', 'B', 'Em', 'Em', 'C', 'D', 'Em', 'Em', 'C', 'B'],
+  parts: [
+    {
+      type: 'melody',
+      wave: 'square',
+      duty: 0.5,
+      volume: 0.1,
+      bars: [
+        'E5:4 G5:4 B5:4 G5:4',
+        'F#5:4 E5:4 D5:4 B4:4',
+        'C5:6 E5:2 G5:8',
+        'F#5:4 A5:4 F#5:4 D5:4',
+        'E5:2 E5:2 G5:2 E5:2 B5:8',
+        'A5:4 G5:4 F#5:4 E5:4',
+        'G5:4 E5:4 C5:4 E5:4',
+        'D#5:8 F#5:4 B4:4',
+        'B5:4 A5:4 G5:4 E5:4',
+        'G5:4 F#5:4 E5:8',
+        'E5:4 G5:4 C6:8',
+        'D6:4 C6:4 A5:8',
+        'B5:6 A5:2 G5:8',
+        'E5:4 F#5:4 G5:4 A5:4',
+        'G5:4 E5:4 C5:8',
+        'B4:4 D#5:4 F#5:4 B5:4',
+      ],
+    },
+    {
+      type: 'arp',
+      wave: 'square',
+      duty: 0.125,
+      volume: 0.045,
+      octave: 4,
+      rhythm: 'xxxxxxxxxxxxxxxx',
+    },
+    { type: 'bass', wave: 'triangle', volume: 0.3, octave: 2, rhythm: 'xoxoxoxoxoxoxoxo' },
+    {
+      type: 'drums',
+      volume: 0.45,
+      kick: 'x...x...x...x.x.',
+      snare: '....x.......x...',
+      hat: 'xxxxxxxxxxxxxxxx',
+    },
+  ],
+};
+
 export const TRACKS: Readonly<Record<TrackId, Track>> = {
   theme: THEME,
   calm: CALM,
   tense: TENSE,
+  boss: BOSS,
 };
 
 const NOTE = /^([A-G])(#|b)?(-?\d)$/;

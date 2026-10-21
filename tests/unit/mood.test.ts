@@ -26,6 +26,17 @@ describe('battle mood for the music (M7.2)', () => {
     expect(battleMood(change(awake, alien.id, { hp: 0 }))).toBe('calm');
   });
 
+  it('plays the boss track once the Overseer is awake, over its escorts (M7.3)', () => {
+    const b = createBattle(generateForest(3, MAP_COLS, MAP_ROWS), 3, { boss: true });
+    const boss = b.units.find((u) => u.kind === 'overseer');
+    const escort = b.units.find((u) => u.side === 'alien' && u.kind !== 'overseer');
+    if (!boss || !escort) throw new Error('no boss or escort');
+    expect(battleMood(b)).toBe('calm');
+    expect(battleMood(change(b, escort.id, { dormant: false }))).toBe('tense');
+    const awake = change(change(b, boss.id, { dormant: false }), escort.id, { dormant: false });
+    expect(battleMood(awake)).toBe('boss');
+  });
+
   it('ignores the squad: marines are never dormant', () => {
     const b = start();
     expect(b.units.some((u) => u.side === 'marine' && !u.dormant)).toBe(true);

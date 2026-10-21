@@ -13,7 +13,7 @@ The order follows the risks: first prove the core fight is fun and readable with
 | M4 Maps and landscapes | Done (owner sign-off 2026-10-20) |
 | M5 Campaign | Done (owner sign-off 2026-10-20) |
 | M6 Polish and release | Done: a friend of the owner finished the campaign on production without help (owner, 2026-10-20). Version 1.0 complete |
-| M7 Music | In progress (after v1, owner 2026-10-20) |
+| M7 Music | Done (after v1; owner approved every track from previews, 2026-10-20) |
 
 ## Main risks
 
@@ -121,7 +121,7 @@ Order agreed with the owner on 2026-10-17: M2.2, M2.3, M2.1, M2.4, M2.5, M2.6, M
 
 - [x] M7.1 Music made in code: tracks written as notes and chords, rendered once (at 24 kHz, about 70 ms) into a seamless loop; the theme on the title, difficulty and briefing screens, fading out for battle
 - [x] M7.2 Battle music: a calm loop while every alien waits hidden, crossfading to a tense one while any is awake (same key, tempo and chords); none on the result screen (owner, 2026-10-20, after previews: "Good, keep them")
-- [ ] M7.3 Boss track for the Overseer mission
+- [x] M7.3 Boss track for the Overseer: E minor, 140 bpm, from the moment the Overseer wakes until it falls (the boss practice link too)
 
 **Acceptance criteria:** the owner likes the music on the live site; it never plays while muted; no audio files or requests.
 

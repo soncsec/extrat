@@ -175,3 +175,21 @@ test('the boss battle starts on any map, wherever the Overseer stands', async ({
   }
   expect(errors).toEqual([]);
 });
+
+test('the boss map starts with calm music and renders the boss track without errors (M7.3)', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('./?seed=7&landscape=ship&boss=1');
+  await expect
+    .poll(() => page.evaluate(() => window.__game?.scene() ?? null), { timeout: 15_000 })
+    .toBe('Title');
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(() => page.evaluate(() => window.__game?.audio().music ?? null), { timeout: 15_000 })
+    .toBe('calm');
+  // The tense and boss tracks are rendered half a second in.
+  await page.waitForTimeout(1500);
+  expect(errors).toEqual([]);
+});
