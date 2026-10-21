@@ -80,7 +80,11 @@ describe('music made in code (M7)', () => {
       expect(finite, `${id} has only numbers`).toBe(true);
       expect(peak, id).toBeLessThanOrEqual(PEAK + 1e-6);
       expect(peak, `${id} is audible`).toBeGreaterThan(0.2);
-      expect(renderTrack(track, RATE)).toEqual(samples);
+      // The same every time (compared in a loop: toEqual on ~1 million samples is very slow).
+      const again = renderTrack(track, RATE);
+      let same = again.length === samples.length;
+      for (let i = 0; same && i < samples.length; i++) same = again[i] === samples[i];
+      expect(same, `${id} renders the same every time`).toBe(true);
       // The loop has no seam: the last sample runs on into the first without a jump.
       const seam = Math.abs((samples[0] ?? 0) - (samples[samples.length - 1] ?? 0));
       expect(seam, `${id} seam`).toBeLessThan(0.25);

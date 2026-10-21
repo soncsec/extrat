@@ -10,7 +10,7 @@ import { AUDIO } from '../config/tuning';
  * the sound effects. No audio files, nothing fetched.
  */
 
-export type TrackId = 'theme';
+export type TrackId = 'theme' | 'calm' | 'tense';
 
 type Tone = 'square' | 'triangle' | 'sine';
 type Drum = 'kick' | 'snare' | 'hat';
@@ -100,7 +100,114 @@ const THEME: Track = {
   ],
 };
 
-export const TRACKS: Readonly<Record<TrackId, Track>> = { theme: THEME };
+/** The two battle tracks share a key, tempo and chords, so one fades into the other. */
+const BATTLE_CHORDS = [
+  'Dm',
+  'Dm',
+  'Bb',
+  'Bb',
+  'Gm',
+  'Gm',
+  'A',
+  'A',
+  'Dm',
+  'Dm',
+  'Bb',
+  'C',
+  'Gm',
+  'Gm',
+  'A',
+  'A',
+] as const;
+
+/** Battle, while every alien still waits hidden (M7.2): sparse and watchful. */
+const CALM: Track = {
+  bpm: 96,
+  chords: BATTLE_CHORDS,
+  parts: [
+    {
+      type: 'melody',
+      wave: 'triangle',
+      volume: 0.09,
+      bars: [
+        '.:16',
+        '.:8 A4:4 F4:4',
+        '.:16',
+        '.:8 D5:4 C5:4',
+        '.:16',
+        '.:8 Bb4:4 G4:4',
+        'A4:8 .:8',
+        'C#5:8 E5:8',
+        '.:16',
+        'F5:4 E5:4 D5:8',
+        '.:16',
+        'E5:4 D5:4 C5:8',
+        '.:16',
+        'D5:4 Bb4:4 G4:8',
+        'A4:8 .:8',
+        'E4:4 A4:4 C#5:8',
+      ],
+    },
+    { type: 'arp', wave: 'sine', volume: 0.05, octave: 4, rhythm: 'x..x..x...x..x..' },
+    { type: 'pad', wave: 'triangle', volume: 0.06, octave: 3 },
+    { type: 'bass', wave: 'triangle', volume: 0.22, octave: 2, rhythm: 'x.......f.......' },
+  ],
+};
+
+/** Battle, while aliens are awake (M7.2): the same chords, driven by drums and bass. */
+const TENSE: Track = {
+  bpm: 96,
+  chords: BATTLE_CHORDS,
+  parts: [
+    {
+      type: 'melody',
+      wave: 'square',
+      duty: 0.25,
+      volume: 0.1,
+      bars: [
+        'D5:6 C5:2 A4:8',
+        '.:16',
+        'D5:4 F5:4 E5:4 D5:4',
+        'F5:8 .:8',
+        'G5:6 F5:2 D5:8',
+        '.:16',
+        'E5:4 C#5:4 A4:8',
+        'C#5:4 E5:4 G5:8',
+        'D5:6 C5:2 A4:8',
+        '.:16',
+        'D5:4 F5:4 G5:4 A5:4',
+        'G5:8 E5:8',
+        'Bb5:6 A5:2 G5:8',
+        'D5:8 .:8',
+        'E5:4 F5:4 E5:4 C#5:4',
+        'A4:8 .:8',
+      ],
+    },
+    {
+      type: 'arp',
+      wave: 'square',
+      duty: 0.125,
+      volume: 0.045,
+      octave: 4,
+      rhythm: 'xxxxxxxxxxxxxxxx',
+    },
+    { type: 'pad', wave: 'triangle', volume: 0.05, octave: 3 },
+    { type: 'bass', wave: 'triangle', volume: 0.28, octave: 2, rhythm: 'x.xox.xox.xox.xo' },
+    {
+      type: 'drums',
+      volume: 0.4,
+      kick: 'x.....x...x.....',
+      snare: '....x.......x..x',
+      hat: '..x...x...x...x.',
+    },
+  ],
+};
+
+export const TRACKS: Readonly<Record<TrackId, Track>> = {
+  theme: THEME,
+  calm: CALM,
+  tense: TENSE,
+};
 
 const NOTE = /^([A-G])(#|b)?(-?\d)$/;
 const CHORD = /^([A-G])(#|b)?(m)?$/;
@@ -317,7 +424,7 @@ export function currentMusic(): TrackId | null {
 }
 
 /** Renders a track into Phaser's audio cache the first time it is needed. */
-function ensureRendered(scene: Phaser.Scene, id: TrackId): boolean {
+export function ensureRendered(scene: Phaser.Scene, id: TrackId): boolean {
   if (scene.cache.audio.exists(keyOf(id))) return true;
   const context = (scene.sound as Partial<Phaser.Sound.WebAudioSoundManager>).context;
   if (!context) return false;

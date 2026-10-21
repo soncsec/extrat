@@ -611,6 +611,21 @@ test('F aims at the best target, then cycles; Enter fires', async ({ page }) => 
     .toBe(shootable[1 % shootable.length]);
 });
 
+test('battle music turns tense when a pod wakes, and calm once it is dead (M7.2)', async ({
+  page,
+}) => {
+  const music = (): Promise<string | null | undefined> =>
+    page.evaluate(() => window.__game?.audio().music);
+  await openGame(page, SHOT_SEED);
+  await expect.poll(music).toBe('calm');
+  await moveEastForAShot(page); // spots one pod; the other stays dormant
+  await expect.poll(music).toBe('tense');
+  for (const a of (await snapshot(page)).units.filter((u) => u.side === 'alien' && !u.dormant)) {
+    await page.evaluate((id) => window.__game?.setHp(id, 0), a.id);
+  }
+  await expect.poll(music).toBe('calm');
+});
+
 test('E ends the turn: awake aliens act, dormant pods wait, then round 2 begins', async ({
   page,
 }) => {
@@ -661,7 +676,9 @@ test('sound effects are made while loading, and M mutes them (M6.1)', async ({ p
   await expect.poll(async () => (await audio())?.muted).toBe(false);
 });
 
-test('the theme plays on the menus and fades out for the battle (M7.1)', async ({ page }) => {
+test('the theme plays on the menus; battles play calm music, the result none (M7.1, M7.2)', async ({
+  page,
+}) => {
   const music = (): Promise<string | null | undefined> =>
     page.evaluate(() => window.__game?.audio().music);
   const errors: string[] = [];
@@ -677,10 +694,14 @@ test('the theme plays on the menus and fades out for the battle (M7.1)', async (
   expect(await music()).toBe('theme');
   await page.keyboard.press('Enter');
   await waitForScene(page, 'Battle');
-  await expect.poll(music).toBeNull();
+  // Every alien starts hidden in its group: calm.
+  await expect.poll(music).toBe('calm');
   // M mutes the music with the effects: one switch for all sound.
   await page.keyboard.press('m');
   await expect.poll(async () => page.evaluate(() => window.__game?.audio().muted)).toBe(true);
+  // The battle is over: the music stops for the result screen's jingle.
+  await wipeOut(page, 'alien');
+  await expect.poll(music).toBeNull();
   expect(errors).toEqual([]);
 });
 
