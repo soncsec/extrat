@@ -99,6 +99,7 @@ It is built mainly from the Ansimuz "Legacy Collection" pixel-art pack (CC0) and
 | 2026-10-20 | Milestones M1 to M5 and the M6.3 balance pass signed off. RECRUIT ramp: 2, 2, 4, 4 and 6 aliens, then the boss with one escort group. A saved battle that no longer fits is dropped and the campaign kept (ADR-E6 amended). First-mission hints added; tooltips dropped (hints and the help screen are enough). The town keeps its number of houses |
 | 2026-10-20 | Definition of success met: a friend of the owner, new to the game, finished all six missions on games.soncrant.com without help. Version 1.0 complete |
 | 2026-10-20 | After v1: music. Retro synth made in code (no files); a theme on the menus, calm and tense battle music, a boss track; the SND button and M mute music with the effects (settings unchanged) |
+| 2026-10-21 | Music (M7) signed off in the live game: title theme, calm and tense battle music, boss track |
 
 ## 8. Open questions
 
