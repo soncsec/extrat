@@ -13,7 +13,7 @@ The order follows the risks: first prove the core fight is fun and readable with
 | M4 Maps and landscapes | Done (owner sign-off 2026-10-20) |
 | M5 Campaign | Done (owner sign-off 2026-10-20) |
 | M6 Polish and release | Done: a friend of the owner finished the campaign on production without help (owner, 2026-10-20). Version 1.0 complete |
-| M7 Music | Done (after v1; owner approved every track from previews, 2026-10-20) |
+| M7 Music | Done (after v1; owner approved every track from previews, and signed off the music in the live game, 2026-10-21) |
 
 ## Main risks
 
