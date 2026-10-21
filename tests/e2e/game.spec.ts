@@ -626,6 +626,20 @@ test('battle music turns tense when a pod wakes, and calm once it is dead (M7.2)
   await expect.poll(music).toBe('calm');
 });
 
+test('a battle that ends while the music is still fading shows its result (M7.2)', async ({
+  page,
+}) => {
+  // The theme is still fading out and the calm track fading in: changing track again
+  // then must not touch the sound it stops (it threw and froze the battle).
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await openGame(page, '?seed=42');
+  const ids = (await snapshot(page)).units.filter((u) => u.side === 'marine').map((u) => u.id);
+  await page.evaluate((all) => all.forEach((id) => window.__game?.setHp(id, 0)), ids);
+  await expect.poll(() => activeScenes(page), { timeout: 15_000 }).toContain('Result');
+  expect(errors).toEqual([]);
+});
+
 test('E ends the turn: awake aliens act, dormant pods wait, then round 2 begins', async ({
   page,
 }) => {

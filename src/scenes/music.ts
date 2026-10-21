@@ -414,9 +414,49 @@ export const MUSIC_RATE = 24_000;
 
 const keyOf = (id: TrackId): string => `music-${id}`;
 
+/** A playing track: its sound, and the level its fades move (0 to 1 of AUDIO.music). */
+interface Playing {
+  sound: Phaser.Sound.BaseSound;
+  level: { value: number };
+}
+
 /** The track playing (or fading in), and tracks still fading out. */
-let current: { id: TrackId; sound: Phaser.Sound.BaseSound } | null = null;
-let fading: Phaser.Sound.BaseSound[] = [];
+let current: (Playing & { id: TrackId }) | null = null;
+let fading: Playing[] = [];
+/** Sounds already destroyed: a fade still running must not touch them. */
+const gone = new WeakSet<Phaser.Sound.BaseSound>();
+
+/** Sets a track's volume from its level, unless its sound is gone. */
+function apply(p: Playing): void {
+  if (!gone.has(p.sound)) {
+    (p.sound as Phaser.Sound.WebAudioSound).setVolume(p.level.value * AUDIO.music);
+  }
+}
+
+function stop(p: Playing): void {
+  if (gone.has(p.sound)) return;
+  gone.add(p.sound);
+  p.sound.destroy();
+}
+
+/**
+ * Fades a track's level. The tween moves a plain number, never the sound itself: a
+ * sound destroyed mid-fade (by a quick change of track) is then simply skipped, where
+ * setting its volume would throw and stop the game's frame.
+ */
+function fade(scene: Phaser.Scene, p: Playing, to: number, done?: () => void): void {
+  scene.tweens.killTweensOf(p.level);
+  scene.tweens.add({
+    targets: p.level,
+    value: to,
+    duration: AUDIO.musicFadeMs,
+    onUpdate: () => apply(p),
+    onComplete: () => {
+      apply(p);
+      done?.();
+    },
+  });
+}
 
 /** The track playing now, or null (for tests). */
 export function currentMusic(): TrackId | null {
@@ -442,30 +482,26 @@ export function ensureRendered(scene: Phaser.Scene, id: TrackId): boolean {
  */
 export function playMusic(scene: Phaser.Scene, id: TrackId | null): void {
   // A fade the last scene started may have stopped with that scene: finish it now.
-  for (const s of fading) s.destroy();
+  for (const p of fading) stop(p);
   fading = [];
   if (current && current.id === id) {
-    scene.tweens.killTweensOf(current.sound);
-    (current.sound as Phaser.Sound.WebAudioSound).setVolume(AUDIO.music);
+    scene.tweens.killTweensOf(current.level);
+    current.level.value = 1;
+    apply(current);
     return;
   }
   if (current) {
-    const old = current.sound;
+    const old: Playing = current;
     fading.push(old);
-    scene.tweens.add({
-      targets: old,
-      volume: 0,
-      duration: AUDIO.musicFadeMs,
-      onComplete: () => {
-        fading = fading.filter((s) => s !== old);
-        old.destroy();
-      },
+    fade(scene, old, 0, () => {
+      fading = fading.filter((p) => p !== old);
+      stop(old);
     });
     current = null;
   }
   if (id === null || !ensureRendered(scene, id)) return;
   const sound = scene.sound.add(keyOf(id), { loop: true, volume: 0 });
   sound.play();
-  scene.tweens.add({ targets: sound, volume: AUDIO.music, duration: AUDIO.musicFadeMs });
-  current = { id, sound };
+  current = { id, sound, level: { value: 0 } };
+  fade(scene, current, 1);
 }
