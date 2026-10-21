@@ -6,8 +6,11 @@ import type { BattleState } from './battle';
  * the squad (from the moment its group is spotted until it dies).
  */
 
-export type BattleMood = 'calm' | 'tense';
+export type BattleMood = 'calm' | 'tense' | 'boss';
 
+/** Once the Overseer is awake, its own track (M7.3) until it falls (which ends the battle). */
 export function battleMood(state: BattleState): BattleMood {
-  return state.units.some((u) => u.side === 'alien' && u.hp > 0 && !u.dormant) ? 'tense' : 'calm';
+  const awake = state.units.filter((u) => u.side === 'alien' && u.hp > 0 && !u.dormant);
+  if (awake.some((u) => u.kind === 'overseer')) return 'boss';
+  return awake.length > 0 ? 'tense' : 'calm';
 }

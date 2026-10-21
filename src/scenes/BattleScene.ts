@@ -1832,7 +1832,8 @@ export class BattleScene extends Phaser.Scene {
 
   /**
    * The battle's music (M7.2): calm while every alien waits hidden, tense while any is
-   * awake, none once the battle is over (the result screen plays its jingle).
+   * awake, the boss track while the Overseer is (M7.3), none once the battle is over
+   * (the result screen plays its jingle).
    */
   private updateMusic(): void {
     const track = this.over ? null : battleMood(this.state);
@@ -1840,9 +1841,13 @@ export class BattleScene extends Phaser.Scene {
     const first = this.music === undefined;
     this.music = track;
     playMusic(this, track);
-    // Render the tense track now, while nothing moves, not when the aliens appear.
+    // Render the other tracks now, while nothing moves, not when the aliens appear.
     if (first && track === 'calm') {
-      this.time.delayedCall(MUSIC_PREPARE_MS, () => ensureRendered(this, 'tense'));
+      this.time.delayedCall(MUSIC_PREPARE_MS, () => {
+        ensureRendered(this, 'tense');
+        // And the Overseer's track, on its map (M7.3).
+        if (this.state.units.some((u) => u.kind === 'overseer')) ensureRendered(this, 'boss');
+      });
     }
   }
 
